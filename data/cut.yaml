@@ -1,0 +1,266 @@
+manga_panel_templates:
+  # 스키마: tier `shares` = 행 안 좌→우 폭 비율(합 1.0), `center: true` = 중앙 배치,
+  #        tier `height` = (선택) 페이지 높이 중 이 행이 차지할 비율(페이지 안 합 1.0).
+  #        height 를 하나라도 지정하면 그 페이지 행 높이는 자연 높이가 아니라 그 비율로 나뉜다.
+  # 1. 스탠다드 3단 분할 (Standard 3-Tier)
+  # 가장 기본이 되는 형태. 독자가 피로감 없이 읽을 수 있으며 일상적인 대화나 전개에 적합.
+  - id: standard_3_tier
+    name: "기본 3단 분할"
+    situations: ["승", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.4, 0.6]
+        description: "2컷 분할 (우측 60% 큰 컷 / 좌측 40% 작은 컷) - 인물 A와 B의 대화"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100% 가로로 긴 컷) - 상황이나 배경, 혹은 중요한 대사 강조"
+      - tier: 3
+        shares: [0.7, 0.3]
+        description: "2컷 분할 (우측 30% 작은 컷 / 좌측 70% 큰 컷) - 리액션 후 다음 페이지로 넘어가기 전 여운"
+
+  # 2. 도입부 배경 강조형 (Establishing Opening)
+  # 에피소드의 시작 부분에서 시간, 장소, 분위기를 독자에게 확실히 각인시킬 때 사용. (메디방 '타치키리' 기법 활용)
+  - id: establishing_opening
+    name: "도입부 배경 강조형"
+    situations: ["기"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (페이지 상단 50% 차지, 여백 없는 타치키리 컷) - 웅장한 배경이나 주인공의 현재 상황 풀샷"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (각 33% 세로로 긴 컷) - 시계, 발걸음, 작은 소품 등 클로즈업으로 분위기 조성"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 (가로 100%) - 인물의 얼굴이나 첫 대사 등장"
+
+  # 3. 클라이맥스 임팩트 (Climax Impact)
+  # 감정선이 폭발하거나 가장 중요한 사건이 터지는 순간. 컷 수를 극단적으로 줄여 시선을 한 곳에 집중시킴.
+  # [2026-09-08] 사용자 지시: 단티어 통짜 → **2단, 높이 비율 4:6**(위 40% / 아래 60%).
+  #   tier 의 `height` 가 페이지 높이 분할 비율(합 1.0) — 비우면 기존처럼 행 높이 비례로 나눈다.
+  - id: climax_impact
+    name: "클라이맥스 임팩트"
+    situations: ["전", "결"]
+    total_size: "1 Page (또는 양면 2 Pages Spread)"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.4
+        description: "전폭 1컷 (페이지 높이 40%) - 임팩트 직전의 정적·무언가 터지려는 찰나. 대사보다 숨소리/침묵"
+      - tier: 2
+        shares: [1.0]
+        height: 0.6
+        description: "전폭 1컷 (페이지 높이 60%) - 폭발하는 감정/고백/핵심 사건 자체. 페이지에서 가장 크게 보이는 컷"
+
+  # 4. 역동적 액션 / 심리적 혼란 (Dynamic & Diagonal)
+  # 사선(대각선) 컷을 사용하여 불안정함, 속도감, 혼란스러움을 표현. (메디방 사선 분할 튜토리얼 참조)
+  - id: dynamic_diagonal
+    name: "역동적 사선 분할"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "사선 2컷 분할 (우상단에서 좌하단으로 비스듬히 자름) - 무기가 부딪히거나 감정이 엇갈리는 찰나"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "사선 3컷 분할 - 여러 인물의 당황한 표정이나 파편이 튀는 모습을 속도감 있게 연속 배치"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 액션의 결과나 충격받은 표정으로 마무리"
+
+  # 5. 시간의 흐름 / 감정의 변화 (Time Lapse / Emotional Shift)
+  # 인물이 가만히 서서 생각에 잠기거나, 짧은 시간 동안 표정이 미세하게 변하는 것을 연출.
+  - id: emotional_vertical
+    name: "세로 분할 감정선"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [0.25, 0.25, 0.25, 0.25]
+        description: "4컷 세로 분할 (페이지 상단 60%를 세로로 길게 4등분) - 인물의 표정이 점진적으로 일그러지거나 미소 짓는 변화를 슬로우 모션처럼 연출"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (하단 40%) - 변화된 감정을 바탕으로 행동 개시 (ex. 눈물을 닦고 일어서는 모습)"
+
+  # 6. 빠른 템포 / 코믹 (Fast Paced / 4-Koma style)
+  # 상황이 빠르게 지나가거나, 개그 씬, 텐션이 높은 티키타카 대화를 나눌 때 사용. 단을 잘게 쪼개 독자의 읽는 속도를 높임.
+  - id: fast_paced_comic
+    name: "빠른 템포 4단 분할"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 4
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - 상황 제시"
+      - tier: 2
+        shares: [0.7, 0.3]
+        description: "2컷 분할 (70%, 30%) - 한 명이 태클을 걸거나 과장된 행동"
+      - tier: 3
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (33%, 33%, 33%) - 티키타카 대화, 당황하는 주변 반응"
+      - tier: 4
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 코믹한 결론 (SD 캐릭터 활용 등)"
+
+  # 7. 심리적 압박 / 포위 (Claustrophobia / Focus)
+  # 인물이 구석에 몰리거나, 무언가에 의해 압박받는 느낌을 줄 때 중앙을 비우거나 주변을 어둡게 처리.
+  - id: pressure_focus
+    name: "심리적 압박/집중"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 100% (검은 여백) - 배경을 검게 칠하고 흰색 텍스트로 독백만 처리"
+      - tier: 2
+        shares: [0.5]
+        center: true
+        description: "중앙 집중형 1컷 (좌우 여백을 넓게 두고 중앙 50%만 박스 처리) - 고립된 인물의 모습 줌인"
+      - tier: 3
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (우 50%, 좌 50%) - 압박하는 대상(상대방)과 압박받는 대상(주인공)의 시선 교차"
+  # 8. 러브코미디 티키타카 / 핑퐁 대화 (Rom-Com Banter / 6 Panels)
+  # 독자가 요청한 3단 6컷 구조. 두 인물의 시선이 교차하며 말싸움을 하거나 부끄러움을 타며 티키타카를 주고받는 일상/개그 씬에 최적화.
+  - id: romcom_banter_6panels
+    name: "러브코미디 티키타카 (3단 6컷)"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - 인물 A가 딴지를 걸고, 인물 B가 당황하며 받아치는 기본 구도"
+      - tier: 2
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - 서로 한 치도 물러서지 않고 클로즈업으로 얼굴을 맞대며 투닥거림"
+      - tier: 3
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - 결국 둘 다 얼굴이 새빨개져서 고개를 홱 돌려버리는 동시 리액션 (데칼코마니 연출)"
+
+  # 9. 우연한 스킨십 / 럭키 스케베 (Accidental Skinship)
+  # 러브코미디의 절대적 클리셰. 발에 걸려 넘어지거나 밀쳐지면서 엉뚱한 곳을 만지거나 초밀착하게 되는 연출.
+  - id: accidental_skinship
+    name: "우연한 스킨십 (넘어짐)"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 바닥의 물건에 발이 걸리거나, 누군가에게 밀쳐지며 중심을 잃는 찰나의 액션"
+      - tier: 2
+        shares: [0.5, 0.5]
+        description: "사선 2컷 분할 - [우측] 허공에 뜬 손이나 놀란 눈의 클로즈업 / [좌측] 쾅! 하고 바닥에 쓰러지는 효과음과 역동적 모션"
+      - tier: 3
+        shares: [0.3, 0.7]
+        description: "2컷 분할 (우 70% 큰 컷, 좌 30% 작은 컷) - [우측] 가슴을 만지거나 겹쳐 누운 아슬아슬한 본편 컷 / [좌측] 정적 속에서 상황을 파악하고 얼굴이 달아오르는 둘의 눈맞춤"
+
+  # 10. 심쿵 / 입덕 자각 (Heart-Throb / Doki-Doki)
+  # 평소와 다른 상대방의 무방비한 미소나 행동을 보고, 갑자기 심장이 뛰며 사랑을 자각하는 씬.
+  - id: heart_throb_doki_doki
+    name: "심쿵 / 입덕 자각"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.6, 0.4]
+        description: "2컷 분할 (우 40%, 좌 60%) - [우측] 무방비하게 머리를 묶거나 환하게 웃는 상대방 / [좌측] 그것을 멍하니 쳐다보는 주인공의 시선"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100% 타치키리) - 상대방의 가장 매력적인 얼굴 클로즈업. 배경을 날려버리고 반짝이는 스크린톤이나 꽃 효과 집중"
+      - tier: 3
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (세로로 긴 33% 3개) - 주인공의 동공 지진, 점차 붉어지는 귀, 가슴을 부여잡는 손과 함께 커지는 심장 박동음(두근, 두근, 두근) 연출"
+
+  # 11. 초밀착 벽치기 / 텐션 고조 (Kabedon Tension)
+  # 상대를 벽에 몰아넣고 도망치지 못하게 퇴로를 차단하는 숨 막히는 로맨스/긴장감 연출.
+  - id: kabedon_tension
+    name: "초밀착 벽치기 (카베돈)"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.3, 0.4, 0.3]
+        description: "3컷 분할 (30%, 40%, 30%) - 다가오는 발걸음, 뒷걸음질 치다 벽에 닿는 구두, 긴장한 입술 클로즈업 등 긴장감 빌드업"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100% 가로 컷) - '쾅!' 효과음과 함께 팔로 벽을 짚어 상대를 가두는 벽치기 풀샷"
+      - tier: 3
+        shares: [0.7, 0.3]
+        description: "2컷 분할 (우 30% 작은 컷, 좌 70% 큰 컷) - [우측] 흠칫 놀라 올려다보는 시선 / [좌측] 그림자가 드리워진 채 귓가에 얼굴을 들이밀고 속삭이는 상대방의 클로즈업"
+
+  # 12. 착각과 오해 / 개그 폭발 (Comedic Misunderstanding)
+  # 의미심장한 대사를 던졌는데, 상대방은 완전 야릇하거나 엉뚱한 방향으로 착각해서 혼자 폭주하는 개그 씬.
+  - id: comedic_misunderstanding
+    name: "오해와 착각 (개그)"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 4
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 매우 진지한 표정으로 뱉는 오해하기 딱 좋은 대사 (ex. '오늘 밤엔 재우지 않을 거야')"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100% 여백 많음) - 정적(......). 하얗게 질린 눈으로 일시 정지된 상대방의 모습"
+      - tier: 3
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - [우측] 상대방의 뇌내 망상(야릇하거나 과장된 상상 컷) / [좌측] 얼굴에서 김이 뿜어져 나오며 패닉에 빠진 표정 클로즈업"
+      - tier: 4
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - SD(Super Deformed) 캐릭터로 변해 바닥을 구르며 부끄러워하거나 격하게 태클을 거는 만화적 마무리"
+
+  # 13. 고백 직전의 정적 / 감정의 응축 (Confession Build-up)
+  # 중요한 말을 꺼내기 직전, 말줄임표와 배경 묘사로 독자의 숨을 죽이게 만드는 영화적 연출.
+  - id: confession_build_up
+    name: "고백 직전의 정적"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100% 타치키리) - 바람에 흩날리는 나뭇잎, 노을 지는 교실 등 분위기를 잡는 배경 묘사와 말줄임표 대사창"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (각 33% 세로 분할) - 꽉 쥔 두 손, 멈칫하는 발끝, 살짝 떨리는 입술 등 인물의 망설이는 디테일 클로즈업"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 드디어 고개를 들고 결연한 표정으로 입을 여는 주인공. 대사창은 다음 페이지로 넘어가도록 의도적으로 반쯤 잘라 배치(페이지 턴 효과)"
+
+  # 14. [2026-09-09] 에필로그 전용 페이지 — 결이 끝난 뒤 여운을 정리하는 2단 (사용자 지시)
+  #   `epilogue: true`가 붙은 템플릿은 기승전결 일반 페이지로 뽑히지 않고, 회차의 마지막에
+  #   한 장 더 붙는다(config.comic_epilogue = False로 끄면 붙지 않는다).
+  #   tier의 `role`로 화면 문법을 강제한다:
+  #     role: summary  = 인물 없이 **배경만** + 큰 설명(컷 면적의 ~70%)  ← 각 기승전결 첫 컷
+  #     role: epilogue = 컷을 **반투명**으로처리하고 그 위에 큰 설명(에필로그 지문)
+  #   코드는 cut.yaml에 role이 없는 템플릿도 "페이지의 첫 슬롯"을 자동으로 summary로 취급한다.
+  - id: epilogue_aftermath
+    name: "에필로그 여운 2단"
+    epilogue: true
+    situations: ["결"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.5
+        role: "epilogue"
+        description: "전폭 1컷 (페이지 높이 50%) - 결의 마지막 이벤트 신. 컷은 반투명하게처리하고 큰 에필로그 지문이 컷의 70%를 채운다"
+      - tier: 2
+        shares: [1.0]
+        height: 0.5
+        role: "epilogue"
+        description: "전폭 1컷 (페이지 높이 50%) - 그 뒤의 여운(일상 복귀, 서로를 의식하는 거리). 대사 없이 큰 지문으로만 끝맺음"

@@ -1,0 +1,31 @@
+# 런타임 산출물 (재생성되므로 커밋하지 않음)
+test/
+venv/
+__pycache__/
+*.pyc
+image/
+comic/
+log/
+run.log
+README_local.md
+
+# 로컬 전용 검증 입력(개인 실험 시트). selftest는 inputs/만 읽고 여기는 건드리지 않습니다.
+input_test/
+
+# 로컬 전용 설정(수위 스위치·LoRA 강도·민감 한글 어휘 사전). 템플릿만 커밋합니다.
+local_settings.yaml
+local_settings.json
+
+# LLM 가중치 — 16.8GB는 GitHub 100MB 한도/Git LFS 2GB 한도를 둘 다 넘는다.
+# README 1-3 절차로 별도 전달한다.
+gguf/
+
+# OS/편집기
+.DS_Store
+*.swp
+
+# 화면 문법 폰트 자동 다운로드 산출물(OFL) — `python3 run_comic.py --get-fonts`로 받습니다.
+data/fonts/
+
+# 로컬 전용 설계 메모(어른 태그 어휘 참고록 — 코드와 무관, 공개 배송에서 제외)
+order/additional.md

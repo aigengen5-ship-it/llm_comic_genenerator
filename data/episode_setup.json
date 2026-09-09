@@ -1,0 +1,4 @@
+{
+  "total_episodes": 1,
+  "note": "llm_comic_gen 독립 환경. 회차 수가 12를 넘기면 이 값을 올린다(config.py가 import 때 읽음)."
+}

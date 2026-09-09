@@ -1,0 +1,1271 @@
+터치 (Touch):
+- num: 1
+  text: 'She touches his chest. She is leaning forward, hand on pectoral. #front_view #wide #He is standing.'
+- num: 2
+  text: 'She touches his cheek. She is tilting her head, gentle finger contact. #close_up #tall #He is standing.'
+- num: 3
+  text: 'She touches his shoulder. She is standing close, hand resting on deltoid. #side_view #wide #He is standing.'
+- num: 4
+  text: 'She touches his arm. She is clinging, soft grip on bicep. #side_view #wide #He is standing.'
+- num: 5
+  text: 'She touches his thigh. She is sitting next to him, hand on leg. #pov #wide #NONE'
+- num: 6
+  text: 'She touches his waist. She is hugging from behind, hands on hips. #back_view #wide #He is standing.'
+- num: 7
+  text: 'She touches his hair. She is reaching up, fingers through strands. #close_up #tall #He is standing.'
+- num: 8
+  text: 'She touches his lips. She is teasing, index finger on mouth. #close_up #tall #He is standing.'
+- num: 9
+  text: 'She touches his back. She is sliding her hand down the spine. #back_view #wide #He is standing.'
+- num: 10
+  text: 'She touches his neck. She is pulling him closer, hand on nape. #side_view #wide #He is standing.'
+- num: 11
+  text: 'She touches his stomach. She is lying on top, hand on abdomen. #pov #wide #NONE'
+- num: 12
+  text: 'She touches his ear. She is whispering, finger brushing lobe. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She touches his chin. She is lifting his face, light grip. #front_view #tall #He is standing.'
+- num: 14
+  text: 'She touches his wrist. She is holding him still, firm grip. #close_up #tall #He is standing.'
+- num: 15
+  text: 'She touches his collarbone. She is tracing the bone with a finger. #close_up #tall #He is standing.'
+- num: 16
+  text: 'She touches his knee. She is kneeling, hand resting on joint. #pov #wide #NONE'
+- num: 17
+  text: 'She touches his hip. She is pressing against him, hand on pelvic bone. #side_view #wide #He is standing.'
+- num: 18
+  text: 'She touches his forehead. She is leaning in, palm on skin. #front_view #tall #He is standing.'
+- num: 19
+  text: 'She touches his palm. She is interlocking fingers, light touch. #close_up #tall #He is standing.'
+- num: 20
+  text: 'She touches his chest hair. She is rubbing, fingers through hair. #pov #wide #NONE'
+손잡음 (Holding Hands):
+- num: 1
+  text: 'She holds his hand. They are walking, fingers interlaced. #side_view #wide #He is walking.'
+- num: 2
+  text: 'She holds his hand. She is pulling him, firm grip. #back_view #wide #He is walking.'
+- num: 3
+  text: 'She holds his hand. She is shaking, trembling fingers. #close_up #tall #He is standing.'
+- num: 4
+  text: 'She holds his hand. She is resting her head on his shoulder. #side_view #wide #He is standing.'
+- num: 5
+  text: 'She holds his hand. She is squeezing tightly, emotional expression. #close_up #tall #He is standing.'
+- num: 6
+  text: 'She holds his hand. They are sitting on a bench, hands joined. #front_view #wide #He is sitting.'
+- num: 7
+  text: 'She holds his hand. She is leading him into a room. #back_view #wide #He is walking.'
+- num: 8
+  text: 'She holds his hand. She is kissing the knuckles. #close_up #tall #He is standing.'
+- num: 9
+  text: 'She holds his hand. She is swinging their arms. #side_view #wide #He is walking.'
+- num: 10
+  text: 'She holds his hand. She is lying in bed, fingers entwined. #pov #wide #NONE'
+- num: 11
+  text: 'She holds his hand. She is looking up at him, shy smile. #front_view #wide #He is standing.'
+- num: 12
+  text: 'She holds his hand. She is hiding her face behind his arm. #side_view #wide #He is standing.'
+- num: 13
+  text: 'She holds his hand. She is guiding his hand to her waist. #side_view #wide #He is standing.'
+- num: 14
+  text: 'She holds his hand. They are standing in the rain, tight grip. #front_view #wide #He is standing.'
+- num: 15
+  text: 'She holds his hand. She is rubbing her thumb over his skin. #close_up #tall #He is standing.'
+- num: 16
+  text: 'She holds his hand. She is leaning back, pulling him forward. #side_view #wide #He is standing.'
+- num: 17
+  text: 'She holds his hand. She is clutching it to her chest. #front_view #wide #He is standing.'
+- num: 18
+  text: 'She holds his hand. They are facing each other, palms pressed. #front_view #wide #He is standing.'
+- num: 19
+  text: 'She holds his hand. She is walking backwards, smiling. #front_view #wide #He is walking.'
+- num: 20
+  text: 'She holds his hand. She is gripping his wrist and palm. #close_up #tall #He is standing.'
+포옹 (Hugging):
+- num: 1
+  text: 'She hugs him. She is wrapping arms around his neck. #side_view #wide #He is standing.'
+- num: 2
+  text: 'She hugs him. She is pressing her chest against him. #front_view #wide #He is standing.'
+- num: 3
+  text: 'She hugs him from behind. She is clinging to his back. #back_view #wide #He is standing.'
+- num: 4
+  text: 'She hugs him tightly. She is burying her face in his chest. #side_view #wide #He is standing.'
+- num: 5
+  text: 'She hugs him. She is lifting her feet off the ground. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She hugs him. She is squeezing his waist. #front_view #wide #He is standing.'
+- num: 7
+  text: 'She hugs him. She is rubbing her cheek against his shoulder. #close_up #tall #He is standing.'
+- num: 8
+  text: 'She hugs him. She is leaning her head on his chest. #side_view #wide #He is standing.'
+- num: 9
+  text: 'She hugs him. She is crossing her arms over his back. #back_view #wide #He is standing.'
+- num: 10
+  text: 'She hugs him. She is trembling in his arms. #front_view #wide #He is standing.'
+- num: 11
+  text: 'She hugs him. She is tilting her head back, smiling. #side_view #wide #He is standing.'
+- num: 12
+  text: 'She hugs him. She is pressing her whole body against him. #front_view #wide #He is standing.'
+- num: 13
+  text: 'She hugs him. She is holding him with one arm. #side_view #wide #He is standing.'
+- num: 14
+  text: 'She hugs him. She is nuzzling his neck. #close_up #tall #He is standing.'
+- num: 15
+  text: 'She hugs him. She is clasping her hands behind his back. #back_view #wide #He is standing.'
+- num: 16
+  text: 'She hugs him. She is swaying side to side. #front_view #wide #He is standing.'
+- num: 17
+  text: 'She hugs him. She is gripping his clothes tightly. #close_up #tall #He is standing.'
+- num: 18
+  text: 'She hugs him. She is resting her chin on his shoulder. #side_view #wide #He is standing.'
+- num: 19
+  text: 'She hugs him. She is folding her body into his. #front_view #wide #He is standing.'
+- num: 20
+  text: 'She hugs him. She is kissing his collarbone during the hug. #close_up #tall #He is standing.'
+키스 (Kissing):
+- num: 1
+  text: 'She kisses him. She is standing on tiptoes, lips touching. #side_view #wide #He is standing.'
+- num: 2
+  text: 'She kisses him. She is pulling his tie, closing the gap. #front_view #wide #He is standing.'
+- num: 3
+  text: 'She kisses him. She is cupping his face with both hands. #close_up #tall #He is standing.'
+- num: 4
+  text: 'She kisses him. She is leaning back, arching her spine. #side_view #wide #He is standing.'
+- num: 5
+  text: 'She kisses him. She is wrapping her arms around his neck. #front_view #wide #He is standing.'
+- num: 6
+  text: 'She kisses him. She is pressing him against the wall. #side_view #wide #He is standing.'
+- num: 7
+  text: 'She kisses him. She is closing her eyes, soft expression. #close_up #tall #He is standing.'
+- num: 8
+  text: 'She kisses him. She is tilting her head, alternating angles. #side_view #wide #He is standing.'
+- num: 9
+  text: 'She kisses him. She is biting his lower lip. #close_up #tall #He is standing.'
+- num: 10
+  text: 'She kisses him. She is grabbing his shirt collar. #front_view #wide #He is standing.'
+- num: 11
+  text: 'She kisses him. She is sitting on his lap, legs wrapped. #front_view #wide #He is sitting.'
+- num: 12
+  text: 'She kisses him. She is sliding her hand down his back. #side_view #wide #He is standing.'
+- num: 13
+  text: 'She kisses him. She is whispering between breaths. #close_up #tall #He is standing.'
+- num: 14
+  text: 'She kisses him. She is pressing her body flush against him. #front_view #wide #He is standing.'
+- num: 15
+  text: 'She kisses him. She is holding his wrist, pulling him in. #side_view #wide #He is standing.'
+- num: 16
+  text: 'She kisses him. She is laughing softly against his lips. #close_up #tall #He is standing.'
+- num: 17
+  text: 'She kisses him. She is kneading his shoulders. #back_view #wide #He is standing.'
+- num: 18
+  text: 'She kisses him. She is lifting him up slightly. #front_view #wide #He is standing.'
+- num: 19
+  text: 'She kisses him. She is blinking slowly, dreamy look. #close_up #tall #He is standing.'
+- num: 20
+  text: 'She kisses him. She is running her fingers through his hair. #side_view #wide #He is standing.'
+딥키스 (Deep Kissing):
+- num: 1
+  text: 'She deep kisses him. She is opening her mouth wide, tongue contact. #close_up #tall #He is standing.'
+- num: 2
+  text: 'She deep kisses him. She is swapping saliva, wet lips. #close_up #tall #He is standing.'
+- num: 3
+  text: 'She deep kisses him. She is panting, heavy breathing. #side_view #wide #He is standing.'
+- num: 4
+  text: 'She deep kisses him. She is gripping his hair firmly. #close_up #tall #He is standing.'
+- num: 5
+  text: 'She deep kisses him. She is arching her back, chest pressed. #front_view #wide #He is standing.'
+- num: 6
+  text: 'She deep kisses him. She is making wet sounds, sloppy kiss. #close_up #tall #He is standing.'
+- num: 7
+  text: 'She deep kisses him. She is pushing him onto the bed. #pov #wide #NONE'
+- num: 8
+  text: 'She deep kisses him. She is wrapping her legs around his waist. #side_view #wide #He is lying down.'
+- num: 9
+  text: 'She deep kisses him. She is tasting his tongue, deep penetration. #close_up #tall #He is standing.'
+- num: 10
+  text: 'She deep kisses him. She is clutching his shoulders, nails digging in. #front_view #wide #He is standing.'
+- num: 11
+  text: 'She deep kisses him. She is tilting her head deeply, maximizing contact. #side_view #wide #He is standing.'
+- num: 12
+  text: 'She deep kisses him. She is shivering with pleasure. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She deep kisses him. She is sliding her hands under his shirt. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She deep kisses him. She is sucking his tongue. #close_up #tall #He is standing.'
+- num: 15
+  text: 'She deep kisses him. She is pressing her hips into his. #side_view #wide #He is standing.'
+- num: 16
+  text: 'She deep kisses him. She is gasping for air between kisses. #close_up #tall #He is standing.'
+- num: 17
+  text: 'She deep kisses him. She is holding his head steady. #front_view #wide #He is standing.'
+- num: 18
+  text: 'She deep kisses him. She is swallowing his saliva. #close_up #tall #He is standing.'
+- num: 19
+  text: 'She deep kisses him. She is kneading his chest. #pov #wide #NONE'
+- num: 20
+  text: 'She deep kisses him. She is losing herself in the sensation. #side_view #wide #He is standing.'
+애무 (Foreplay/Caressing):
+- num: 1
+  text: 'She caresses him. She is rubbing his chest, circles with fingers. #pov #wide #NONE'
+- num: 2
+  text: 'She caresses him. She is sliding her hand down his stomach. #front_view #wide #He is lying down.'
+- num: 3
+  text: 'She caresses him. She is licking his earlobe, light breath. #close_up #tall #He is lying down.'
+- num: 4
+  text: 'She caresses him. She is kneading his buttocks, firm grip. #back_view #wide #He is lying down.'
+- num: 5
+  text: 'She caresses him. She is tracing his muscles with her tongue. #side_view #wide #He is lying down.'
+- num: 6
+  text: 'She caresses him. She is massaging his thighs, sliding upwards. #pov #wide #NONE'
+- num: 7
+  text: 'She caresses him. She is biting his neck, leaving a mark. #close_up #tall #He is lying down.'
+- num: 8
+  text: 'She caresses him. She is running nails along his spine. #back_view #wide #He is lying down.'
+- num: 9
+  text: 'She caresses him. She is blowing air on his skin, teasing. #close_up #tall #He is lying down.'
+- num: 10
+  text: 'She caresses him. She is rubbing his nipples, pinching lightly. #front_view #wide #He is lying down.'
+- num: 11
+  text: 'She caresses him. She is sliding her hand into his pants. #side_view #wide #He is lying down.'
+- num: 12
+  text: 'She caresses him. She is kissing his inner thigh. #pov #wide #NONE'
+- num: 13
+  text: 'She caresses him. She is stroking his groin, light pressure. #front_view #wide #He is lying down.'
+- num: 14
+  text: 'She caresses him. She is licking his collarbone, wet skin. #close_up #tall #He is lying down.'
+- num: 15
+  text: 'She caresses him. She is gripping his hips, pulling him close. #side_view #wide #He is lying down.'
+- num: 16
+  text: 'She caresses him. She is massaging his shoulders, leaning in. #back_view #wide #He is lying down.'
+- num: 17
+  text: 'She caresses him. She is teasing his lower abdomen. #pov #wide #NONE'
+- num: 18
+  text: 'She caresses him. She is nibbling his shoulder. #close_up #tall #He is lying down. #orgasm'
+- num: 19
+  text: 'She caresses him. She is sliding her palm across his chest. #front_view #wide #He is lying down.'
+- num: 20
+  text: 'She caresses him. She is gently scratching his back. #back_view #wide #He is lying down. #orgasm'
+Masturbation:
+- num: 1
+  text: 'She masturbates. She is touching herself, finger in vagina. #pov #wide #NONE'
+- num: 2
+  text: 'She masturbates. She is rubbing her clitoris, closed eyes. #close_up #tall #NONE'
+- num: 3
+  text: 'She masturbates. She is spreading her legs, showing vulva. #front_view #wide #NONE'
+- num: 4
+  text: 'She masturbates. She is using a toy, vibrating device. #close_up #tall #NONE'
+- num: 5
+  text: 'She masturbates. She is arching her back, trembling. #side_view #wide #NONE'
+- num: 6
+  text: 'She masturbates. She is rubbing her breasts, squeezing nipples. #front_view #wide #NONE'
+- num: 7
+  text: 'She masturbates. She is lying on her back, legs in the air. #pov #wide #NONE'
+- num: 8
+  text: 'She masturbates. She is using lube, glistening skin. #close_up #tall #NONE'
+- num: 9
+  text: 'She masturbates. She is panting, face flushed. #close_up #tall #NONE'
+- num: 10
+  text: 'She masturbates. She is pushing two fingers inside. #close_up #tall #NONE'
+- num: 11
+  text: 'She masturbates. She is sitting on a chair, legs wide. #front_view #wide #NONE'
+- num: 12
+  text: 'She masturbates. She is grinding against a pillow. #side_view #wide #NONE'
+- num: 13
+  text: 'She masturbates. She is touching herself through clothes. #front_view #wide #NONE'
+- num: 14
+  text: 'She masturbates. She is playing with her nipples, head tilted. #pov #wide #NONE #squirt'
+- num: 15
+  text: 'She masturbates. She is curled up, finger moving fast. #side_view #wide #NONE #orgasm'
+- num: 16
+  text: 'She masturbates. She is looking in the mirror, touching herself. #side_view #wide #NONE #squirt'
+- num: 17
+  text: 'She masturbates. She is dripping wet, saliva on lips. #close_up #tall #NONE #orgasm'
+- num: 18
+  text: 'She masturbates. She is clutching the sheets, toes curled. #pov #wide #NONE #squirt'
+- num: 19
+  text: 'She masturbates. She is inserting a finger in her anus. #back_view #wide #NONE #orgasm'
+- num: 20
+  text: 'She masturbates. She is reaching a climax, body shaking. #front_view #wide #NONE #squirt'
+Urination:
+- num: 1
+  text: 'She urinates. She is squatting, stream of urine. #side_view #wide #NONE'
+- num: 2
+  text: 'She urinates. She is standing, peeing on the floor. #front_view #wide #NONE'
+- num: 3
+  text: 'She urinates. She is sitting on a toilet, relaxed expression. #pov #wide #NONE'
+- num: 4
+  text: 'She urinates. She is peeing on the bed, wet sheets. #pov #wide #NONE'
+- num: 5
+  text: 'She urinates. She is lifting her skirt, stream falling. #front_view #wide #NONE'
+- num: 6
+  text: 'She urinates. She is peeing on his shoes, mischievous smile. #close_up #tall #He is standing.'
+- num: 7
+  text: 'She urinates. She is peeing in the shower, water mixing. #side_view #wide #NONE'
+- num: 8
+  text: 'She urinates. She is holding her clothes up, legs apart. #front_view #wide #NONE'
+- num: 9
+  text: 'She urinates. She is peeing on herself, soaked clothes. #front_view #wide #NONE'
+- num: 10
+  text: 'She urinates. She is peeing in a cup, focused look. #side_view #wide #NONE'
+- num: 11
+  text: 'She urinates. She is squatting in nature, grass beneath. #side_view #wide #NONE'
+- num: 12
+  text: 'She urinates. She is peeing on the floor, puddle forming. #pov #wide #NONE'
+- num: 13
+  text: 'She urinates. She is peeing while standing, stream arching. #side_view #wide #NONE'
+- num: 14
+  text: 'She urinates. She is peeing on his chest, wet skin. #pov #wide #NONE'
+- num: 15
+  text: 'She urinates. She is crossing her legs, trying to hold it. #front_view #wide #NONE'
+- num: 16
+  text: 'She urinates. She is peeing in a bath, yellowish water. #pov #wide #NONE'
+- num: 17
+  text: 'She urinates. She is peeing out of a dress, wet fabric. #front_view #wide #NONE'
+- num: 18
+  text: 'She urinates. She is squatting low, splashing sound. #back_view #wide #NONE'
+- num: 19
+  text: 'She urinates. She is peeing while looking at him. #front_view #wide #He is standing.'
+- num: 20
+  text: 'She urinates. She is peeing on a carpet, absorbent fabric. #pov #wide #NONE'
+Public Fellatio:
+- num: 1
+  text: 'She performs public fellatio. She is kneeling in a crowd, head moving. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 2
+  text: 'She performs public fellatio. She is hiding under a table, sucking. His penis is in her mouth. #pov #wide #NONE'
+- num: 3
+  text: 'She performs public fellatio. She is in a car, leaning over. His penis is in her mouth. #side_view #wide #He is sitting.'
+- num: 4
+  text: 'She performs public fellatio. She is in a restroom, against the wall. His penis is in her mouth. #front_view #tall #He is standing.'
+- num: 5
+  text: 'She performs public fellatio. She is wearing a dress, kneeling on the street. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She performs public fellatio. She is glancing around, nervous expression. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 7
+  text: 'She performs public fellatio. She is under a desk in an office. His penis is in her mouth. #pov #wide #NONE'
+- num: 8
+  text: 'She performs public fellatio. She is in a cinema, leaning over. His penis is in her mouth. #side_view #wide #He is sitting.'
+- num: 9
+  text: 'She performs public fellatio. She is in a park, hidden by bushes. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 10
+  text: 'She performs public fellatio. She is sucking loudly, saliva dripping. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 11
+  text: 'She performs public fellatio. She is holding his hips, pulling him in. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 12
+  text: 'She performs public fellatio. She is in a train, hidden by a coat. His penis is in her mouth. #side_view #wide #He is sitting.'
+- num: 13
+  text: 'She performs public fellatio. She is kneeling in a hallway, looking up. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She performs public fellatio. She is using her tongue on the tip. His penis is in her mouth. #close_up #tall #He is standing. #cum_in_mouth'
+- num: 15
+  text: 'She performs public fellatio. She is in a library, kneeling quietly. His penis is in her mouth. #side_view #wide #He is standing. #cum_in_mouth'
+- num: 16
+  text: 'She performs public fellatio. She is wrapping hair around her neck. His penis is in her mouth. #front_view #tall #He is standing. #cum_on_face'
+- num: 17
+  text: 'She performs public fellatio. She is peeking at others while sucking. His penis is in her mouth. #close_up #tall #He is standing. #orgasm'
+- num: 18
+  text: 'She performs public fellatio. She is in a fitting room, cramped space. His penis is in her mouth. #pov #tall #NONE #cum_in_mouth'
+- num: 19
+  text: 'She performs public fellatio. She is sucking deeply, cheeks hollow. His penis is in her mouth. #close_up #tall #He is standing. #cum_on_breasts'
+- num: 20
+  text: 'She performs public fellatio. She is kneeling on the floor. His penis is in her mouth. #front_view #wide #He is standing. #after_sex'
+Fellatio:
+- num: 1
+  text: 'She performs fellatio. She is kneeling, looking up at him. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 2
+  text: 'She performs fellatio. She is wrapping her lips tightly. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 3
+  text: 'She performs fellatio. She is using her tongue to swirl. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 4
+  text: 'She performs fellatio. She is sliding her head up and down. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 5
+  text: 'She performs fellatio. She is sucking hard, wet sounds. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 6
+  text: 'She performs fellatio. She is holding his balls in her hand. His penis is in her mouth. #pov #wide #NONE'
+- num: 7
+  text: 'She performs fellatio. She is staring into his eyes, blushing. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 8
+  text: 'She performs fellatio. She is deepening the penetration. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 9
+  text: 'She performs fellatio. She is licking the shaft from base to tip. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 10
+  text: 'She performs fellatio. She is gagging slightly, tears in eyes. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 11
+  text: 'She performs fellatio. She is rubbing the head with her tongue. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 12
+  text: 'She performs fellatio. She is sitting on her heels, focused. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 13
+  text: 'She performs fellatio. She is using both hands to stroke. His penis is in her mouth. #pov #wide #NONE'
+- num: 14
+  text: 'She performs fellatio. She is swirling her tongue around the rim. His penis is in her mouth. #close_up #tall #He is standing. #cum_in_mouth'
+- num: 15
+  text: 'She performs fellatio. She is panting between sucks. His penis is in her mouth. #front_view #wide #He is standing. #cum_in_mouth'
+- num: 16
+  text: 'She performs fellatio. She is licking the pre-cum. His penis is in her mouth. #close_up #tall #He is standing. #orgasm'
+- num: 17
+  text: 'She performs fellatio. She is pressing her chest against his thighs. His penis is in her mouth. #side_view #wide #He is standing. #cum_on_face'
+- num: 18
+  text: 'She performs fellatio. She is humming while sucking. His penis is in her mouth. #close_up #tall #He is standing. #cum_in_mouth'
+- num: 19
+  text: 'She performs fellatio. She is taking it all in, deep throat. His penis is in her mouth. #side_view #wide #He is standing. #orgasm'
+- num: 20
+  text: 'She performs fellatio. She is kneeling. His penis is in her mouth. #front_view #wide #He is standing. #after_sex'
+Missionary:
+- num: 1
+  text: 'She has missionary sex. She is lying on her back, legs spread. His penis is in her vagina. #pov #wide #NONE'
+- num: 2
+  text: 'She has missionary sex. She is wrapping her legs around his waist. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 3
+  text: 'She has missionary sex. She is arching her back, chest heaving. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 4
+  text: 'She has missionary sex. She is clutching his shoulders, nails digging in. His penis is in her vagina. #close_up #tall #He is lying on top of her.'
+- num: 5
+  text: 'She has missionary sex. She is looking up at him, blushing. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 6
+  text: 'She has missionary sex. She is pressing her hips upward. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 7
+  text: 'She has missionary sex. She is kissing him deeply, tongue entwined. His penis is in her vagina. #close_up #tall #He is lying on top of her.'
+- num: 8
+  text: 'She has missionary sex. She is shaking, head tossing side to side. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 9
+  text: 'She has missionary sex. She is holding his hands above her head. His penis is in her vagina. #pov #wide #NONE'
+- num: 10
+  text: 'She has missionary sex. She is panting, mouth slightly open. His penis is in her vagina. #close_up #tall #He is lying on top of her.'
+- num: 11
+  text: 'She has missionary sex. She is gripping the bedsheets tightly. His penis is in her vagina. #pov #wide #NONE'
+- num: 12
+  text: 'She has missionary sex. She is rubbing her chest against him. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 13
+  text: 'She has missionary sex. She is tilting her pelvis, maximizing contact. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 14
+  text: 'She has missionary sex. She is moaning, eyes half-closed. His penis is in her vagina. #close_up #tall #He is lying on top of her. #creampie'
+- num: 15
+  text: 'She has missionary sex. She is pulling him closer, arms around his neck. His penis is in her vagina. #front_view #wide #He is lying on top of her. #creampie'
+- num: 16
+  text: 'She has missionary sex. She is shivering with pleasure. His penis is in her vagina. #side_view #wide #He is lying on top of her. #squirt'
+- num: 17
+  text: 'She has missionary sex. She is biting her lip, enduring the sensation. His penis is in her vagina. #close_up #tall #He is lying on top of her. #orgasm'
+- num: 18
+  text: 'She has missionary sex. She is pushing her legs further back. His penis is in her vagina. #pov #wide #NONE #cum_on_stomach'
+- num: 19
+  text: 'She has missionary sex. She is sliding her hands down his back. His penis is in her vagina. #front_view #wide #He is lying on top of her. #creampie'
+- num: 20
+  text: 'She has missionary sex. She is lying on her back. His penis is in her vagina. #pov #wide #NONE #after_sex'
+Cowgirl:
+- num: 1
+  text: 'She has cowgirl position with spreading legs. She is sitting on top, bouncing up and down. His penis is in her vagina. #front_view #wide #He is lying down.'
+- num: 2
+  text: 'She has cowgirl position with spreading legs. She is leaning forward, breasts pressing against him. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 3
+  text: 'She has cowgirl position with spreading legs. She is arching her back, hands on her hips. His penis is in her vagina. #front_view #wide #He is lying down.'
+- num: 4
+  text: 'She has cowgirl position with spreading legs. She is looking down at him, seductive smile. His penis is in her vagina. #pov #wide #NONE'
+- num: 5
+  text: 'She has cowgirl position with spreading legs. She is gripping his chest for balance. His penis is in her vagina. #front_view #wide #He is lying down.'
+- num: 6
+  text: 'She has cowgirl position with spreading legs. She is grinding her hips in circles. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 7
+  text: 'She has cowgirl position with spreading legs. She is tossing her hair back, eyes closed. His penis is in her vagina. #front_view #wide #He is lying down.'
+- num: 8
+  text: 'She has cowgirl position with spreading legs. She is leaning back, hands on the bed. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 9
+  text: 'She has cowgirl position with spreading legs. She is riding fast, body shaking. His penis is in her vagina. #front_view #wide #He is lying down.'
+- num: 10
+  text: 'She has cowgirl position with spreading legs. She is squeezing her internal muscles. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 11
+  text: 'She has cowgirl position with spreading legs. She is panting, sweat glistening on skin. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 12
+  text: 'She has cowgirl position with spreading legs. She is holding his hands, pinning them down. His penis is in her vagina. #pov #wide #NONE'
+- num: 13
+  text: 'She has cowgirl position with spreading legs. She is rubbing her clitoris against him. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 14
+  text: 'She has cowgirl position with spreading legs. She is tilting her pelvis sharply. His penis is in her vagina. #side_view #wide #He is lying down. #creampie'
+- num: 15
+  text: 'She has cowgirl position with spreading legs. She is moaning loudly, head tilted back. His penis is in her vagina. #front_view #wide #He is lying down. #squirt'
+- num: 16
+  text: 'She has cowgirl position with spreading legs. She is slowing down, savoring the depth. His penis is in her vagina. #side_view #wide #He is lying down. #creampie'
+- num: 17
+  text: 'She has cowgirl position with spreading legs. She is shaking her breasts while moving. His penis is in her vagina. #front_view #wide #He is lying down. #orgasm'
+- num: 18
+  text: 'She has cowgirl position with spreading legs. She is gripping his thighs firmly. His penis is in her vagina. #pov #wide #NONE #cum_on_stomach'
+- num: 19
+  text: 'She has cowgirl position with spreading legs. She is looking at the penetration point. His penis is in her vagina. #pov #wide #NONE #creampie'
+- num: 20
+  text: 'She has cowgirl position with spreading legs. She is sitting on top. His penis is in her vagina. #front_view #wide #He is lying down. #after_sex'
+Doggy Style:
+- num: 1
+  text: 'She has doggy style sex. She is on all fours, hips raised. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 2
+  text: 'She has doggy style sex. She is arching her back deeply. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 3
+  text: 'She has doggy style sex. She is looking back at him, blushing. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 4
+  text: 'She has doggy style sex. She is gripping the pillow, face buried. His penis is in her vagina. #front_view #wide #He is behind her.'
+- num: 5
+  text: 'She has doggy style sex. She is shaking, legs trembling. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 6
+  text: 'She has doggy style sex. She is spreading her cheeks with her hands. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 7
+  text: 'She has doggy style sex. She is panting, saliva on the bed. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 8
+  text: 'She has doggy style sex. She is pushing her buttocks back. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 9
+  text: 'She has doggy style sex. She is moaning, echoing in the room. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 10
+  text: 'She has doggy style sex. She is clutching the mattress, knuckles white. His penis is in her vagina. #pov #wide #NONE'
+- num: 11
+  text: 'She has doggy style sex. She is tilting her head, eyes glazed. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 12
+  text: 'She has doggy style sex. She is sliding forward and backward. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 13
+  text: 'She has doggy style sex. She is feeling the deep penetration. His penis is in her vagina. #close_up #tall #He is behind her.'
+- num: 14
+  text: 'She has doggy style sex. She is shivering, body arching. His penis is in her vagina. #side_view #wide #He is behind her. #creampie'
+- num: 15
+  text: 'She has doggy style sex. She is gripping her own thighs. His penis is in her vagina. #back_view #wide #He is behind her. #creampie'
+- num: 16
+  text: 'She has doggy style sex. She is breathing heavily, chest heaving. His penis is in her vagina. #side_view #wide #He is behind her. #cum_on_stomach'
+- num: 17
+  text: 'She has doggy style sex. She is pressing her chest to the floor. His penis is in her vagina. #front_view #wide #He is behind her. #orgasm'
+- num: 18
+  text: 'She has doggy style sex. She is glancing over her shoulder. His penis is in her vagina. #side_view #wide #He is behind her. #creampie'
+- num: 19
+  text: 'She has doggy style sex. She is trembling at the point of climax. His penis is in her vagina. #back_view #wide #He is behind her. #squirt'
+- num: 20
+  text: 'She has doggy style sex. She is on all fours. His penis is in her vagina. #back_view #wide #He is behind her. #after_sex'
+Anal Sex:
+- num: 1
+  text: 'She has anal sex. She is lying on her stomach, hips raised. His penis is in her anal. #back_view #wide #He is behind her.'
+- num: 2
+  text: 'She has anal sex. She is arching her back, face flushed. His penis is in her anal. #side_view #wide #He is behind her.'
+- num: 3
+  text: 'She has anal sex. She is gripping the sheets, toes curled. His penis is in her anal. #pov #wide #NONE'
+- num: 4
+  text: 'She has anal sex. She is panting, eyes wide with intensity. His penis is in her anal. #close_up #tall #He is behind her.'
+- num: 5
+  text: 'She has anal sex. She is shaking, muscles tensing. His penis is in her anal. #back_view #wide #He is behind her.'
+- num: 6
+  text: 'She has anal sex. She is spreading her buttocks, showing the entry. His penis is in her anal. #back_view #wide #He is behind her.'
+- num: 7
+  text: 'She has anal sex. She is moaning softly, shivering. His penis is in her anal. #side_view #wide #He is behind her.'
+- num: 8
+  text: 'She has anal sex. She is pushing back against him. His penis is in her anal. #back_view #wide #He is behind her.'
+- num: 9
+  text: 'She has anal sex. She is clutching her own chest, breasts heaving. His penis is in her anal. #side_view #wide #He is behind her.'
+- num: 10
+  text: 'She has anal sex. She is biting a pillow to stifle screams. His penis is in her anal. #side_view #wide #He is behind her.'
+- num: 11
+  text: 'She has anal sex. She is tilting her pelvis upward. His penis is in her anal. #back_view #wide #He is behind her.'
+- num: 12
+  text: 'She has anal sex. She is sliding her hands up her own body. His penis is in her anal. #side_view #wide #He is behind her.'
+- num: 13
+  text: 'She has anal sex. She is experiencing a deep, full sensation. His penis is in her anal. #close_up #tall #He is behind her.'
+- num: 14
+  text: 'She has anal sex. She is trembling, body glistening with sweat. His penis is in her anal. #back_view #wide #He is behind her. #cum_in_ass'
+- num: 15
+  text: 'She has anal sex. She is looking back with a dazed expression. His penis is in her anal. #side_view #wide #He is behind her. #cum_in_ass'
+- num: 16
+  text: 'She has anal sex. She is pushing her hips forward and back. His penis is in her anal. #side_view #wide #He is behind her. #orgasm'
+- num: 17
+  text: 'She has anal sex. She is clutching his arms for support. His penis is in her anal. #back_view #wide #He is behind her. #cum_on_ass'
+- num: 18
+  text: 'She has anal sex. She is breathing in short, sharp gasps. His penis is in her anal. #close_up #tall #He is behind her. #cum_in_ass'
+- num: 19
+  text: 'She has anal sex. She is reaching a peak of pleasure. His penis is in her anal. #back_view #wide #He is behind her. #after_sex'
+- num: 20
+  text: 'She has anal sex. She is on all fours. His penis is in her anal. #back_view #wide #He is behind her. #orgasm'
+Reverse Cowgirl:
+- num: 1
+  text: 'She has reverse cowgirl sex. She is straddling him backwards, her back to his face, palms pressed on his thighs. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 2
+  text: 'She has reverse cowgirl sex. She is leaning back on her heels, hips lifted high off his groin. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 3
+  text: 'She has reverse cowgirl sex. She is arching her spine, hands planted on his knees for leverage. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 4
+  text: 'She has reverse cowgirl sex. She is bouncing slowly, glancing back over her shoulder. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 5
+  text: 'She has reverse cowgirl sex. She is showing the penetration point, hips rocking in small circles. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 6
+  text: 'She has reverse cowgirl sex. She is sitting with straight legs, knees squeezed together, thighs trembling. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 7
+  text: 'She has reverse cowgirl sex. She is leaning far back, fingers laced around his shins. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 8
+  text: 'She has reverse cowgirl sex. She is grinding downward, head thrown back, mouth open in a silent moan. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 9
+  text: 'She has reverse cowgirl sex. She is bracing one hand on the mattress and the other on his stomach. His penis is in her vagina. #side_view #wide #He is lying down.'
+- num: 10
+  text: 'She has reverse cowgirl sex. She is rising on her tiptoes, drawing him almost out, then sinking down. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 11
+  text: 'She has reverse cowgirl sex. She is pointing her toes, calves flexed, sweat tracing down her spine. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 12
+  text: 'She has reverse cowgirl sex. She is clenching her buttocks at climax, her whole body shuddering. His penis is in her vagina. #back_view #wide #He is lying down.'
+- num: 13
+  text: 'She has reverse cowgirl sex. She is twisting to look at his face beneath her thigh, biting her lip. His penis is in her vagina. #close_up #tall #He is lying down.'
+- num: 14
+  text: 'She has reverse cowgirl sex. She is riding fast, her hair whipping against his legs. His penis is in her vagina. #back_view #wide #He is lying down. #creampie'
+- num: 15
+  text: 'She has reverse cowgirl sex. She is bending backward over his knees, seen from below. His penis is in her vagina. #pov #wide #NONE #creampie'
+- num: 16
+  text: 'She has reverse cowgirl sex. She is pressing her buttocks flat against his face while rolling her hips. His penis is in her vagina. #side_view #wide #He is lying down. #squirt'
+- num: 17
+  text: 'She has reverse cowgirl sex. She is holding his feet against her shoulders, sinking down to the hilt. His penis is in her vagina. #side_view #wide #He is lying down. #orgasm'
+- num: 18
+  text: 'She has reverse cowgirl sex. She is sitting motionless, taking all of him, her cheek flushed. His penis is in her vagina. #back_view #wide #He is lying down. #cum_on_back'
+- num: 19
+  text: 'She has reverse cowgirl sex. She is collapsing backward onto his legs, arms limp at her sides. His penis is in her vagina. #side_view #wide #He is lying down. #creampie'
+- num: 20
+  text: 'She has reverse cowgirl sex. She is riding with her eyes rolled back, breasts swaying out of frame. His penis is in her vagina. #back_view #wide #He is lying down. #after_sex'
+Standing Sex:
+- num: 1
+  text: 'She has standing sex. She is pinned against the wall, one leg hooked over his hip. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 2
+  text: 'She has standing sex. She is lifted clean off the floor, arms locked around his neck. His penis is in her vagina. #front_view #tall #He is standing.'
+- num: 3
+  text: 'She has standing sex. She is bent over the desk, palms flat on the surface. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 4
+  text: 'She has standing sex. She is standing doggy style, back arched, hands gripping his shoulders. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 5
+  text: 'She has standing sex. She is facing him with both legs wrapped around his waist. His penis is in her vagina. #front_view #tall #He is standing.'
+- num: 6
+  text: 'She has standing sex. She is braced against the window, fogging the glass with her breath. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 7
+  text: 'She has standing sex. She is supported by his hands under her buttocks, heels dug into his thighs. His penis is in her vagina. #front_view #tall #He is standing.'
+- num: 8
+  text: 'She has standing sex. She is leaning forward over a chair back, fingers twisting the fabric. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 9
+  text: 'She has standing sex. She is wrapped around him in the doorway, one foot slipping off the floor. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 10
+  text: 'She has standing sex. She is seen from behind, his hand squeezing her hip to pull her back onto him. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 11
+  text: 'She has standing sex. She is staring into his eyes, nails digging into his shoulders. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 12
+  text: 'She has standing sex. She is looking down at where they are joined, sliding her legs higher. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She has standing sex. She is pressed chest to chest, his coat draped over her bare shoulders. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She has standing sex. She is straddling him standing, her back against the bookshelf. His penis is in her vagina. #front_view #wide #He is standing. #creampie'
+- num: 15
+  text: 'She has standing sex. She is bent over the kitchen counter, knees pressed apart. His penis is in her vagina. #side_view #wide #He is behind her. #creampie'
+- num: 16
+  text: 'She has standing sex. She is held upright by his belt, her own hands flat on his chest. His penis is in her vagina. #side_view #wide #He is standing. #orgasm'
+- num: 17
+  text: 'She has standing sex. She is trembling on her tiptoes, legs crossed to keep him deep. His penis is in her vagina. #front_view #wide #He is standing. #cum_on_stomach'
+- num: 18
+  text: 'She has standing sex. She is glancing back over her shoulder, eyes wet, lips parted. His penis is in her vagina. #back_view #wide #He is behind her. #creampie'
+- num: 19
+  text: 'She has standing sex. She is seen from his point of view, thighs trembling around his hips. His penis is in her vagina. #pov #wide #NONE #squirt'
+- num: 20
+  text: 'She has standing sex. She is grinding against him with their foreheads pressed together. His penis is in her vagina. #front_view #tall #He is standing. #after_sex'
+Paizuri:
+- num: 1
+  text: 'She gives him paizuri. She is squeezing her breasts together around him with both arms. His penis is between her breasts. #front_view #tall #He is sitting.'
+- num: 2
+  text: 'She gives him paizuri. She is kneeling between his legs, leaning forward to press harder. His penis is between her breasts. #side_view #wide #He is sitting.'
+- num: 3
+  text: 'She gives him paizuri. She is watching her cleavage swallow him, sliding up and down. His penis is between her breasts. #close_up #tall #He is sitting.'
+- num: 4
+  text: 'She gives him paizuri. She is standing over him, pressing him into her chest from above. His penis is between her breasts. #front_view #wide #He is lying down.'
+- num: 5
+  text: 'She gives him paizuri. She is crossing her arms to squeeze her nipples inward. His penis is between her breasts. #close_up #tall #He is sitting.'
+- num: 6
+  text: 'She gives him paizuri. She is arching her back, lifting her own breasts with both hands. His penis is between her breasts. #front_view #tall #He is sitting.'
+- num: 7
+  text: 'She gives him paizuri. She is sliding down and losing him, then pressing back with a laugh. His penis is between her breasts. #side_view #wide #He is standing.'
+- num: 8
+  text: 'She gives him paizuri. She is rolling her hips forward while milking with her chest. His penis is between her breasts. #front_view #wide #He is sitting.'
+- num: 9
+  text: 'She gives him paizuri. She is lowering her head to lick the tip between strokes. His penis is between her breasts. #close_up #tall #He is sitting.'
+- num: 10
+  text: 'She gives him paizuri. She is seen from below, her breasts flattening around him. His penis is between her breasts. #pov #wide #NONE'
+- num: 11
+  text: 'She gives him paizuri. She is straddling him standing, working with her chest. His penis is between her breasts. #front_view #wide #He is standing.'
+- num: 12
+  text: 'She gives him paizuri. She is slumped forward over him, smothering him with her soft breasts. His penis is between her breasts. #side_view #wide #He is sitting.'
+- num: 13
+  text: 'She gives him paizuri. She is biting her lip, cheeks puffed as she squeezes tighter. His penis is between her breasts. #close_up #tall #He is sitting.'
+- num: 14
+  text: 'She gives him paizuri. She is slick with oil, gliding in long strokes. His penis is between her breasts. #front_view #tall #He is sitting. #cum_on_breasts'
+- num: 15
+  text: 'She gives him paizuri. She is using one hand to keep him buried deep in her cleavage. His penis is between her breasts. #close_up #tall #He is sitting. #cum_on_breasts'
+- num: 16
+  text: 'She gives him paizuri. She is looking back over her shoulder while working backwards. His penis is between her breasts. #back_view #wide #He is sitting. #orgasm'
+- num: 17
+  text: 'She gives him paizuri. She is kneeling with her chest pressed flat against his stomach. His penis is between her breasts. #side_view #wide #He is sitting. #cum_on_breasts'
+- num: 18
+  text: 'She gives him paizuri. She is moaning against his skin, sweat making her cleavage slick. His penis is between her breasts. #close_up #tall #He is sitting. #cum_on_face'
+- num: 19
+  text: 'She gives him paizuri. She is lifting one breast with her palm to trap him deeper. His penis is between her breasts. #front_view #tall #He is sitting. #orgasm'
+- num: 20
+  text: 'She gives him paizuri. She is milking the final strokes, eyes rolling back. His penis is between her breasts. #close_up #tall #He is sitting. #after_sex'
+Handjob:
+- num: 1
+  text: 'She gives him a handjob. She is wrapping her fist around him, stroking up and down. His penis is in her hand. #close_up #tall #He is sitting.'
+- num: 2
+  text: 'She gives him a handjob. She is kneeling, using both hands in alternation. His penis is in her hand. #side_view #wide #He is sitting.'
+- num: 3
+  text: 'She gives him a handjob. She is looking up at his face while pumping steadily. His penis is in her hand. #front_view #wide #He is sitting.'
+- num: 4
+  text: 'She gives him a handjob. She is twisting her wrist at the top, thumb swiping over the tip. His penis is in her hand. #close_up #tall #He is sitting.'
+- num: 5
+  text: 'She gives him a handjob. She is standing beside him, palm working under his coat. His penis is in her hand. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She gives him a handjob. She is stroking through her spread fingers, palm held flat. His penis is in her hand. #close_up #tall #He is sitting.'
+- num: 7
+  text: 'She gives him a handjob. She is resting her cheek against his thigh as she works. His penis is in her hand. #side_view #wide #He is sitting.'
+- num: 8
+  text: 'She gives him a handjob. She is sliding all the way down to the base, then racing back up. His penis is in her hand. #close_up #tall #He is sitting.'
+- num: 9
+  text: 'She gives him a handjob. She is using her own wetness as lubricant, hips rocking. His penis is in her hand. #front_view #wide #He is sitting.'
+- num: 10
+  text: 'She gives him a handjob. She is seen from his point of view, her small hand wrapped tight. His penis is in her hand. #pov #wide #NONE'
+- num: 11
+  text: 'She gives him a handjob. She is stroking him under the warm bathwater. His penis is in her hand. #side_view #wide #He is sitting.'
+- num: 12
+  text: 'She gives him a handjob. She is working through the fabric of his boxers, teasing him. His penis is in her hand. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She gives him a handjob. She is pinching the head and shaking slowly. His penis is in her hand. #close_up #tall #He is sitting.'
+- num: 14
+  text: 'She gives him a handjob. She is resting her free hand on his stomach, watching him unravel. His penis is in her hand. #front_view #wide #He is sitting. #cum_on_hand'
+- num: 15
+  text: 'She gives him a handjob. She is humming softly, matching the rhythm of his breathing. His penis is in her hand. #close_up #tall #He is sitting. #cum_on_stomach'
+- num: 16
+  text: 'She gives him a handjob. She is sitting on the floor, jacking him over the edge of the bed. His penis is in her hand. #side_view #wide #He is lying down. #orgasm'
+- num: 17
+  text: 'She gives him a handjob. She is dragging her palm flat along the underside, slow. His penis is in her hand. #close_up #tall #He is sitting. #cum_on_hand'
+- num: 18
+  text: 'She gives him a handjob. She is gripping in a fist, flicking her wrist at the top. His penis is in her hand. #close_up #tall #He is standing. #cum_on_face'
+- num: 19
+  text: 'She gives him a handjob. She is leaning forward, her hair curtaining around his lap. His penis is in her hand. #side_view #wide #He is sitting. #orgasm'
+- num: 20
+  text: 'She gives him a handjob. She is milking him to the end, hand clamped over the tip. His penis is in her hand. #close_up #tall #He is sitting. #after_sex'
+Deepthroat:
+- num: 1
+  text: 'She deep throats him. She is taking him to the back of her throat, cheeks hollowed. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 2
+  text: 'She deep throats him. She is kneeling, neck arched back, tears welling at the corners of her eyes. His penis is in her throat. #side_view #wide #He is standing.'
+- num: 3
+  text: 'She deep throats him. She is gripping the base of his shaft, holding herself down on him. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 4
+  text: 'She deep throats him. She is gagging around him, her throat muscles working. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 5
+  text: 'She deep throats him. She is fondling his balls with the hand braced on his thigh. His penis is in her throat. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She deep throats him. She is staring up at him with watering eyes, palms flat on his thighs. His penis is in her throat. #front_view #wide #He is standing.'
+- num: 7
+  text: 'She deep throats him. She is bobbing deep in a slow rhythm, nose buried in his stomach. His penis is in her throat. #side_view #wide #He is standing.'
+- num: 8
+  text: 'She deep throats him. She is pulling his hips forward to take him deeper still. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 9
+  text: 'She deep throats him. She is holding his hips pinned, swallowing around him. His penis is in her throat. #front_view #wide #He is standing.'
+- num: 10
+  text: 'She deep throats him. She is seen from below, her chin resting against him. His penis is in her throat. #pov #wide #NONE'
+- num: 11
+  text: 'She deep throats him. She is standing and bending backward to take him down her throat. His penis is in her throat. #side_view #wide #He is sitting.'
+- num: 12
+  text: 'She deep throats him. She is pulling back with a wet pop, saliva stretching between them. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She deep throats him. She is pressing her whole face into his crotch and holding it there. His penis is in her throat. #close_up #tall #He is standing.'
+- num: 14
+  text: 'She deep throats him. She is nursing him deep, tongue wrapped around the shaft. His penis is in her throat. #close_up #tall #He is sitting. #cum_in_mouth'
+- num: 15
+  text: 'She deep throats him. She is trembling with her hands on the floor, throat stretched around him. His penis is in her throat. #side_view #wide #He is standing. #cum_in_mouth'
+- num: 16
+  text: 'She deep throats him. She is pinching her nose shut, cheeks puffed, then gasping free. His penis is in her throat. #close_up #tall #He is standing. #orgasm'
+- num: 17
+  text: 'She deep throats him. She is riding his face with her hands on his knees, throat full. His penis is in her throat. #side_view #wide #He is lying down. #cum_in_mouth'
+- num: 18
+  text: 'She deep throats him. She is drooling openly, saliva running down her chin. His penis is in her throat. #close_up #tall #He is standing. #cum_on_face'
+- num: 19
+  text: 'She deep throats him. She is taking him deep and glancing at who might be watching. His penis is in her throat. #front_view #wide #He is standing. #orgasm'
+- num: 20
+  text: 'She deep throats him. She is gulping at the end, jaw aching, lips swollen. His penis is in her throat. #close_up #tall #He is standing. #after_sex'
+Facesitting:
+- num: 1
+  text: 'She sits on his face. She is straddling his head, thighs framing his mouth. His face is pressed against her vulva. #front_view #wide #He is lying down.'
+- num: 2
+  text: 'She sits on his face. She is grinding down, rolling her hips in slow circles. His face is pressed against her vulva. #side_view #wide #He is lying down.'
+- num: 3
+  text: 'She sits on his face. She is leaning back on straight arms, bouncing on his mouth. His face is pressed against her vulva. #front_view #tall #He is lying down.'
+- num: 4
+  text: 'She sits on his face. She is holding her hair back, head thrown back, eyes shut. His face is pressed against her vulva. #front_view #wide #He is lying down.'
+- num: 5
+  text: 'She sits on his face. She is seen from below, her inner thighs closing over his nose. His face is pressed against her vulva. #pov #wide #NONE'
+- num: 6
+  text: 'She sits on his face. She is squatting low over him, heels lifted off the mattress. His face is pressed against her vulva. #side_view #wide #He is lying down.'
+- num: 7
+  text: 'She sits on his face. She is pressing both hands on his cheeks, opening his mouth wider. His face is pressed against her vulva. #close_up #tall #He is lying down.'
+- num: 8
+  text: 'She sits on his face. She is facing away, her buttocks smothering his face completely. His face is pressed against her vulva. #back_view #wide #He is lying down.'
+- num: 9
+  text: 'She sits on his face. She is riding his mouth while her own fingers pinch her nipples. His face is pressed against her vulva. #front_view #wide #He is lying down.'
+- num: 10
+  text: 'She sits on his face. She is lifting her hips and dropping hard, moaning into the room. His face is pressed against her vulva. #side_view #wide #He is lying down.'
+- num: 11
+  text: 'She sits on his face. She is leaning forward until her hair falls across his face. His face is pressed against her vulva. #close_up #tall #He is lying down.'
+- num: 12
+  text: 'She sits on his face. She is rocking slowly, her wetness spreading over his lips. His face is pressed against her vulva. #close_up #tall #He is lying down.'
+- num: 13
+  text: 'She sits on his face. She is sitting on his mouth while he stands her against the wall. His face is pressed against her vulva. #side_view #wide #He is standing.'
+- num: 14
+  text: 'She sits on his face. She is pinning his wrists with her ankles as she bounces. His face is pressed against her vulva. #front_view #wide #He is lying down. #squirt'
+- num: 15
+  text: 'She sits on his face. She is looking down at the shape of his nose under her, blushing. His face is pressed against her vulva. #close_up #tall #He is lying down. #cum_on_face'
+- num: 16
+  text: 'She sits on his face. She is rocking back and forth across his mouth, toes curled. His face is pressed against her vulva. #side_view #wide #He is lying down. #orgasm'
+- num: 17
+  text: 'She sits on his face. She is reaching climax, her thighs clamping his head shut. His face is pressed against her vulva. #front_view #tall #He is lying down. #squirt'
+- num: 18
+  text: 'She sits on his face. She is sitting sideways, sliding her vulva across his mouth. His face is pressed against her vulva. #side_view #wide #He is lying down. #cum_on_face'
+- num: 19
+  text: 'She sits on his face. She is perched at the bed edge, palms on the mattress beside his head. His face is pressed against her vulva. #front_view #wide #He is lying down. #orgasm'
+- num: 20
+  text: 'She sits on his face. She is sitting up straight, breathing hard, dripping onto his chin. His face is pressed against her vulva. #close_up #tall #He is lying down. #after_sex'
+Legs Up:
+- num: 1
+  text: 'She has missionary sex with her legs raised. She is lying flat with both legs lifted straight into the air. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 2
+  text: 'She has missionary sex with her legs raised. She is hooking her ankles behind his head. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 3
+  text: 'She has missionary sex with her legs raised. She is folding her knees to her chest, heels toward her shoulders. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 4
+  text: 'She has missionary sex with her legs raised. She is wrapping her calves around the back of his neck. His penis is in her vagina. #close_up #tall #He is lying on top of her.'
+- num: 5
+  text: 'She has missionary sex with her legs raised. She is holding her own thighs wide open with both hands. His penis is in her vagina. #pov #wide #NONE'
+- num: 6
+  text: 'She has missionary sex with her legs raised. She is pressing her heels into his hips to pull him deeper. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 7
+  text: 'She has missionary sex with her legs raised. She is resting her ankles on his shoulders, feet flexed. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 8
+  text: 'She has missionary sex with her legs raised. She is lifting off the bed, shoulders pinned, legs vertical. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 9
+  text: 'She has missionary sex with her legs raised. She is trembling, her knocking knees struggling to hold position. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 10
+  text: 'She has missionary sex with her legs raised. She is looking down at the steep angle of penetration. His penis is in her vagina. #pov #wide #NONE'
+- num: 11
+  text: 'She has missionary sex with her legs raised. She is standing with her back to him, legs wrapped high around his waist. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 12
+  text: 'She has missionary sex with her legs raised. She is lifted against the wall, thighs pinned above her head. His penis is in her vagina. #front_view #tall #He is standing.'
+- num: 13
+  text: 'She has missionary sex with her legs raised. She is lying at the bed edge, ankles flexed over the mattress. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 14
+  text: 'She has missionary sex with her legs raised. She is holding one leg up over his forearm, opened wide. His penis is in her vagina. #side_view #wide #He is lying on top of her. #creampie'
+- num: 15
+  text: 'She has missionary sex with her legs raised. She is pulling her knees wider, breathless, eyes wet. His penis is in her vagina. #front_view #wide #He is lying on top of her. #creampie'
+- num: 16
+  text: 'She has missionary sex with her legs raised. She is rocking her raised hips, thighs quivering. His penis is in her vagina. #side_view #wide #He is lying on top of her. #squirt'
+- num: 17
+  text: 'She has missionary sex with her legs raised. She is gripping the headboard, legs folded back past her head. His penis is in her vagina. #back_view #wide #He is lying on top of her. #orgasm'
+- num: 18
+  text: 'She has missionary sex with her legs raised. She is hugging her shins, chin tucked, taking him deeper. His penis is in her vagina. #front_view #wide #He is lying on top of her. #creampie'
+- num: 19
+  text: 'She has missionary sex with her legs raised. She is locking her legs around his head at climax. His penis is in her vagina. #close_up #tall #He is lying on top of her. #cum_on_stomach'
+- num: 20
+  text: 'She has missionary sex with her legs raised. She is slumping back, legs falling open, chest heaving. His penis is in her vagina. #front_view #wide #He is lying on top of her. #after_sex'
+Light Bondage:
+- num: 1
+  text: 'She is restrained. Her wrists are tied above her head with a red ribbon, legs spread wide. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 2
+  text: 'She is restrained. Her wrists are bound to the headboard with her own necktie. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 3
+  text: 'She is restrained. A silk blindfold covers her eyes, her lips parted and waiting. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 4
+  text: 'She is restrained. Her arms are pulled behind her back and cinched with a leather belt. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 5
+  text: 'She is restrained. Her ankles are roped apart at the corners of the bed. His penis is in her vagina. #pov #wide #NONE'
+- num: 6
+  text: 'She is restrained. A cloth gag is knotted over her mouth, muffled moans leaking out. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 7
+  text: 'She is restrained. Her wrists are cuffed together at her waist as she sits on his lap. His penis is in her vagina. #front_view #wide #He is sitting.'
+- num: 8
+  text: 'She is restrained. She is kneeling with her wrists bound behind her, chest pushed outward. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 9
+  text: 'She is restrained. Rope is wound in a spiral down her upper arms, knots sitting on her shoulders. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 10
+  text: 'She is restrained. A leather collar is buckled at her throat, its leash held in his fist. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 11
+  text: 'She is restrained. Her spread legs are held open by his shoulders at her hips. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 12
+  text: 'She is restrained. Her wrists are stacked together with plastic cable ties, slipping free. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 13
+  text: 'She is restrained. She is face down with her wrists pulled up to the small of her back. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 14
+  text: 'She is restrained. A scarf is knotted over her eyes and she turns toward the sound of his voice. His penis is in her vagina. #front_view #wide #He is standing. #creampie'
+- num: 15
+  text: 'She is restrained. Her hands are bundled inside her own rolled-off stockings, writhing. His penis is in her vagina. #side_view #wide #He is standing. #creampie'
+- num: 16
+  text: 'She is restrained. Her wrists are tied loosely so she can still pull him closer. His penis is in her vagina. #front_view #wide #He is standing. #orgasm'
+- num: 17
+  text: 'She is restrained. Her thighs are roped apart, every reaction on display. His penis is in her vagina. #pov #wide #NONE #creampie'
+- num: 18
+  text: 'She is restrained. Her wrists are bound to his wrists, holding her in a forced embrace. His penis is in her vagina. #front_view #wide #He is standing. #cum_on_stomach'
+- num: 19
+  text: 'She is restrained. She is shivering blindfolded, legs spread wide and dripping. His penis is in her vagina. #front_view #wide #NONE #squirt'
+- num: 20
+  text: 'She is restrained. Her bonds are loosened at climax and she collapses into his arms. His penis is in her vagina. #front_view #wide #He is standing. #after_sex'
+Tentacle Sex:
+- num: 1
+  text: 'She has tentacle sex. A thick tentacle is thrusting inside her, her hips are pinned in the air. A tentacle is inside her vagina. #front_view #wide #NONE'
+- num: 2
+  text: 'She has tentacle sex. She is bound by writhing limbs, arms held above her head. Tentacles are wrapped around her body. #front_view #wide #NONE'
+- num: 3
+  text: 'She has tentacle sex. She is lifted off the bed by slick coils, legs forced apart. A tentacle is inside her vagina. #side_view #wide #NONE'
+- num: 4
+  text: 'She has tentacle sex. She is arching with her mouth open, suckers pressed to her skin. Tentacles are wrapped around her body. #close_up #tall #NONE'
+- num: 5
+  text: 'She has tentacle sex. She is held on all fours by three coils, tail tip curling around her ankle. A tentacle is inside her vagina. #back_view #wide #NONE'
+- num: 6
+  text: 'She has tentacle sex. She is stroking one of the tentacles, her own hand tangled with it. A tentacle is rubbing her clitoris. #close_up #tall #NONE'
+- num: 7
+  text: 'She has tentacle sex. She is being flipped over mid-thrust, hair splaying across the sheets. A tentacle is inside her vagina. #side_view #wide #NONE'
+- num: 8
+  text: 'She has tentacle sex. She is wrapped head to toe, only her belly and thighs free and glistening. Tentacles are wrapped around her body. #front_view #wide #NONE'
+- num: 9
+  text: 'She has tentacle sex. She is clutching a tentacle against her chest, tears on her lashes. Tentacles are wrapped around her body. #close_up #tall #NONE'
+- num: 10
+  text: 'She has tentacle sex. She is spread by two coils while a third strokes her neck. Tentacles are wrapped around her body. #front_view #wide #NONE'
+- num: 11
+  text: 'She has tentacle sex. She is riding a thick tentacle that rises from the floor, hands on it for balance. A tentacle is inside her vagina. #front_view #wide #NONE'
+- num: 12
+  text: 'She has tentacle sex. She is seen from his point of view, tentacles presenting her opened body. A tentacle is inside her vagina. #pov #wide #NONE'
+- num: 13
+  text: 'She has tentacle sex. She is trembling on her elbows, a coil tightening around her waist each thrust. A tentacle is inside her vagina. #back_view #wide #NONE'
+- num: 14
+  text: 'She has tentacle sex. She is biting her own wrist to muffle her voice, sucker marks blooming on her thighs. Tentacles are wrapped around her body. #close_up #tall #NONE #orgasm'
+- num: 15
+  text: 'She has tentacle sex. She is cradling her own knees while a tentacle works between them. A tentacle is rubbing her clitoris. #side_view #wide #NONE #squirt'
+- num: 16
+  text: 'She has tentacle sex. She is being folded toward her heels, spine curved like a bow. A tentacle is inside her vagina. #front_view #wide #NONE #orgasm'
+- num: 17
+  text: 'She has tentacle sex. She is staring blankly, drool at the corner of her mouth, coils still moving. Tentacles are wrapped around her body. #close_up #tall #NONE #squirt'
+- num: 18
+  text: 'She has tentacle sex. She is reaching toward his outstretched hand while tentacles keep her in place. Tentacles are wrapped around her body. #front_view #wide #He is sitting. #orgasm'
+- num: 19
+  text: 'She has tentacle sex. She is shuddering as the tip swells inside her, belly bulging slightly. A tentacle is inside her vagina. #close_up #tall #NONE #squirt'
+- num: 20
+  text: 'She has tentacle sex. She is slumped over the coils, limbs loose, still impaled and twitching. A tentacle is inside her vagina. #back_view #wide #NONE #orgasm'
+Public Masturbation:
+- num: 1
+  text: 'She masturbates in public. She is touching herself under a desk, biting her hand to stay silent. #front_view #wide #He is sitting.'
+- num: 2
+  text: 'She masturbates in public. She is behind a curtain, one hand on her mouth, the other moving. #side_view #wide #NONE'
+- num: 3
+  text: 'She masturbates in public. She is on a train seat, skirt hiked, pretending to read a magazine. #front_view #wide #NONE'
+- num: 4
+  text: 'She masturbates in public. She is in a changing room, reflected in the mirror, fingers working. #side_view #wide #NONE'
+- num: 5
+  text: 'She masturbates in public. She is crouched in a stairwell, knees pressed to the concrete. #pov #wide #NONE'
+- num: 6
+  text: 'She masturbates in public. She is at a festival stall, back turned to the crowd, shoulders shaking. #back_view #wide #NONE'
+- num: 7
+  text: 'She masturbates in public. She is under a blanket on a sofa, eyes wide at the doorway. #close_up #tall #NONE'
+- num: 8
+  text: 'She masturbates in public. She is pressed against a locker, thigh lifted, uniform pushed aside. #front_view #wide #NONE'
+- num: 9
+  text: 'She masturbates in public. She is on a rooftop at dusk, hands trembling over herself. #side_view #wide #NONE'
+- num: 10
+  text: 'She masturbates in public. She is beside a sleeping partner, moving quietly and watching his face. #close_up #tall #He is lying down.'
+- num: 11
+  text: 'She masturbates in public. She is at a counter in a public bath, steam hiding her lower half. #front_view #wide #NONE'
+- num: 12
+  text: 'She masturbates in public. She is in a library aisle, hand inside her skirt, books shelved crooked. #side_view #wide #NONE'
+- num: 13
+  text: 'She masturbates in public. She is kneeling in a car seat, back against the window, breath fogging glass. #front_view #wide #NONE'
+- num: 14
+  text: 'She masturbates in public. She is hiding behind a locker room pillar, thighs rubbing together. #pov #wide #NONE #squirt'
+- num: 15
+  text: 'She masturbates in public. She is in a gym storeroom, still in her uniform, hips lifting. #side_view #wide #NONE #orgasm'
+- num: 16
+  text: 'She masturbates in public. She is at a desk in a lit office, blinds half closed, monitor glowing. #front_view #wide #NONE #squirt'
+- num: 17
+  text: 'She masturbates in public. She is in a tent, torchlight through the canvas, stifled moan. #close_up #tall #NONE #orgasm'
+- num: 18
+  text: 'She masturbates in public. She is in an elevator corner, back to the panel numbers, knees knocking. #front_view #wide #NONE #squirt'
+- num: 19
+  text: 'She masturbates in public. She is by a pool ladder, water rippling, glancing at the far shore. #side_view #wide #NONE #orgasm'
+- num: 20
+  text: 'She masturbates in public. She is slumped against a wall afterwards, fingers still and dripping. #close_up #tall #NONE #after_sex'
+Public Deep Kissing:
+- num: 1
+  text: 'She deep kisses him in public. They are under a doorway lantern, her hand on his nape. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 2
+  text: 'She deep kisses him in public. They are in a crowded platform, her forehead against his. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 3
+  text: 'She deep kisses him in public. She is on her tiptoes in an alley, his coat sleeve in her fist. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 4
+  text: 'She deep kisses him in public. They are at a cinema row, her hand over his mouth to muffle it. His penis is in her mouth. #close_up #tall #He is sitting.'
+- num: 5
+  text: 'She deep kisses him in public. She is bent over the counter of a closed shop, glass fogged. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She deep kisses him in public. They are under cherry blossoms at night, petals on their lips. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 7
+  text: 'She deep kisses him in public. She is in a fitting room, curtain half drawn, one shoe off. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 8
+  text: 'She deep kisses him in public. They are in a lift, her back to the mirror, eyes open. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 9
+  text: 'She deep kisses him in public. She is kneeling on a tatami by a shoji screen, hair spread. His penis is in her mouth. #side_view #wide #He is sitting.'
+- num: 10
+  text: 'She deep kisses him in public. They are behind a food stall curtain, her bib still on. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 11
+  text: 'She deep kisses him in public. She is on a park bench at dawn, his hand on the back of her neck. His penis is in her mouth. #front_view #wide #He is sitting.'
+- num: 12
+  text: 'She deep kisses him in public. They are in a stairwell landing, her skirt rumpled from the climb. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 13
+  text: 'She deep kisses him in public. She is at a rooftop water tank, wind lifting her hair across both faces. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She deep kisses him in public. They are in a corridor of lockers, bell ringing in the distance. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 15
+  text: 'She deep kisses him in public. She is on a ferry deck rail, sea behind her, cheeks wet. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 16
+  text: 'She deep kisses him in public. They are in a karaoke booth doorway, song still playing. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 17
+  text: 'She deep kisses him in public. She is on a night bus upper step, hand on the pole for balance. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 18
+  text: 'She deep kisses him in public. They are in a shrine corridor, lantern light on their joined mouths. His penis is in her mouth. #front_view #wide #He is standing. #orgasm'
+- num: 19
+  text: 'She deep kisses him in public. She is at a company party balcony, drink still in her hand. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 20
+  text: 'She deep kisses him in public. They are caught mid-kiss in a lit doorway, someone stops to look. His penis is in her mouth. #close_up #tall #He is standing. #after_sex'
+Exhibitionism:
+- num: 1
+  text: 'She exposes herself. She is standing in a lit window with her back to the street, skirt already up. #back_view #wide #NONE'
+- num: 2
+  text: 'She exposes herself. She is holding the coat open in an elevator, chin lifted, knees together. #front_view #wide #NONE'
+- num: 3
+  text: 'She exposes herself. She is bending to pick something up on a busy street, deliberately slow. #back_view #wide #NONE'
+- num: 4
+  text: 'She exposes herself. She is sitting cross-legged on a park bench, skirt spread beneath her. #front_view #wide #NONE'
+- num: 5
+  text: 'She exposes herself. She is peeling her shirt open beside a sleeping partner, biting her grin. #close_up #tall #He is lying down.'
+- num: 6
+  text: 'She exposes herself. She is walking down an office corridor carrying files, wearing nothing under. #side_view #wide #NONE'
+- num: 7
+  text: 'She exposes herself. She is at a laundromat window, palms flat on a machine, looking back. #back_view #wide #NONE'
+- num: 8
+  text: 'She exposes herself. She is pulling her skirt up an inch more each time the door chimes. #front_view #wide #NONE'
+- num: 9
+  text: 'She exposes herself. She is spread on a fire escape, city lights below, one shoe lost. #front_view #wide #NONE'
+- num: 10
+  text: 'She exposes herself. She is holding a towel just off her shoulder, dripping, unbothered. #close_up #tall #NONE'
+- num: 11
+  text: 'She exposes herself. She is opening a door to a queue of people, unapologetic, blushing. #front_view #wide #NONE'
+- num: 12
+  text: 'She exposes herself. She is kneeling at a shrine offering box, hands empty and open. #side_view #wide #NONE'
+- num: 13
+  text: 'She exposes herself. She is turning slowly in a lit storeroom aisle, arms outstretched. #front_view #wide #NONE'
+- num: 14
+  text: 'She exposes herself. She is sitting on a counter with legs apart, customers frozen mid-order. #front_view #wide #NONE'
+- num: 15
+  text: 'She exposes herself. She is at a locker room doorway, one finger hooking her strap. #close_up #tall #NONE'
+- num: 16
+  text: 'She exposes herself. She is walking a dark hallway towards a camera light, unhurried. #side_view #wide #NONE'
+- num: 17
+  text: 'She exposes herself. She is lifting her hem in a train window reflection, nobody else looking. #back_view #wide #NONE'
+- num: 18
+  text: 'She exposes herself. She is presenting herself to him in a doorway, hands behind her back. His penis is in her vagina. #front_view #wide #He is standing. #orgasm'
+- num: 19
+  text: 'She exposes herself. She is riding him by an open shutter, streetlight striping her skin. His penis is in her vagina. #front_view #wide #He is lying down. #squirt'
+- num: 20
+  text: 'She exposes herself. She is pressed to a glass door with both palms, watching her own reflection. His penis is in her vagina. #back_view #wide #He is behind her. #creampie'
+Masochism:
+- num: 1
+  text: 'She takes it roughly. She is gripping the sheets with a red mark blooming on her shoulder, tears streaking. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 2
+  text: 'She takes it roughly. She is crying out with a cloth tied over her mouth, eyes watering. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 3
+  text: 'She takes it roughly. She is held down by a hand in her hair, forehead pressed to the mattress. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 4
+  text: 'She takes it roughly. She is shaking with hips forced back against him, nails scratching his arm. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 5
+  text: 'She takes it roughly. She is begging with her tongue out, drool stringing to the pillow. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 6
+  text: 'She takes it roughly. She is spread wide with both ankles yanked back, spine arched hard. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 7
+  text: 'She takes it roughly. She is dazed, red fingers marks ringing her throat, mouth working soundlessly. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 8
+  text: 'She takes it roughly. She is taking him through the fabric of her skirt, hips bucking up. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 9
+  text: 'She takes it roughly. She is pushed onto her elbow and knee, held by the waistband. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 10
+  text: 'She takes it roughly. She is laughing through the pain, cheeks blotchy, hair stuck to her face. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 11
+  text: 'She takes it roughly. She is counting strokes on trembling fingers, bit raw at the tips. His penis is in her vagina. #close_up #tall #He is sitting.'
+- num: 12
+  text: 'She takes it roughly. She is bracing with her heels digging into his stomach, toes curling. His penis is in her vagina. #side_view #wide #He is lying on top of her.'
+- num: 13
+  text: 'She takes it roughly. She is blindfolded, flinching at every thrust, shoulders up by her ears. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She takes it roughly. She is propped on a chair seat, held by a wrist and pushed low. His penis is in her vagina. #side_view #wide #He is standing. #creampie'
+- num: 15
+  text: 'She takes it roughly. She is babbling apologies between gasps, hips still chasing him. His penis is in her vagina. #close_up #tall #He is standing. #creampie'
+- num: 16
+  text: 'She takes it roughly. She is with her own nails leaving four lines down her back, sweat in them. His penis is in her vagina. #back_view #wide #He is behind her. #orgasm'
+- num: 17
+  text: 'She takes it roughly. She is pinned flat by a forearm across her chest, eyes rolling. His penis is in her vagina. #front_view #wide #He is lying on top of her. #creampie'
+- num: 18
+  text: 'She takes it roughly. She is draped over his knee, skirt hiked, red palm print on her thigh. His penis is in her vagina. #back_view #wide #He is sitting. #cum_on_stomach'
+- num: 19
+  text: 'She takes it roughly. She is thanking him through sobs, thighs shaking as he keeps going. His penis is in her vagina. #close_up #tall #He is standing. #squirt'
+- num: 20
+  text: 'She takes it roughly. She is collapsed sideways, still joined, one eye open and glazed. His penis is in her vagina. #side_view #wide #He is lying down. #after_sex'
+Cum Drinking:
+- num: 1
+  text: 'She drinks his release. She is taking the tip into her mouth with both hands cupped underneath. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 2
+  text: 'She drinks his release. She is swallowing with her cheeks hollow, lashes wet. His penis is in her mouth. #close_up #tall #He is sitting.'
+- num: 3
+  text: 'She drinks his release. She is catching the rope of it on her tongue, head tilted back. His penis is in her mouth. #front_view #tall #He is standing.'
+- num: 4
+  text: 'She drinks his release. She is licking her fingers clean one by one, eyes on him. #close_up #tall #He is sitting.'
+- num: 5
+  text: 'She drinks his release. She is holding his wrist to keep him pressed to her mouth. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 6
+  text: 'She drinks his release. She is kneeling with her throat working, hand kneading her own thigh. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 7
+  text: 'She drinks his release. She is chasing the last drops along the shaft with her tongue. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 8
+  text: 'She drinks his release. She is spilling it down her chin and licking the trail back up. His penis is in her mouth. #close_up #tall #He is sitting.'
+- num: 9
+  text: 'She drinks his release. She is lying back with her mouth open, letting it fall onto her tongue. His penis is in her mouth. #pov #wide #NONE'
+- num: 10
+  text: 'She drinks his release. She is pooling it on her tongue and showing him before swallowing. His penis is in her mouth. #front_view #tall #He is standing.'
+- num: 11
+  text: 'She drinks his release. She is hoarding it with her hand over her lips, cheeks bulging. His penis is in her mouth. #close_up #tall #He is sitting.'
+- num: 12
+  text: 'She drinks his release. She is kissing him afterwards, tasting it between their mouths. His penis is in her mouth. #close_up #tall #He is sitting.'
+- num: 13
+  text: 'She drinks his release. She is sitting back with strings of it between her lips, dazed smile. His penis is in her mouth. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She drinks his release. She is pulling clean strokes off him with a fist while her mouth works. His penis is in her mouth. #side_view #wide #He is standing. #cum_in_mouth'
+- num: 15
+  text: 'She drinks his release. She is wiping her chin with the back of her hand and asking for more. His penis is in her mouth. #front_view #wide #He is standing. #cum_in_mouth'
+- num: 16
+  text: 'She drinks his release. She is cradling her own cupped palms to her mouth, drinking from them. #close_up #tall #He is sitting. #orgasm'
+- num: 17
+  text: 'She drinks his release. She is lying across his lap, throat up, swallowing without breaking contact. His penis is in her mouth. #side_view #wide #He is sitting. #cum_in_mouth'
+- num: 18
+  text: 'She drinks his release. She is threading her fingers through his hair, keeping his hips steady. His penis is in her mouth. #close_up #tall #He is standing. #cum_on_tongue'
+- num: 19
+  text: 'She drinks his release. She is blinking through lashes plastered with it, grinning wide. His penis is in her mouth. #close_up #tall #He is sitting. #cum_in_mouth'
+- num: 20
+  text: 'She drinks his release. She is cleaning him spotless, tongue sweeping in long slow passes. His penis is in her mouth. #side_view #wide #He is standing. #after_sex'
+Gangbang:
+- num: 1
+  text: 'She is in a gangbang. She is lying back on a mattress with thighs around two sets of hips, gangbang, multiple_boys. His penis is in her vagina. #front_view #wide #NONE'
+- num: 2
+  text: 'She is in a gangbang. She is kneeling at the edge of a bed with another man holding her hair, gangbang, multiple_boys. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 3
+  text: 'She is in a gangbang. She is standing with her arms held up by two pairs of hands, group_sex, multiple_boys. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 4
+  text: 'She is in a gangbang. She is on all fours with a hand on each hip steering her, gangbang, multiple_boys. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 5
+  text: 'She is in a gangbang. She is sitting on the lap of one man while another stands behind her neck, multiple_boys. His penis is in her vagina. #front_view #wide #He is sitting.'
+- num: 6
+  text: 'She is in a gangbang. She is spread by four hands on her shoulders and knees, gangbang, multiple_boys. His penis is in her vagina. #close_up #tall #NONE'
+- num: 7
+  text: 'She is in a gangbang. She is being lifted between two men, wrists pulled apart, feet off the floor, group_sex. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 8
+  text: 'She is in a gangbang. She is slumped against a headboard, legs over two pairs of shoulders, gangbang. His penis is in her vagina. #front_view #wide #He is sitting.'
+- num: 9
+  text: 'She is in a gangbang. She is facing the viewer with the chest of a man at her back and a hand across her belly, multiple_boys. His penis is in her vagina. #front_view #wide #He is behind her.'
+- num: 10
+  text: 'She is in a gangbang. She is turned to the side, mouth open at two directions at once, group_sex. His penis is in her mouth. #side_view #wide #He is standing.'
+- num: 11
+  text: 'She is in a gangbang. She is propped on her elbows, back arched, silhouettes crowding the light, gangbang. His penis is in her vagina. #back_view #wide #He is lying on top of her.'
+- num: 12
+  text: 'She is in a gangbang. She is holding the face of one man with both hands while her hips work another, gangbang. His penis is in her vagina. #close_up #tall #He is sitting.'
+- num: 13
+  text: 'She is in a gangbang. She is standing leaning back against a wall, hem up, surrounded at the waist, multiple_boys. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 14
+  text: 'She is in a gangbang. She is lying sideways, one leg hooked over an arm, eyes rolling, gangbang. His penis is in her vagina. #side_view #wide #He is lying down. #creampie'
+- num: 15
+  text: 'She is in a gangbang. She is riding with both hands on a shoulder in front and another behind, group_sex. His penis is in her vagina. #front_view #wide #NONE #creampie'
+- num: 16
+  text: 'She is in a gangbang. She is taking a pause with her tongue out, three shadows leaning in, gangbang. His penis is in her mouth. #close_up #tall #He is standing. #cum_on_face'
+- num: 17
+  text: 'She is in a gangbang. She is folded over a lap with her wrists caught behind, multiple_boys. His penis is in her vagina. #back_view #wide #He is sitting. #creampie'
+- num: 18
+  text: 'She is in a gangbang. She is shuddering with strings of fluid on her chin, gangbang, multiple_boys. His penis is in her mouth. #close_up #tall #He is standing. #cum_on_breasts'
+- num: 19
+  text: 'She is in a gangbang. She is draped across two laps, hair hanging to the floor, group_sex, gangbang. His penis is in her vagina. #front_view #wide #He is lying down. #squirt'
+- num: 20
+  text: 'She is in a gangbang. She is collapsed afterwards, marked and trembling, men still crowded around, gangbang. His penis is in her vagina. #side_view #wide #He is lying down. #after_sex'
+Erotic Tattoo:
+- num: 1
+  text: 'She is getting an erotic tattoo. She is lying face down while a needle traces a line across her lower back, torso_tattoo. His penis is in her vagina. #back_view #wide #He is sitting.'
+- num: 2
+  text: 'She is getting an erotic tattoo. She is sitting sideways with her belly exposed, a fresh curl of ink below her navel, lower_body_tattoo. His penis is in her vagina. #side_view #wide #He is sitting.'
+- num: 3
+  text: 'She is getting an erotic tattoo. She is holding her shirt up with her teeth, eyes on the artist, torso_tattoo. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 4
+  text: 'She is getting an erotic tattoo. She is wincing with her nails digging into her own thigh, floral_tattoo. #close_up #tall #He is sitting.'
+- num: 5
+  text: 'She is getting an erotic tattoo. She is on all fours with her back arched to reach the needle, tribal_tattoo. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 6
+  text: 'She is getting an erotic tattoo. She is leaning back on her elbows, thigh lifted for the artist, thigh_tattoo. His penis is in her vagina. #front_view #wide #NONE'
+- num: 7
+  text: 'She is getting an erotic tattoo. She is wiping excess ink from her hip with two fingers, lower_body_tattoo. #close_up #tall #He is sitting.'
+- num: 8
+  text: 'She is getting an erotic tattoo. She is straddling the lap of the artist to move his hand lower on her stomach, torso_tattoo. His penis is in her vagina. #front_view #wide #He is sitting.'
+- num: 9
+  text: 'She is getting an erotic tattoo. She is turning her head away, jaw clenched, needle on the inside of her thigh, thigh_tattoo. His penis is in her vagina. #side_view #wide #He is sitting.'
+- num: 10
+  text: 'She is getting an erotic tattoo. She is showing the fresh ink to a mirror, chest tilted up, chest_tattoo. His penis is in her vagina. #front_view #wide #NONE'
+- num: 11
+  text: 'She is getting an erotic tattoo. She is braced against a table with the paper-thin film still on her skin, torso_tattoo. His penis is in her vagina. #back_view #wide #He is standing.'
+- num: 12
+  text: 'She is getting an erotic tattoo. She is tracing the finished pattern on her own hip with a nail, lower_body_tattoo. #close_up #tall #He is sitting.'
+- num: 13
+  text: 'She is getting an erotic tattoo. She is lying with knees drawn up so the artist can reach her belly, floral_tattoo. His penis is in her vagina. #pov #wide #NONE'
+- num: 14
+  text: 'She is getting an erotic tattoo. She is biting her knuckle, shoulders tense, ink filling along her spine, tribal_tattoo. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 15
+  text: 'She is getting an erotic tattoo. She is holding her skirt aside with one hand and gripping the seat with the other, thigh_tattoo. His penis is in her vagina. #side_view #wide #He is sitting.'
+- num: 16
+  text: 'She is getting an erotic tattoo. She is laughing through the sting with her hair pinned off her neck, nape_tattoo. His penis is in her vagina. #back_view #wide #He is sitting.'
+- num: 17
+  text: 'She is getting an erotic tattoo. She is presenting the inked curve of her waist in profile, arms overhead, torso_tattoo. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 18
+  text: 'She is getting an erotic tattoo. She is rocking her hips into the buzz of the needle, lower_body_tattoo. His penis is in her vagina. #front_view #wide #He is sitting. #orgasm'
+- num: 19
+  text: 'She is getting an erotic tattoo. She is flexing to show the shading across her sternum, chest_tattoo, sweat on it. His penis is in her vagina. #close_up #tall #He is standing.'
+- num: 20
+  text: 'She is getting an erotic tattoo. She is cleaned and wrapped, sitting up dazed with the ink still wet, torso_tattoo. His penis is in her vagina. #front_view #wide #He is sitting. #after_sex'
+Being Filmed:
+- num: 1
+  text: 'She is being filmed. She is performing for a video_camera on a tripod, one hand smoothing her hair back. His penis is in her vagina. #front_view #wide #He is lying on top of her.'
+- num: 2
+  text: 'She is being filmed. She is posing toward a red recording light with her back arched, camera. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 3
+  text: 'She is being filmed. She is glancing at the monitor off-frame while she moves, video_camera. His penis is in her vagina. #side_view #wide #He is behind her.'
+- num: 4
+  text: 'She is being filmed. She is framing herself with both hands at her waist for the lens, camera. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 5
+  text: 'She is being filmed. She is wiping her mouth and facing the camera again, video_camera. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 6
+  text: 'She is being filmed. She is on a stool under a softbox light, tripod_camera in the foreground bokeh. His penis is in her vagina. #front_view #wide #He is sitting.'
+- num: 7
+  text: 'She is being filmed. She is turning to look over her shoulder at the lens, camera. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 8
+  text: 'She is being filmed. She is holding a pose with her thighs trembling, tripod holding the frame steady. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 9
+  text: 'She is being filmed. She is adjusting her strap with one hand, aware of the shutter clicking, camera. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 10
+  text: 'She is being filmed. She is lying back with her legs lifted for the camera angle, video_camera. His penis is in her vagina. #pov #wide #NONE'
+- num: 11
+  text: 'She is being filmed. She is mid-motion with a still frame catching her blurred hand, camera. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 12
+  text: 'She is being filmed. She is peeking at the playback screen over his shoulder, video_camera. His penis is in her vagina. #side_view #wide #He is sitting.'
+- num: 13
+  text: 'She is being filmed. She is gripping the headboard and not looking at the lens, tripod_camera. His penis is in her vagina. #back_view #wide #He is behind her.'
+- num: 14
+  text: 'She is being filmed. She is counting seconds with her fingers in front of the camera, video_camera. His penis is in her mouth. #close_up #tall #He is standing.'
+- num: 15
+  text: 'She is being filmed. She is posing sideways to show her profile line for the shot, camera. His penis is in her vagina. #side_view #wide #He is standing.'
+- num: 16
+  text: 'She is being filmed. She is catching her breath with the light still in her eyes, video_camera. His penis is in her vagina. #front_view #wide #He is sitting. #orgasm'
+- num: 17
+  text: 'She is being filmed. She is pointing at the camera and daring whoever is holding it, camera. His penis is in her vagina. #front_view #wide #He is standing.'
+- num: 18
+  text: 'She is being filmed. She is arching into the close frame with both hands behind her head, close-up. His penis is in her vagina. #close_up #tall #He is lying on top of her. #cum_on_face'
+- num: 19
+  text: 'She is being filmed. She is presenting her marked skin to the lens with both palms open, video_camera. His penis is in her vagina. #front_view #wide #He is standing. #creampie'
+- num: 20
+  text: 'She is being filmed. She is slumped after the take, the red light still on, camera. His penis is in her vagina. #side_view #wide #He is lying down. #after_sex'

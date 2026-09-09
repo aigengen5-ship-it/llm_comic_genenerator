@@ -1,0 +1,19 @@
+# llm_comic_gen — 만화 생성 독립 환경 (python 3.11+)
+openai>=1.40
+# [2026-09-07] plot.json ollama_enb=yes 경로용 파이썬 클라이언트.
+#   주의: pip "ollama"는 클라이언트뿐 — 서버 바이너리는 별도(공식 tgz → bin/ollama serve)
+ollama>=0.4
+PyYAML>=6.0          # data/cut.yaml 레이아웃 + [2026-09-09] local_settings.yaml(로컬 전용 수위/LoRA/민감 어휘)
+Pillow>=10.0
+
+# [2026-09-08] --special(local progress/ 포맷 어댑터 novel_progress.py)은 stdlib(json/glob/re)만 씁니다 — 추가 설치 없음.
+# [2026-09-09] 화면 문법 폰트 자동 다운로드(--get-fonts)는 stdlib urllib만 씁니다 — 추가 설치 없음.
+#   글자 자체를 그리는 것은 이미 Pillow 안의 일입니다(Pillow >= 10.0, stroke_width 지원).
+
+# [전용 LLM 서빙(llm_server.py)只用 — 기본 파이프라인엔 불필요]
+# GPU offload는 해당 빌드로 재설치해야 한다(README '전용 LLM 서빙' 참고):
+#   CUDA: CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python
+#   ROCm: CMAKE_ARGS="-DGGML_HIP=on"  pip install llama-cpp-python
+# llama-cpp-python>=0.3
+# fastapi>=0.110
+# uvicorn>=0.30

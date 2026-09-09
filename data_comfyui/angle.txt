@@ -1,0 +1,66 @@
+#NOPOV#거울이나 유리에 두 사람의 모습이 반사되어 보이는 구도#landscape, reflection, mirror, looking at reflection
+#NOPOV#계단이나 경사로에서 한 명은 위에 한 명은 아래에 서서 마주보는 구도#portrait, high contrast, height difference, one looking down, one looking up
+#NOPOV#공중에서 수직으로 완전히 내려다보는 탑 뷰 부감 구도#square, directly above, overhead shot, lying on back
+#NOPOV#광각 왜곡이 들어가 화면 가장자리가 휘어보이는 어안 렌즈 구도#square, fisheye, wide angle, close-to-camera
+#NOPOV#나란히 바닥에 앉아 정면을 보는 구도#landscape, sitting, side-by-side, looking at viewer
+#NOPOV#두 사람의 눈이나 입술 부분만 가로로 길게 잘라낸 익스트림 클로즈업 구도#landscape, extreme close-up, cropped face, focus on eyes, side-by-side
+#NOPOV#두 사람의 얼굴만 화면에 꽉 차게 나오는 클로즈업 구도#landscape, face-to-face, close-up, face focus, profile
+#NOPOV#두 캐릭터가 화면의 양쪽 끝 모서리에 아슬아슬하게 걸쳐 있는 구도#landscape, pan, wide shot, far apart, characters at edges
+#NOPOV#둘 다 벽에 등을 기대고 나란히 바닥에 앉아 앞을 보는 구도#landscape, sitting, leaning against wall, side-by-side, looking forward
+#NOPOV#땅바닥에서 하늘을 향해 극단적으로 올려다보는 웜즈 아이 뷰 구도#landscape, worm's-eye view, extreme low angle, from below, foreshortening
+#NOPOV#마주보고 무릎을 꿇고 앉아있는 구도#landscape, face-to-face, kneeling, profile
+#NOPOV#마주보고 선 두 사람의 옆모습이 역광으로 인해 실루엣으로만 처리된 구도#landscape, face-to-face, profile, silhouette, backlighting
+#NOPOV#무릎부터 머리까지 두 사람의 전신에 가깝게 잡히는 구도#landscape, cowboy_shot, standing
+#NOPOV#바닥에 나란히 등을 대고 누워 천장을 보는 구도#landscape, lying on back, from above, looking up, sleeping
+#NOPOV#바닥에 엎드려 정면을 쳐다보는 구도#landscape, lying on stomach, looking at viewer, front view
+#NOPOV#비대칭적으로 한 명이 화면을 크게 채우고 한 명은 작게 나오는 구도#landscape, asymmetry, depth of field, one in foreground, one in background
+#NOPOV#서로 거울을 보듯 완벽하게 똑같은 자세로 마주선 측면 대칭 구도#square, symmetry, face-to-face, standing, full body, profile
+#NOPOV#서로 등을 맞대고 정면을 쳐다보는 스탠딩 구도#portrait, back-to-back, standing, looking at viewer
+#NOPOV#서로 등지고 바닥에 앉아 다른 곳을 쳐다보는 구도#square, back-to-back, sitting, looking away
+#NOPOV#서로 얼굴을 마주보고 서 있는 측면 구도#landscape, face-to-face, profile, standing
+#NOPOV#실루엣만 어둡게 표현되고 역광이 비추는 구도#landscape, silhouette, backlighting, contrast
+#NOPOV#아래에서 두 사람을 올려다보아 원근감이 과장된 로우 앵글 구도#portrait, from below, low angle, looking down, foreshortening
+#NOPOV#아주 넓은 풍경 속에 두 사람의 전신이 작게 배치된 와이드 시네마틱 구도#landscape, wide shot, extreme distant, scenery, full body, side-by-side
+#NOPOV#앞뒤로 겹쳐 서서 둘 다 정면을 바라보는 구도#portrait, one behind another, looking at viewer, upper body
+#NOPOV#어깨부터 정수리까지만 보일 정도로 바싹 다가간 초근접 구도#square, extreme close-up, face focus, straight-on
+#NOPOV#얼굴은 화면 밖으로 잘리고 두 사람의 하반신에만 초점이 맞춰진 구도#landscape, lower body, focus on legs, head out of frame
+#NOPOV#위에서 두 사람을 비스듬히 내려다보는 하이 앵글 구도#landscape, from above, high angle, looking up
+#NOPOV#키 차이가 나는 두 사람이 마주보는 상반신 구도#portrait, face-to-face, height difference, profile, cowboy_shot
+#NOPOV#하늘 높은 곳에서 땅을 향해 극단적으로 내려다보는 버즈 아이 뷰 구도#landscape, bird's-eye view, extreme high angle, from above, foreshortening
+#NOPOV#한 명은 눕고 한 명은 그 옆에 앉아 내려다보는 구도#portrait, one lying down, one sitting, from above, looking down
+#NOPOV#한 명은 똑바로 눕고 한 명은 역방향으로 누워 정수리를 맞댄 대칭 구도#portrait, head-to-head, one upside down, lying on back, from above, symmetry
+#NOPOV#한 명은 바닥에 주저앉고 한 명은 서 있는 상하 대비 구도#portrait, one sitting, one standing, high contrast
+#NOPOV#한 명은 웅크려 앉고 한 명은 그 주위에 서서 내려다보는 상하 구도#portrait, one sitting, squatting, one standing, from above
+#NOPOV#한 명은 정면을 보고 다른 한 명은 뒤돌아서 어깨너머로 보는 구도#portrait, one looking at viewer, one looking back, over the shoulder
+#NOPOV#한 명의 등 뒤로 카메라가 위치해 앞사람만 명확히 보이는 숄더뷰 구도#landscape, over the shoulder, from behind, depth of field, face-to-face
+#NOPOV#한 명의 어깨 너머로 초점이 흐릿한 다른 사람이 보이는 심도 구도#landscape, depth of field, blurry background, over the shoulder, focus on foreground
+#NOPOV#한 명의 얼굴은 화면 밖으로 잘리고 다른 한 명에게만 초점이 맞은 구도#portrait, head out of frame, focus on another, asymmetry
+#NOPOV#한 사람은 화면에 아주 가깝게 한 사람은 멀리 흐릿하게 배치된 심도 강조 구도#landscape, depth of field, foreground focus, blurry background, distance
+#NOPOV#한 사람의 다리 사이 공간으로 다른 사람이 보이는 투시 구도#portrait, framed by legs, from below, one in background, depth of field
+#NOPOV#화면 양 옆으로 거리를 두고 나란히 서 있는 와이드 구도#landscape, wide shot, standing, far apart, side-by-side
+#NOPOV#화면을 분할하여 두 사람의 표정이나 시점을 동시에 보여주는 컷인 구도#landscape, split screen, multiple views, close-up
+#NOPOV#화면이 사선으로 기울어진 역동적인 더치 앵글 구도#landscape, dutch angle, dynamic angle, cowboy_shot
+#POV#나란히 누운 상태에서 등을 돌리고 모로 누운 상대를 바라보는 1인칭 구도#landscape, pov, from side, lying on side, from behind, looking away
+#POV#내 앞을 걸어가는 상대방의 뒷모습을 따라가며 보는 1인칭 구도#landscape, pov, from behind, walking, distance, full body
+#POV#내가 엎드리거나 주저앉은 상대를 위에서 내려다보는 구도#portrait, pov, from above, low angle, looking up at viewer, sitting
+#POV#뒤돌아보는 상대방의 얼굴 절반만 보이는 1인칭 측후면 구도#portrait, pov, from behind, looking back, profile, close-up
+#POV#등 돌린 상대방의 뒷모습을 바라보는 1인칭 구도#portrait, pov, from behind, looking away
+#POV#등을 돌리고 서 있는 상대방의 뒷모습을 바라보는 1인칭 구도#portrait, pov, from behind, standing, looking away, full body
+#POV#멀리 떨어져 서 있는 상대방을 1인칭으로 바라보는 와이드 구도#landscape, pov, wide shot, distance, full body
+#POV#멀리 서 있는 상대방을 1인칭으로 바라보는 롱샷 구도#landscape, pov, wide shot, extreme distant, full body
+#POV#문틈이나 좁은 시야를 통해 상대방을 몰래 지켜보는 듯한 1인칭 관음 구도#portrait, pov, voyeurism, framed, depth of field, distance
+#POV#바닥에 쓰러지거나 누운 상태로 위에서 나를 내려다보는 상대를 올려다보는 1인칭 구도#portrait, pov, from below, looking down at viewer, standing, low angle
+#POV#바닥에 엎드려 있는 상대방을 뒤에서 바라보는 1인칭 구도#landscape, pov, from behind, lying on stomach, looking away, from above
+#POV#상대방의 가슴이나 상체 상단에 시선이 고정되어 얼굴이 잘린 1인칭 하이앵글 구도#portrait, pov, from above, focus on torso, head out of frame, close-up
+#POV#상대방의 쇄골이나 상체에 초점이 맞춰져 얼굴이 잘린 1인칭 구도#portrait, pov, focus on torso, head out of frame, close-up
+#POV#상대방의 어깨 너머로 앞을 바라보는 3인칭 백뷰 게임 시점 같은 구도#landscape, pov, from behind, third-person view, over the shoulder
+#POV#상대방의 얼굴이 화면을 가득 채우는 1인칭 클로즈업 구도#square, pov, close-up, face focus, eye contact
+#POV#상대방의 옆모습을 물끄러미 바라보는 1인칭 측면 구도#landscape, pov, profile, from side, looking away, close-up
+#POV#상대방의 허벅지나 다리에 초점이 맞춰진 1인칭 로우 앵글 구도#portrait, pov, from below, focus on legs, face out of frame
+#POV#상대방이 고개를 숙이고 있어 정수리와 윗머리가 주로 보이는 1인칭 하이앵글 구도#portrait, pov, from above, looking down, high angle, focus on head
+#POV#상대방이 나를 위에서 내려다보는 구도#portrait, pov, from below, high angle, looking down at viewer
+#POV#상대방이 내 옆에 나란히 누워 나를 쳐다보는 1인칭 측면 구도#landscape, pov, lying on side, face-to-face, eye contact
+#POV#상대방이 내 옆에 주저앉아 나를 빤히 쳐다보는 1인칭 로우앵글 구도#landscape, pov, from below, sitting, looking at viewer, face-to-face
+#POV#상대방이 등 뒤를 돌아보며 어깨 너머로 나를 쳐다보는 구도#portrait, pov, looking back, over the shoulder, eye contact
+#POV#상대방이 허리를 숙여 내 쪽으로 얼굴을 가까이 들이미는 1인칭 정면 구도#portrait, pov, straight-on, leaning forward, close-up, looking at viewer
+#POV#어두운 방 안에서 누군가 나를 지켜보는 듯한 심도 깊은 1인칭 구도#landscape, pov, looking at viewer, depth of field, blurry foreground

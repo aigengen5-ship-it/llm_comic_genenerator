@@ -1,0 +1,36 @@
+{
+  "protagonist": {
+    "name": "호시노 아야",
+    "age": 20,
+    "sex": "여자",
+    "personality_real": "차분함, 렌 앞에서만 말이 느려진다",
+    "job": "꽃집 직원",
+    "job_attribute": "긍지",
+    "objective": "가게를 지키기",
+    "happiness": 62,
+    "hair_color": "black hair",
+    "hair_style": "short hair, bob cut",
+    "eye_color": "brown eyes",
+    "skin_color": "fair skin",
+    "face_style": "blushing, shy smile, surprised",
+    "acc": "floral apron",
+    "breasts_size": "medium_breasts (가벼운 압박)",
+    "hip_size": "narrow_hips",
+    "body_size": "slim",
+    "sex_count": 0,
+    "masturbation_count": 1,
+    "patting_count": 1,
+    "clothes": "꽃집 앞치마를 두른 린넨 원피스",
+    "personality_text": "렌의 셔터음을 기다리게 되었다",
+    "love_value": 55
+  },
+  "partner": {
+    "name": "카미유 렌",
+    "age": 24,
+    "sex": "남자",
+    "job": "사진작가",
+    "appearance": "마름, 검은 짧은 머리, 회색 눈, 창백한 피부",
+    "personality": "온화함, 셔터 뒤에 숨어 마음을 말한다",
+    "clothes": "카메라와 낡은 코트"
+  }
+}

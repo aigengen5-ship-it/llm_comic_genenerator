@@ -780,6 +780,39 @@ _EMOTIF_HINTS = (("anger", ("짜증", "젠장", "으으윽", "분노", "이런",
 _EMOTIF_RE = re.compile(r"^(anger|surprise|sweat|heart|gloom|sparkle|question)$", re.I)
 
 
+# [2026-09-09] 화면 감정(이모티콘 7종) → 렌더 표정 태그. 화면에 보이는 감정과 그림의 표정이
+#   같은 말이어야 한다. 이게 없으면 회차 태그셋이 고른 **한 표정**이 모든 컷에 붙는다(아헤가오화).
+_EMO_FACE_TAGS = {
+    "anger":    "angry, furrowed brow, angry shout",
+    "surprise": "surprised, wide eyes, open mouth",
+    "sweat":    "uneasy sweat, sweat drop, wavy mouth",
+    "heart":    "lovey, blushing, soft smile",
+    "gloom":    "sad, downcast eyes, wavy mouth",
+    "sparkle":  "happy, excited, sparkling eyes, open mouth",
+    "question": "confused, tilted head, open mouth",
+}
+
+
+def _panel_face_emotion(panel) -> str:
+    """이 컷의 표정 key — 주인공 풍선의 감정이 우선, 없으면 화면 텍스트에서 추정한다."""
+    lines = (panel or {}).get("lines") or []
+    me = str(getattr(config, "name", "") or "").strip()
+    for b in lines:
+        e = str((b or {}).get("emo") or "")
+        if not _EMOTIF_RE.fullmatch(e or ""):
+            continue
+        who = str((b or {}).get("who") or "")
+        if not me or who == me:
+            return e
+    for b in lines:                                     # 화자 불문(1인 화면이 기본) — 남아 있는 감정 사용
+        e = str((b or {}).get("emo") or "")
+        if _EMOTIF_RE.fullmatch(e or ""):
+            return e
+    txt = " ".join([str((b or {}).get("text") or "") for b in lines]
+                   + [str((panel or {}).get("caption_ko") or "")])
+    return _emo_guess(txt) if txt.strip() else ""
+
+
 def _emo_guess(text: str) -> str:
     """대사 텍스트 → 감정 키(모르면 ""). 표시가 애매하면 그냥 안 그린다."""
     t = str(text or "")
@@ -1877,8 +1910,13 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     #   '2명'으로 해석). 청년향은 주인공 혼자가 기본 — 헤더는 always "1girl/1boy, solo",
     #   상대방은 POV 컷의 OBSERVER(손/팔)로만 들어온다.
     is_pov = camera_view == "pov"
+    # [2026-09-09] 컷의 감정을 표정 태그로 넘긴다 — 예전은 ""(빈 값)를 줘서 회차 고정 표정에 100% 밀렸다
+    emo_key = _panel_face_emotion(panel)
+    step_expression = _EMO_FACE_TAGS.get(emo_key, "")
+    if emo_key:
+        pose_text = re.sub(r",?\s*\((?:ahegao|heart-shaped pupils|rolling eyes)\)(?::[\d.]+\)?)?", "", pose_text)
     tag_block = anima_gen._build_tag_block(ep_idx, pose_text, camera_view, aspect_ratio,
-                                           position_sentence, "", is_side=False,
+                                           position_sentence, step_expression, is_side=False,
                                            climax_tag=climax_tag,
                                            clothes_override=str(panel.get("clothes") or ""),
                                            partner_block=is_pov, observer_block=is_pov)

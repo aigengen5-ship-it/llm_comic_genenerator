@@ -29,3 +29,8 @@ data/fonts/
 
 # 로컬 전용 설계 메모(어른 태그 어휘 참고록 — 코드와 무관, 공개 배송에서 제외)
 order/additional.md
+
+# 로컬 테스트 입력(생성 실행이 덮어쓰는 개인 시트·본문) — 샘플 ep01/sheet01만 배송합니다
+inputs/*_amd.txt
+inputs/sheet_*.txt
+!inputs/sheet01.txt

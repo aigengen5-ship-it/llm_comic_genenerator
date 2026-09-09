@@ -488,6 +488,30 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 - 원하시는 폰트가 있으면 `data/fonts/GowunBatang-Bold.ttf`(설명), `data/fonts/Jua-Regular.ttf`(대사) 같은 **파일명으로 넣기만** 하면 우선 사용됩니다.
 - 네 종류 모두 OFL이라 재배포·임베딩이 자유롭습니다. 맑은 고딕 같은 설치본은 **읽기만** 가능하니 repo에 함께 넣지 마세요.
 
+### 3-8b) 표정은 컷마다 — 회차 고정 표정(아헤가오화) 방지
+
+[2026-09-09] 실측:generated 페이지의 표정이 전부 아헤가오였습니다. 원인은 화면 문법이 아니라 **태그 배선**이었습니다.
+
+- 회차 태그셋 LLM이 `face`(회차 표정 1개)와 `expressions`(5개)를 정하면 `anima_gen._build_tag_block`이 그것을 **모든 컷**에 붙였습니다(실측 `face_tag = ahegao, wide eyes, tongue out, rolling eyes, flushed face`).
+- 컷 스크립트는 컷의 감정(`emo`)을 이미 만들고 있었는데, 프롬프트에 넘기는 자리에 **빈 문자열**이 들어가 있었습니다.
+
+| 지금 동작 | 근거 |
+|---|---|
+| 컷의 감정(7종) → 표정 태그로 번역해 그 컷의 얼굴로 쓴다 | `comic_gen._EMO_FACE_TAGS` / `_panel_face_emotion`(주인공 풍선 감정 우선, 없으면 화면 텍스트에서 추정) |
+| 컷 표정이 있으면 회차 표정은 물러난다 | `anima_gen._build_tag_block` — `[AAA FACE]`/`[AAA EXPRESSION]`에서 회차 톤 제외 |
+| 극단 표정(ahegao·heart-shaped pupils·rolling eyes·tongue out 등)은 **클라이맥스 컷에서만** 통과 | `anima_gen._calm_face` — 일상 컷까지 물드는 것을 막는다 |
+| 태그셋 LLM 안내: 회차 표정은 평범하게, `expressions` 5개는 서로 다른 감정으로 | `anima_gen` 태그셋 프롬프트 |
+
+| 감정 | 화면 이모티콘 | 렌더 표정 태그 |
+|---|---|---|
+| anger | ✕ 분노 | `angry, furrowed brow, angry shout` |
+| surprise | ! 놀람 | `surprised, wide eyes, open mouth` |
+| sweat | 땀 | `uneasy sweat, sweat drop, wavy mouth` |
+| heart | 하트 | `lovey, blushing, soft smile` |
+| gloom | 음영 | `sad, downcast eyes, wavy mouth` |
+| sparkle | 반짝 | `happy, excited, sparkling eyes, open mouth` |
+| question | ? | `confused, tilted head, open mouth` |
+
 ### 3-9) 로컬 전용 입력 — 단편 생성기 `progress/` 포맷 (`--special`)
 
 `llm_shortnovel_generator_gui`가 `progress/`에 떨어뜨리는 산출물을 **변환 없이** 바로 받으실 수 있습니다.
@@ -583,6 +607,7 @@ log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기�
 | 대사가 길어 풍선이 세로로 길다 | 풍선 폭이 컷의 20%라 접히는 줄 수가 많습니다 — 대사를 짧게 쓰시거나 컷을 크게(페이지 수 ↑) 써 주세요. `…`로 잘리지는 않습니다 |(풍선은 최대 2개) |
 | 에필로그가 안 붙는다 | `--no-epilogue`가 켜져 있거나, 이 회차가 회차집의 마지막 회차가 아니거나, 페이지 상한(`--max-pages`)에 닿았습니다 |
 | 컷이 모든 막에서 균등(2컷씩)으로 납작하다 | 컷 예산이 '막당 최소 2컷'에 다 쓰인 경우입니다. 로그의 `EP1 사건 N개(강한 사건 M개) → 컷 예산 K` 줄을 보세요 — K가 작으면 사건 자체가 적은 회차이니 `--strong-cut-weight 3`을 쓰거나 원문의 사건을 늘려 주세요 |
+| 표정이 전부 아헤가오(혹은 한 표정 고정) | 회차 태그셋의 `face`가 모든 컷에 붙던 문제입니다 — 컷에 감정이 있으면 그 표정이 이깁니다(`--no-emo-marks`는 감정 **표시만** 끄고 표정 태그는 유지합니다). 원문이 특정 표정을 강하게 요구하면 그 표명을 컷 본문에 써 주세요 |
 | 감정 표시가 안 나온다 | `--no-emo-marks`가 켜져 있거나, 그 대사에 감정이 없습니다 — 컷 스크립트의 `lines[].emo`를 직접 적어 주세요(7가지 어휘) |
 | 풍선이 한쪽에만 몰린다 | `lines[].who`가 주인공 이름과 일치해야 왼쪽 자리가 잡힙니다 — 이름을 비우면 주인공(왼쪽)으로 봅니다 |
 | 설명 박스가 대화에 비해 여전히 크다 | 설명(`caption_ko`)이 길어서입니다 — 이벤트 컷의 설명은 컷 높이의 55%까지만 자리를 잡으니 문장을 나눠 주세요 |

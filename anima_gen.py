@@ -1096,7 +1096,9 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
 {guides}
 
 출력 필드 (모두 소문자 영문 danbooru 태그만, 쉼표 구분. 한국어/설명문/산문 금지):
-- face: 이 회차의 표정·얼굴 상태 (예: crying, blushing, tears, open mouth, shy smile)
+- face: 이 회차의 **기본** 표정·얼굴 상태 — 모든 컷에 그대로 붙는다. 그래서 평범하게 쓴다
+  (soft smile, thoughtful, calm 등). ahegao·heart-shaped pupils·rolling eyes 같은 극단 표정은 **쓰지 않는다**
+  (그렇게 하면 일상 컷까지 그 표정으로 고정된다). 극단 표정은 expressions 풀에 최대 1개만
 - makeup: 화장 (없으면 natural makeup)
 - marks: 몸에 남은 자국·장신구 (예: choker, sweat, tear trail)
 - exposure: 이 회차의 복장 상태 (예: school uniform, open shirt, wet clothes, topless)
@@ -1104,7 +1106,8 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
 - body: 체형·질감 (예: slim body, large breasts, pale skin, oily skin)
 - bodystyle: 자세·습관 (예: standing, kneeling, shy posture) + 복장 추가 아이템 (예: police cap)
 - background: 배경 효과 태그 (예: dim light, floating hearts, rain)
-- expressions: 얼굴 클로즈업 패널용 표정 문구 정확히 5개 (배열)
+- expressions: 얼굴 클로즈업 패널용 표정 문구 정확히 5개 (배열) — **서로 다른 감정**으로 다양하게
+  (기쁨/당황/쓸쓸/불안/평온… 같은 결). 같은 결의 변주(blushing×5)나 극단 표정 몰아주기는 금지
 - partner_exposure: 상대방의 옷 상태 / partner_expression: 상대방 표정 1개
 - location: 장소 (영문 3~5단어, 예: a bedroom), time_of_day: 시간대 (영문 3단어 이내, 예: at night)
 - stats: 주인공 심리 7수치 0~5 정수. M=도덕성, L=두근거림(설렘), A=호감도, O=복종도, I=지성, S=수치심, D=주도권. 줄거리 기준 판단 (초반 M 높고 L·S 낮음 / 후반 반대).
@@ -1844,6 +1847,22 @@ def _pick_observer_visible(pronoun: str = None, key: str = None) -> tuple:
     return f"{pronoun} bare hands, {pronoun} forearms", "forearms"
 
 
+_EXTREME_FACE = ("ahegao", "heart-shaped pupils", "heart pupils", "rolling eyes", "tongue out",
+                 "crossed eyes", "empty eyes", "drooling", "xylophone tongue", "boredom")
+
+
+def _calm_face(tags: str) -> str:
+    """극단 표정 태그를 거른다 — 회차 톤이 일상 컷까지 물들면 모든 표정이 아헤가오가 된다."""
+    s = str(tags or "")
+    low = s.lower()
+    hits = [t for t in _EXTREME_FACE if t in low]
+    if not hits:
+        return s
+    out = ", ".join(p.strip() for p in s.split(",")
+                    if p.strip() and not any(t in p.lower() for t in _EXTREME_FACE))
+    return out or "soft smile"
+
+
 def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_ratio: str,
                      position_sentence: str, step_expression: str, is_side: bool,
                      name_a: str = None, name_b: str = None, observer_text: str = None,
@@ -1892,7 +1911,15 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         if candidates:
             # [2026-09-07] 결정론: (에피소드|pose) 해시 → 재실행 재현 (rand.choice는 seed와 무관)
             expr_pick = _det_choice(candidates, f"expr|{episode}|{pose_text}")
-    expression_parts = [p for p in [step_expression, config.face_tag[episode], expr_pick] if p]
+    # [2026-09-09] 표정 고정 버그: face_tag는 **회차당 1개**를 태그셋 LLM이 정해 모든 컷에 붙는다.
+    #   실측(face_tag = "ahegao, wide eyes, tongue out, rolling eyes, flushed face…") → 일상 컷까지 아헤가오.
+    #   그래서 컷별 표정(step_expression = 컷의 화면 감정)이 있으면 회차 톤은 물러난다.
+    cut_face = (step_expression or "").strip()
+    if cut_face:
+        expression_parts = [p for p in [cut_face] if p]
+    else:
+        expression_parts = [p for p in [step_expression, config.face_tag[episode], expr_pick] if p]
+    face_line = "" if cut_face else (config.face_tag[episode] or "")
 
     lines_block = [
         f"[ACTION] {pose_text}",
@@ -1916,11 +1943,12 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if is_side and (getattr(config, 'glasses2', '') or '').strip() == '안경' and not _protagonist_has_glasses():
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
-    if config.face_tag[episode]:
-        lines_block.append(f"[AAA FACE] {config.face_tag[episode]}")
+    if face_line:
+        lines_block.append(f"[AAA FACE] {_calm_face(face_line)}")
     if config.makeup_tag[episode]:
         lines_block.append(f"[AAA MAKEUP] {config.makeup_tag[episode]}")
-    lines_block.append(f"[AAA EXPRESSION] {', '.join(expression_parts)}")
+    lines_block.append("[AAA EXPRESSION] " + ", ".join(
+        _calm_face(p) if not climax_tag else p for p in expression_parts))
     body_parts = [p for p in [config.body_shape, config.body_tag[episode], style_tokens] if p]
     lines_block.append(f"[AAA BODY] {', '.join(body_parts)}")
     if clothes_tokens:

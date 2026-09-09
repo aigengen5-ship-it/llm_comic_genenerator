@@ -291,10 +291,23 @@ def main() -> int:
     check("extract: guides 4줄 + partner 유지", len(data["guides"]["protagonist"]) == 4
           and data["guides"]["partner"], str(data["guides"]))
 
-    ep_text, sheet_text = CI.prepare_texts(os.path.join(ROOT, "inputs", "ep01.txt"),
-                                           os.path.join(ROOT, "inputs", "sheet01.txt"))
+    # [2026-09-09] selftest는 inputs/ 샘플의 **내용**에 기대지 않는다 — 실제 생성 실행이
+    #   inputs/sheet01.txt를 자기 시트로 덮어쓰면(실측: Kirisaki Chitoge) 검증이 함께 깨졌다.
+    #   샘플 파일의 '존재'만 확인하고, 내용은 selftest가 만든 fixture를 쓴다.
+    _fx_dir = tempfile.mkdtemp(prefix="selftest_inputs_")
+    _fx_ep = os.path.join(_fx_dir, "ep01.txt")
+    _fx_sheet = os.path.join(_fx_dir, "sheet01.txt")
+    with open(_fx_ep, "w", encoding="utf-8") as _fh:
+        _fh.write("유즈키는 밤 순찰을 돌며 골목마다 불을 켰다. " * 90)
+    with open(_fx_sheet, "w", encoding="utf-8") as _fh:
+        _fh.write("주인공은 오카다 유즈키. 옅은 갈색 머리를 대충 묶고 짙은 남색 경찰 제복을 입는다. "
+                  "축 처진 눈에 볼이 붉고, 당황하면 입이 벌어진다. 손가락에는 반창고. " * 3)
+    ep_text, sheet_text = CI.prepare_texts(_fx_ep, _fx_sheet)
     check("입력 파일 로드(ep01/sheet01)", len(ep_text) > 2000 and len(sheet_text) > 200,
           f"{len(ep_text)}/{len(sheet_text)}")
+    _sample_ep = os.path.join(ROOT, "inputs", "ep01.txt")
+    check("배송 샘플 ep01.txt는 selftest가 읽지 않아도 살아 있다(내용은 검증하지 않는다)",
+          os.path.exists(_sample_ep))
     CI.apply_to_config(data, ep_text, sheet_text, ep_num=1, panels_per_page=3, book_num=1)
     req = [k for k in ("name", "sex", "hair_color", "hair_style", "eye_color", "skin_color",
                        "face_style", "clothes", "body_shape", "job")
@@ -527,6 +540,42 @@ def main() -> int:
     check("재현성: 동일 입력 → 동일 프롬프트(표정/observer/사이드 결정론)",
           d1 == d2 and CG.build_panel_prompt(0, p_pov_det, "nsfw", gloss={})
           == CG.build_panel_prompt(0, p_pov_det, "nsfw", gloss={}))
+    # ── [2026-09-09] 표정 고정(아헤가오화) — 회차 태그셋의 표정이 모든 컷에 붙던 문제
+    _keep_face = (config.face_tag, config.expression_arr)
+    config.face_tag = ["ahegao, wide eyes, tongue out, rolling eyes, flushed face"] * 12
+    config.expression_arr = ["ecstasy, lustful, dazed"] * 12
+    _p_calm = dict(panel_t, no=31, type="face", camera="close_up", pose="She looks up.",
+                   lines=[{"kind": "speech", "who": config.name, "text": "어? 설마", "emo": "surprise"}],
+                   caption_ko="", sfx="")
+    _p_nofeel = dict(panel_t, no=32, type="action", camera="side_view", pose="She stands by the window.",
+                     lines=[], caption_ko="", sfx="")
+    _p_climax = dict(panel_t, no=33, type="action", camera="side_view", pose="She is kissed. #creampie",
+                     lines=[], caption_ko="", sfx="")
+    _f_sur = CG.build_panel_prompt(0, _p_calm, "nsfw", gloss={})
+    _f_noe = CG.build_panel_prompt(0, _p_nofeel, "nsfw", gloss={})
+    _f_clx = CG.build_panel_prompt(0, _p_climax, "nsfw", gloss={})
+    check("컷에 감정이 있으면 그 표정을 쓴다(회차 고정 표정이 화면을 덮지 않는다)",
+          "surprised" in _f_sur and "ahegao" not in _f_sur, _f_sur.split("\n")[-1][:120])
+    check("표정이 없는 컷도 극단 표정은 걸러진다(일상 컷이 아헤가오가 되지 않는다)",
+          "ahegao" not in _f_noe and "rolling eyes" not in _f_noe and "tongue out" not in _f_noe,
+          _f_noe.split("\n")[-1][:120])
+    check("클라이맥스 컷에서는 극단 표정이 살아 있다(걸러두는 게 아니라 때에 맞게 쓴다)",
+          "ahegao" in _f_clx, _f_clx.split("\n")[-1][:120])
+    check("감정 7종은 모두 표정 태그를 가진다(화면 이모티콘과 그림 표정이 같은 말을 한다)",
+          all(CG._EMO_FACE_TAGS.get(k) for k in CPM.EMOTIF_KINDS), str(sorted(CG._EMO_FACE_TAGS)))
+    check("주인공 풍선의 감정이 우선한다(상대방 감정이 얼굴을 못 빼앗는다)",
+          CG._panel_face_emotion({"lines": [{"who": config.name2 or "렌", "emo": "anger"},
+                                            {"who": config.name, "emo": "heart"}]}) == "heart")
+    cf = anima_gen._calm_face("ahegao, wide eyes, flushed face")
+    check("_calm_face는 극단 표정만 거르고 나머지는 유지한다",
+          "ahegao" not in cf and "wide eyes" in cf and "flushed face" in cf
+          and anima_gen._calm_face("ahegao, tongue out") == "soft smile", cf)
+    _ts_prompt = anima_gen._tagset_prompt("본문", "시트", 1) if hasattr(anima_gen, "_tagset_prompt") else ""
+    check("태그셋 프롬프트가 회차 표정을 평범하게 고르고 극단 표정을 금지한다",
+          ("모든 컷에 그대로 붙는다" in str(_ts_prompt) or "모든 컷에 그대로 붙는다" in str(open("anima_gen.py", encoding="utf-8").read()))
+          and "서로 다른 감정" in str(open("anima_gen.py", encoding="utf-8").read()))
+    config.face_tag, config.expression_arr = _keep_face
+
     # [2026-09-07] 1인 화면: 헤더는 무조건 solo (side_view는 구도일 뿐 '2명'이 아니다)
     ps = CG.build_panel_prompt(0, dict(panel_t, no=11), "nsfw", gloss={})
     pp = CG.build_panel_prompt(0, dict(p_pov_det, no=12), "nsfw", gloss={})

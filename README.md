@@ -490,9 +490,9 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 - 원하시는 폰트가 있으면 `data/fonts/GowunBatang-Bold.ttf`(설명), `data/fonts/Jua-Regular.ttf`(대사) 같은 **파일명으로 넣기만** 하면 우선 사용됩니다.
 - 네 종류 모두 OFL이라 재배포·임베딩이 자유롭습니다. 맑은 고딕 같은 설치본은 **읽기만** 가능하니 repo에 함께 넣지 마세요.
 
-### 3-8b) 표정은 컷마다 — 회차 고정 표정(아헤가오화) 방지
+### 3-8b) 표정은 컷마다 — 회차 고정 표정 방지
 
-[2026-09-09] 실측:generated 페이지의 표정이 전부 아헤가오였습니다. 원인은 화면 문법이 아니라 **태그 배선**이었습니다.
+[2026-09-09] 실측: 뽑아낸 페이지의 표정이 전부 **같은 극단 표정**으로 고정돼 있었습니다. 원인은 화면 문법이 아니라 **태그 배선**이었습니다.
 
 - 회차 태그셋 LLM이 `face`(회차 표정 1개)와 `expressions`(5개)를 정하면 `anima_gen._build_tag_block`이 그것을 **모든 컷**에 붙였습니다(실측 `face_tag = ahegao, wide eyes, tongue out, rolling eyes, flushed face`).
 - 컷 스크립트는 컷의 감정(`emo`)을 이미 만들고 있었는데, 프롬프트에 넘기는 자리에 **빈 문자열**이 들어가 있었습니다.
@@ -514,9 +514,9 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 | sparkle | 반짝 | `happy, excited, sparkling eyes, open mouth` |
 | question | ? | `confused, tilted head, open mouth` |
 
-### 3-8c) 복장은 회차 기준도를 유지 — 컷 1컷의 누드화 방지
+### 3-8c) 복장은 회차 기준도를 유지 — 컷 1컷의 의류 소실 방지
 
-[2026-09-09] 실측: 클라이맥스도 아닌 p02 컷이 누드로 찍혔습니다. 그 컷에 보낸 프롬프트 끝이 이랬습니다.
+[2026-09-09] 실측: 이벤트가 아닌 p02 컷이 **옷 없이** 찍혔습니다. 그 컷에 보낸 프롬프트 끝이 이랬습니다.
 
 ```
 … tattered school uniform, dirty clothes, cleavage, navel, midriff, thighs, … sensitive
@@ -529,7 +529,7 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 |---|---|
 | 회차 의상 기준도 병합 | 컷이 옷을 바꿀 때만 `config.clothes`(의상 기준도)를 컷 프롬프트에 함께 보냅니다 — `anima_gen._merge_clothes` |
 | 덮어쓰기 vs 덧쓰기 | 컷 `clothes`가 회차와 **같은 품목**(교복+더러움)이면 합치고, **다른 품목**(비키니)이면 갈아입은 컷으로 보고 override만 씁니다 |
-| 근거 없는 훼손·전라 차단 | `explicit` 상한이 아니면 `nude/topless/shirtless/…`를 걷고, 품목이 전부 사라지면 `tattered/ripped/torn/dirty/wet`도 버립니다 — `anima_gen._undress_guard` |
+| 근거 없는 훼손·과노출 어구 차단 | `explicit` 상한이 아니면 `nude/topless/shirtless/…`를 걷고, 품목이 전부 사라지면 `tattered/ripped/torn/dirty/wet`도 버립니다 — `anima_gen._undress_guard` |
 | 컷 스크립트 프롬프트 | "본문에 옷이 바뀌는 장면이 없으면 tattered/nude를 **먼저 제안하지 않는다**" — 근거 없이 넣으면 그 컷이 누드로 그려집니다 |
 
 실측(같은 컷 재조립): `bimbo school uniform, tight clothes, short skirt, tattered school uniform, dirty clothes` — 품목이 살아 있어 교복이 유지됩니다.
@@ -624,43 +624,7 @@ log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기�
 
 ---
 
-## 5. 트러블슈팅
-
-| 증상 | 원인/조치 |
-|---|---|
-| `ollama(...) 접속 불가` | `./run_ollama.sh`(자동 기동) 또는 `~/AI/ollama/bin/ollama serve`를 실행해 주세요. `OLLAMA_BIN`이 실제 경로인지 확인해 주세요 |
-| 컷이 전부 검정(≈8KB, mean 0) / ComfyUI 로그에 `invalid value encountered in cast` | 렌더 중 LLM 재탑재가 원인입니다 — 4장 참고. `ollama ps`가 비어 있는지 확인하신 뒤 재실행해 주세요 |
-| `컷 스크립트 없음 / 0컷` | 소형 Q4 모델의 JSON 오염입니다. 컷 단위 파싱으로 복구되지만, 반복되면 `ollama_gguf`를 더 큰 양자화로 바꿔 주세요 |
-| 컷 스크립트 프롬프트에 `(가이드 없음)` | [2026-09-08] `--ep 0`(0기준 습관) 때 가이드 저장 키와 조회 키가 어긋나 기승전결·$행동이 통째로 빠졌습니다(지금은 1로 흡수). `log/comic_input.log`에 `가이드 4줄`이 떠야 정상입니다 |
-| 본문 장면이 컷에 안 담김 / 컷이 밋밋 | `log/comic_gen.log`의 `본문 N자 → 목표 N컷 … 장면 N개` 라인을 봐 주세요. 컷이 적으면 `--chars-per-panel`을 낮추고(600→400), `침묵 컷 채움` 노트가 반복되면 양자화를 올려 주세요 |
-| 긴 본문인데 컷이 4문장 요약처럼 돌아갈 때 | 본문이 `episode_char_budget()`보다 긴데 추출 창이 안 쪼개진 경우입니다 — `plot.json ollama_num_ctx`를 낮추시면 창이 늘어납니다(추출 로그에 `추출 창 i/n`이 떠야 정상입니다) |
-| 첫 컷이 유난히 느림 | gguf 첫 등록(해싱·본 이관) + 가중치 로딩 때문입니다. 디스크 여유 17GB가 필요합니다 |
-| `init_anima_tags: no_episode` | `--ep` > `--total-episodes` 조합입니다(런너가 자동으로 맞춰 드립니다) |
-| 프롬프트에 한글이 남음 | LLM이 만든 한글 태그는 glossary로 번역하고, 실패하면 폐기합니다(`log/comic_gen.log`에 기록됩니다) |
-| (Windows) 페이지의 캡션/대사가 모두 □ | 한글 폰트를 못 찾은 것입니다 — `--font C:\Windows\Fonts\malgunbd.ttf`로 지정하거나 `data/fonts/NotoSansKR-Bold.ttf`를 번들해 주세요(pre-flight가 경고해 드립니다) |
-| 만화체가 아니라 기본 고딕으로 찍힌다 | 화면 문법 폰트를 아직 받지 않으셨습니다 — `python3 run_comic.py --get-fonts` (설치 현황은 pre-flight의 "화면 문법 폰트" 줄에서 확인됩니다) |
-| 풍선/설명이 컷에 안 보인다 | 그 컷의 화면 텍스트가 전부 비어 있는 경우입니다(컷 스크립트 `notes`에 "화면 텍스트 없음"으로 찍힙니다). ★서두 요약/에필로그는 본문 첫 문장으로 자동 채워집니다 |
-| 대사가 길어 풍선이 세로로 길다 | 풍선 폭이 컷의 20%라 접히는 줄 수가 많습니다 — 대사를 짧게 쓰시거나 컷을 크게(페이지 수 ↑) 써 주세요. `…`로 잘리지는 않습니다 |(풍선은 최대 2개) |
-| 에필로그가 안 붙는다 | `--no-epilogue`가 켜져 있거나, 이 회차가 회차집의 마지막 회차가 아니거나, 페이지 상한(`--max-pages`)에 닿았습니다 |
-| 컷이 모든 막에서 균등(2컷씩)으로 납작하다 | 컷 예산이 '막당 최소 2컷'에 다 쓰인 경우입니다. 로그의 `EP1 사건 N개(강한 사건 M개) → 컷 예산 K` 줄을 보세요 — K가 작으면 사건 자체가 적은 회차이니 `--strong-cut-weight 3`을 쓰거나 원문의 사건을 늘려 주세요 |
-| 이름이 `#태그`의 캐릭터 이름으로 바뀐다 | 이름은 그림 참조와 별개입니다 — `--name`/`--name2`(환경변수 `COMIC_PIN_NAME`도 가능)으로 고정해 주세요 |
-| 클라이맥스도 아닌 컷이 누드로 나온다 | 컷 `clothes`가 회차 의상을 덮어쓴 경우입니다 — 같은 품목이면 자동으로 합쳐집니다(`anima_gen._merge_clothes`). 원문에 옷이 망가지는 서사가 있는데도 옷이 유지되면, 그 서사를 컷 본문에 또렷이 써 주세요 |
-| 표정이 전부 아헤가오(혹은 한 표정 고정) | 회차 태그셋의 `face`가 모든 컷에 붙던 문제입니다 — 컷에 감정이 있으면 그 표정이 이깁니다(`--no-emo-marks`는 감정 **표시만** 끄고 표정 태그는 유지합니다). 원문이 특정 표정을 강하게 요구하면 그 표명을 컷 본문에 써 주세요 |
-| 감정 표시가 안 나온다 | `--no-emo-marks`가 켜져 있거나, 그 대사에 감정이 없습니다 — 컷 스크립트의 `lines[].emo`를 직접 적어 주세요(7가지 어휘) |
-| 풍선이 한쪽에만 몰린다 | `lines[].who`가 주인공 이름과 일치해야 왼쪽 자리가 잡힙니다 — 이름을 비우면 주인공(왼쪽)으로 봅니다 |
-| 설명 박스가 대화에 비해 여전히 크다 | 설명(`caption_ko`)이 길어서입니다 — 이벤트 컷의 설명은 컷 높이의 55%까지만 자리를 잡으니 문장을 나눠 주세요 |
-| 말풍선 글자가 `□`로 깨진다 | 그 폰트에 없는 글자입니다 — 렌더가 자동으로 그리는 폰트 바꿔 그립니다. 특정 폰트를 쓰실 땐 `--font-dialog data/fonts/PoorStory-Regular.ttf` |
-| 에필로그가 안 붙는다(2페이지짜리 회차) | ★에필로그는 **마지막 회차** 끝에 한 번만 붙습니다. 회차 중간에서 보시려면 `--total-episodes`를 이 회차 번호로 맞춰 주세요 |
-| (Windows) `UnicodeEncodeError: 'cp949' character …` | 콘솔 코드페이지 문제입니다. `run_ollama_win.bat`이 `PYTHONUTF8=1`을 넣어 줍니다. 직접 실행하실 때는 `chcp 65001` 또는 `set PYTHONUTF8=1`을 사용해 주세요 |
-| (Windows) `ollama 바이너리 없음` | 설치형 ollama를 실행하시거나 `set OLLAMA_BIN=C:\…\ollama.exe` 후 `run_ollama_win.bat plan`으로 다시 확인해 주세요 |
-| (Windows) 종료 후에도 VRAM/RAM이 안 비춤 | 서버만 죽고 자식 `llama-server.exe`가 남은 경우입니다 — `run_ollama_win.bat stop`(taskkill /T) 또는 작업관리자로 확인해 주세요 |
-| 본문에 `=== Episode 1 ===`, `[ACTION]:`, `#####`이 그대로 보인다 | 단편 생성기 `progress/` 포맷입니다 — `--special`을 붙여 주세요(3-9절). 붙이시지 않아도 내용은 감지해 어댑터를 타지만, 권장 플래그는 명시입니다 |
-| `--special`에서 `epNN_해시.txt 형식 에피소드를 찾지 못했습니다` | `--episode`에 **파일이 아니라 progress/ 디렉터리**를 주셨는지, 여러 작품이 섞여 있으면 `--plot-hash`로 필터해 주세요 |
-| `--lora1`을 지정했는데 화풍이 그대로다 | 로그에 `[ComfyUI LoRA] lora_1=…(강도) … \| trigger=…` 라인이 떠야 합니다. ① `--real`/`--sole`이 켜지면 LoRA는 전부 OFF입니다 ② `models/loras`에 파일이 없으면 슬롯이 꺼집니다 ③ 강도가 0이면 OFF(`--str1` 확인) ④ trigger가 필요한 LoRA인데 트리거가 안 보였다면 [2026-09-09] 이전 버전입니다(`resolve_anima_lora`가 트리거를 헤더에 심지 못했습니다) |
-
----
-
-## 6. 파일 지도
+## 5. 파일 지도
 
 ```
 run_comic.py          런처(입력→추출→주입→렌더→합성, finally LLM 반납, pre-flight) **+ 모든 OS 분기**
@@ -686,7 +650,7 @@ order/                설계 메모(standalone 포크 흐름/추가 노트/Windo
 
 ---
 
-## 7. 배송 전 정리
+## 6. 배송 전 정리
 
 ```bash
 rm -rf venv __pycache__ image/* log/*

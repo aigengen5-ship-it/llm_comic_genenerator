@@ -1665,6 +1665,72 @@ def main() -> int:
           and CPM.NARR_W_RATIO_WITH_BALLOON >= 0.60,
           f"{CPM.NARR_W_RATIO}/{CPM.NARR_W_RATIO_WITH_BALLOON}")
 
+    # [2026-09-09] 사용자 지시: 풍선 **가로 비율 20%** · 세로로 길게 · 꼬리(삼각)·물방울(작은 원) 사용
+    _bp = (683, 512)                      # 2단 컷 실측 크기
+    _btxt = "이 사람이 들어오면 매장 공기가 달라진다."
+    _bal_boxes = {}
+    for _k in ("speech", "thought"):
+        _c = Image.new("RGB", _bp, (255, 255, 255))
+        _d4 = ImageDraw.Draw(_c)
+        _bb = CPM._draw_balloon(_d4, 0, 0, _bp[0], _bp[1],
+                                {"kind": _k, "text": _btxt, "speaker": "me"}, font_size=22)
+        _bal_boxes[_k] = _bb
+        if _k == "speech":
+            _sp_px = _c.crop((_bb[0], _bb[3], _bb[2], min(_bp[1], _bb[3] + CPM.TAIL_LEN + 4)))
+            check("말풍선 아래에 아주 작은 삼각 꼬리가 그려진다",
+                  sum(1 for p in _sp_px.getdata() if p == (0, 0, 0)) > 8,
+                  str(sum(1 for p in _sp_px.getdata() if p == (0, 0, 0))))
+        else:
+            _tb_px = _c.crop((_bb[0], _bb[3], _bb[2], min(_bp[1], _bb[3] + CPM.TAIL_LEN + 12)))
+            check("속마음 타원 아래에 작은 원(생각 물방울)이 그려진다",
+                  sum(1 for p in _tb_px.getdata() if p == (0, 0, 0)) > 6,
+                  str(sum(1 for p in _tb_px.getdata() if p == (0, 0, 0))))
+    check("말풍선·속마음 **가로 비율은 컷 폭의 20%** (넓은 얼굴 가림 방지)",
+          all(_bal_boxes[k] and abs((_bal_boxes[k][2] - _bal_boxes[k][0]) / _bp[0] - CPM.BALLOON_W_RATIO) < 0.03
+              for k in _bal_boxes),
+          str({k: round((v[2] - v[0]) / _bp[0] * 100, 1) for k, v in _bal_boxes.items()}))
+    _pf = CPM.load_font(20, role="dialog")
+    _probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    _wrap20 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * CPM.BALLOON_W_RATIO) - 24, _probe, max_lines=9)
+    _wrap66 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * 0.66) - 24, _probe, max_lines=9)
+    check("대사는 20% 폭에 맞춰 여럿 줄로 접힌다(예전 66% 폭에서는 한두 줄이었다)",
+          len(_wrap20) >= 3 and len(_wrap20) > len(_wrap66),
+          f"20%폭 {len(_wrap20)}줄 / 예전 66%폭 {len(_wrap66)}줄")
+    check("좁은 폭에서 글자 크기를 줄여도 풍선이 컷 안에 들어간다",
+          _bal_boxes["speech"] and _bal_boxes["speech"][3] <= _bp[1] and _bal_boxes["speech"][2] <= _bp[0],
+          str(_bal_boxes["speech"]))
+    _th_w, _th_h = _bal_boxes["thought"][2] - _bal_boxes["thought"][0], _bal_boxes["thought"][3] - _bal_boxes["thought"][1]
+    check("속마음 세로는 '그 폭에 글자를 넣는 데 필요한 만큼'만 쓴다(√2 배수를 넘기지 않는다)",
+          _th_h <= (_bal_boxes["speech"][3] - _bal_boxes["speech"][1]) * 1.75 + 24, f"{_th_w}x{_th_h}")
+
+    # [2026-09-09] 사용자 지시: 설명문을 '알아서' 자르지 말 것 + 글자가 많으면 폰트를 줄일 것
+    _longcap = "비가 그친 저녁, 꽃가게의 수국이 반짝인다. " * 30          # 600자
+    _lc_panels, _lc_notes = CG._repair_panels([{"no": 1, "type": "action", "caption_ko": _longcap,
+                                                "pose": "She stands.", "camera": "side_view",
+                                                "position": "NONE", "facing": "right", "clothes": "uniform"}])
+    check("설명문은 길이로 자르지 않는다(길어도 원문 그대로, '…' 토막 금지)",
+          _lc_panels and _lc_panels[0]["caption_ko"] == _longcap.strip()
+          and not _lc_panels[0]["caption_ko"].endswith("…"),
+          f"{len(_lc_panels[0]['caption_ko']) if _lc_panels else 0}자")
+    _cvbig = Image.new("RGB", (444, 768), (255, 255, 255))
+    _r_big = CPM._draw_caption_box(ImageDraw.Draw(_cvbig), 0, 0, 444, 768, _longcap * 2, font_size=20)
+    check("글자가 많으면 **폰트 크기를 줄여** 컷 안에 다 담는다(지금이도 충분히 크다)",
+          _r_big and _r_big[4] < 20 and _r_big[4] >= CPM.FONT_FLOOR
+          and not any(ln.endswith("…") for ln in _r_big[5]),
+          f"fs={_r_big[4]}px lines={len(_r_big[5]) if _r_big else 0}")
+    check("최소 글자 크기 바닥(FONT_FLOOR)은 11px로 둔다", CPM.FONT_FLOOR <= 12 and CPM.FONT_FLOOR >= 8,
+          str(CPM.FONT_FLOOR))
+    _dlg60 = "이 사람이 들어오면 매장 공기가 달라진다. 진열대의 수국까지 시선이 간다. 정말 긴 대사입니다."
+    _ln2 = CG._norm_lines([{"kind": "speech", "who": config.name or "나", "text": _dlg60}])
+    check("긴 대사는 '…'로 버리지 않고 **풍선 두 개에 나눠** 담는다",
+          len(_ln2) == 2 and not any(b["text"].endswith("…") for b in _ln2)
+          and "".join(b["text"] for b in _ln2).replace(" ", "") == _dlg60.replace(" ", ""),
+          str([b["text"] for b in _ln2]))
+    check("★지문 폴백도 문장 중간을 자르지 않는다(limit<=0 = 그대로)",
+          CG._clamp_caption("긴 지문입니다. " * 40, 0).count("긴 지문입니다.") == 40
+          and CG._first_sentence("첫 문장이 아주 깁니다. " * 30 + "두 번째 문장.", 150).startswith("첫 문장이 아주 깁니다."),
+          CG._first_sentence("첫 문장이 아주 깁니다. " * 30 + "두 번째 문장.", 150)[-14:])
+
     # (4) 감정 이모티콘 — 종류마다 다른 색으로, 컷 안에만
     _seen = {}
     for _k in CPM.EMOTIF_KINDS:

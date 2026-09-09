@@ -853,8 +853,16 @@ def _norm_lines(v) -> list:
             m2 = _WHO_PREFIX_RE.match(s)
             if m2:
                 who, s = m2.group(1).strip(), m2.group(2).strip()
-        if len(s) > DIALOG_MAX_LEN:
-            s = s[:DIALOG_MAX_LEN - 1].rstrip() + "…"
+        # [2026-09-09] 긴 대사를 '…'로 버리지 않는다 — 두 개의 풍선으로 나눠 담는다(화면이 말을 다 한다)
+        if len(s) > DIALOG_MAX_LEN and len(out) < DIALOG_LINES:
+            head, rest = _split_dialog(s)
+            if head and rest:
+                if not _EMOTIF_RE.fullmatch(emo or ""):
+                    emo = _emo_guess(s)
+                out.append({"kind": "thought" if kind.startswith("t") else "speech",
+                            "who": who, "text": head, "emo": emo if _EMOTIF_RE.fullmatch(emo) else ""})
+                s = rest
+                emo = ""
         if s:
             if not _EMOTIF_RE.fullmatch(emo or ""):
                 emo = _emo_guess(s)                       # LLM이 안 주면 대사에서 추정
@@ -863,6 +871,24 @@ def _norm_lines(v) -> list:
         if len(out) >= DIALOG_LINES:
             break
     return out
+
+
+def _split_dialog(s: str):
+    """긴 대사를 풍선 두 개로 나눈다 — 끊는 곳은 문장부호·조사 앞, 없으면 길어서 자르되 '…'는 붙이지 않는다."""
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    half = max(6, len(s) // 2)
+    best = None
+    for m in re.finditer(r"[.!?。…](?:\s|$)|(?<=[가-힣])[,·](?=\s)|\s(?=[가-힣](?:는|는|이|가|을|를|도|만|의|에|로))", s[:len(s)]):
+        if m.start() <= 0:
+            continue
+        if best is None or abs(m.start() - half) < abs(best - half):
+            best = m.end()
+    if best and 4 <= best < len(s) - 1:
+        return s[:best].strip(), s[best:].strip()
+    cut = s.rfind(" ", 0, half + 4)                  # 띄어쓰기가 그 근처에 없으면 마지막 공백
+    if cut <= 4:
+        cut = half
+    return s[:cut].strip(), s[cut:].strip()
 
 
 def panel_text_payload(panel) -> dict:
@@ -964,7 +990,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         if "#" in pose:                                  # LLM이 슬롯을 붙여 쓰면 버리고 ours로 재조립
             pose = pose.split("#", 1)[0].strip()
         cap = str(it.get("caption_ko") or it.get("caption") or "").strip().replace("\n", " ")
-        cap = _clamp_caption(cap)                       # 절/문장 경계에서 자른다(토막 마감 방지)
+        cap = _clamp_caption(cap, 0)                    # 자르지 않는다(★지문도 원문 그대로)
         lns = _norm_lines(it.get("lines") or it.get("dialog") or it.get("lines_ko")
                           or it.get("speech") or it.get("balloons"))
         sfx = str(it.get("sfx") or it.get("oto") or "").strip().replace("\n", " ")
@@ -1075,8 +1101,9 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
                            for b in p["lines"]]
         if not (p.get("caption_ko") or p.get("lines") or p.get("sfx")):
             notes.append(f"컷 {p['no']}: 화면 텍스트 없음(설명·풍선·의성어 전부 비음)")
-        if p["text_role"] not in ("summary", "epilogue") and len(p.get("caption_ko") or "") > CAPTION_MAX_LEN:
-            p["caption_ko"] = p["caption_ko"][:CAPTION_MAX_LEN - 1].rstrip() + "…"
+        # [2026-09-09] 설명문을的长度로 자르지 않는다 — '알아서 …'가 화면의 글자를 죽였다.
+        #   길면 박스가 자라고, 그래도 안 들어가면 렌더가 폰트를 줄인다(comic_page_merge._draw_caption_box).
+        #   CAPTION_MAX_LEN은 이제 **LLM에게 쓰는 권장 길이**일 뿐이다.
         if p["type"] == "face" and p.get("wide"):
             p["wide"] = False
             notes.append(f"컷 {p['no']}: face 컷 wide → false")
@@ -1167,7 +1194,9 @@ _CLAUSE_END_RE = re.compile(r".*(?:[.!?。…]|(?<=[가-힣])\s(?=[가-힣])|,|�
 
 
 def _clamp_caption(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
-    """지문을 길이로 자를 때 **절/문장 경계**에서 자른다 (중간 토막 '…호' 같은 마감이 보기 나쁘다)."""
+    """지문을 잘 때 **절/문장 경계**에서 자른다. limit<=0이면 안 자른다(2026-09-09 기본값)."""
+    if int(limit or 0) <= 0:
+        return re.sub(r"\s+", " ", str(text or "")).strip()
     s = re.sub(r"\s+", " ", str(text or "")).strip()
     if len(s) <= limit:
         return s
@@ -1202,7 +1231,7 @@ def _first_sentence(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
     out = (m.group(0) if m else s).strip()
     if len(out) < 12:                                  # 지나치게 짧은 조각은 앞 문단을 쓴다
         out = s
-    return _clamp_caption(out, limit)
+    return out if limit <= 0 else _clamp_caption(out, limit)   # 기본은 '첫 문장을 그대로'(중간 토막 금지)
 
 
 def _fill_star_narration(panels, beats, quotas, notes):

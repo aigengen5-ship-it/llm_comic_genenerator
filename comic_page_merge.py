@@ -129,19 +129,27 @@ font_role_paths = {}                     # role → 사용자 지정 경로(--fo
 
 # 화면 문법 상수
 BALLOON_MAX = 2                          # 컷당 풍선 최대 2개(사용자 지시)
-BALLOON_FONT_SIZE = 22                   # 말풍선/속마음 글자
+BALLOON_FONT_SIZE = 18                   # 말풍선/속마음 글자 — 풍선이 좁아졌으니 크게 둘 이유가 없다(2026-09-09)
 NARR_LARGE_FONT_SIZE = 30                # 서두 요약/에필로그의 큰 지문
 SFX_FONT_SIZE = 54                       # 의성어 대형
 NARR_LARGE_COVER = 0.70                  # 요약 지문이 컷 면적의 70%를 채운다(사용자 지시)
 NARR_MAX_LINES = 99                      # [2026-09-09] 줄 수로 설명을 자르지 않는다(글자가 다 보여야 한다)
 NARR_MAX_LINES_WITH_BALLOON = 99         #   대신 대사가 있는 컷은 **높이 비율**로 설명을 제한한다
 NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스는 컷 높이의 55% 이내(나머지는 풍선)
+# [2026-09-09] 풍선은 **가로 20% · 세로로 길게**(말풍선이 얼굴을 가린다) — 글자는 그 폭에 맞춰 접는다.
+BALLOON_W_RATIO = 0.20                   # 말풍선(직사각형) 폭 = 컷 폭의 20%
+THOUGHT_W_RATIO = 0.20                   # 속ma음(타원) 폭 = 컷 폭의 20%
+THOUGHT_W_RELIEF = 0.28                  # 단, 세로가 아래 비율을 넘으면 폭을 이 정도까지 넓힌다(좁은 폭은 세로를 부른다)
+THOUGHT_H_CAP = 0.36                     # 속마음 세로가 컷 높이의 이 비율을 넘지 않게 한다
+FONT_FLOOR = 11                          # 화면 글자의 최소 크기 — 이 아래로 안 줄인다
+ELLIPSE_FIT = 1.45                       # (폴백) 타원 ⇄ 사각 글자 블록의 대각 배율(√2≈1.414 + 안전)
+BALLOON_PAD = 12                         # 풍선 안쪽 여백
 NARR_W_RATIO = 0.80                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 다시 줄어든다
 NARR_W_RATIO_WITH_BALLOON = 0.62         # 대사가 있으면 설명 폭 상한을 더 낮춘다(풍선 자리)
 # [2026-09-09] 사용자 지시 2건: ★큰 지문은 글자가 다른 컷 대비 너무 크고, 박스가 컷의 절반만 써서 글자가 잘린다.
 NARR_W_RATIO_LARGE = 1.00                # ★회차 도입·에필로그 지문은 **컷 폭을 다 쓴다**(짧은 글자도 박스를 당기지 않는다)
 NARR_LARGE_FONT_RATIO = 1.25             # ★큰 지문의 글자 배율 (예전 1.5 → 지나치게 컸다)
-TAIL_LEN = 11                            # 풍선 꼬리 길이 — 아주 작게(사용자 지시)
+TAIL_LEN = 11                            # (유지) 풍선 꼬리 길이 — 아주 작게(사용자 지시)
 TAIL_BASE = 13                           # 풍선 꼬리 밑변(너무 크면 그림을 가린다)
 THOUGHT_BUBBLES = (6, 4, 3)              # 속마음 물방울 반지름 (역시 작게)
 EMOTIF_SIZE = 19                         # 감정 이모티콘 한 변 기본 크기
@@ -991,17 +999,19 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
         box_cap = min(box_cap, max(96, int(round(ih * NARR_LARGE_COVER))))
     fs_hi = max(16, int(font_size * NARR_LARGE_FONT_RATIO)) if large else int(font_size)
     lines_cap = max(1, min(int(max_lines),
-                           NARR_MAX_LINES_WITH_BALLOON if narrow and not large else 99))
+                           NARR_MAX_LINES_WITH_BALLOON if narrow and not large else 10 ** 6))
     fs, lines, line_h, font = fs_hi, [], _text_line_height(fs_hi), None
-    for fs_try in range(fs_hi, 12, -1):
+    # [2026-09-09] '줄 수'로 먼저 자르면 안 된다 — wrap_text가 max_lines에서 '…'로 잘라 버린다.
+    #   그래서 **전부를 접어 보고** 컷 높이(box_cap)에 안 들어가면 글자 크기를 한 단계씩 줄인다.
+    for fs_try in range(fs_hi, FONT_FLOOR - 1, -1):       # 최악의 경우 폰트를 줄여 다 담는다(지금이도 충분히 크다)
         fnt = load_font(fs_try, font_path, role="narration")
         lh = _text_line_height(fs_try)
-        cap = min(lines_cap, max(1, (box_cap - 14) // lh))
-        ls = wrap_text(text, fnt, w_cap - 20, probe, max_lines=cap)
-        if ls and len(ls) <= cap:
-            fs, lines, line_h, font = fs_try, ls, lh, fnt
-            break
-        fs, lines, line_h, font = fs_try, ls, lh, fnt      # 마지막 시도는 그대로 쓴다(잘림 최소화)
+        ls = wrap_text(text, fnt, w_cap - 20, probe, max_lines=lines_cap)
+        if not ls:
+            return None
+        fs, lines, line_h, font = fs_try, ls, lh, fnt
+        if len(ls) * line_h + 16 <= box_cap and not any(str(x).endswith("…") for x in ls):
+            break                                          # 다 들어간다 — 이 크기로 쓴다
     if not lines:
         return None
     # 박스는 실제 글자 폭만큼만 (짧은 설명이 컷을 채우지 않는다)
@@ -1010,7 +1020,7 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
         tw = max(tw, text_w(ln, font, probe, "narration", font_path))
     # 박스는 실제 글자 폭만큼만(짧은 설명이 컷을 채우지 않는다) — 단 ★지문은 컷 폭을 그대로 쓴다
     box_w = w_cap if large else int(max(72, min(w_cap, tw + 20)))
-    box_h = int(min(box_cap, len(lines) * line_h + 16))
+    box_h = int(min(box_cap, len(lines) * line_h + 16))   # 바닥(FONT_FLOOR)에서도 넘칠 때만 컷 높이로 잘린다
     x0 = ix + margin
     y1 = iy + ih - margin
     y0 = max(iy + margin, y1 - box_h)
@@ -1025,14 +1035,25 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
     return x0, y0, x1, y1, fs, lines
 
 
+def bh_ratio(th: float, bw: float, tw: float) -> float:
+    """글자 블록(height th, width tw)을 폭 bw 타원에 넣을 때 필요한 세로의 '컷 대비 느낌값'.
+
+    (tw/2)²/a² + (th/2)²/b² = 1 → b = (th/2)/√(1-k²). 크게 반환할수록 그 폭에서 세로가 넘친다.
+    """
+    a = max(1.0, bw / 2.0 - BALLOON_PAD * 0.35)
+    k = min(0.90, (tw / 2.0) / a)
+    return (th / max(0.40, (1.0 - k * k) ** 0.5)) / 1000.0
+
+
 def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                   plate=DEFAULT_PLATE, frame=DEFAULT_FRAME, line: int = DEFAULT_FRAME_WIDTH,
                   text_color=DEFAULT_TEXT, font_size: int = BALLOON_FONT_SIZE, font_path=None,
                   facing: str = None):
     """[2026-09-09] 말풍선(speech) / 속마음 풍선(thought).
 
-    speech  : 모서리 둥근 사각 + 아래로 내린 꼬리(삼각) — 꼬리는 화자(입) 방향
-    thought : 타원 + 화자 쪽으로 작아지는 물방울 3개 (속마음은 꼬리가 떨어진다)
+    speech  : **직사각형** — 폭은 컷의 20%, 글자는 그 폭에 맞춰 접고 세로로 늘린다(얼굴 가림 방지)
+    thought : **타원** — 폭은 컷의 20%, 세로는 그 폭에 글자를 넣는 데 필요한 만큼만
+    꼬리는 아주 작게(TAIL_LEN), 생각 물방울은 3개(6/4/3px) — 화자 쪽으로 보낸다.
     배치는 `_place_in_panel`(결정론 후보 순회) — 설명 박스·다른 풍선과 안 겹치게.
     → 그린 상자 (x0,y0,x1,y1) 또는 None(자리가 없으면 그리지 않는다)
     """
@@ -1043,36 +1064,57 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None
     role = "thought" if kind == "thought" else "dialog"
     side = str((balloon or {}).get("side") or facing or "").strip().lower() or None
-    prefer, dkey = _balloon_slot_pref(balloon, facing)
+    prefer, _dkey = _balloon_slot_pref(balloon, facing)   # _dkey: 꼬리 시절의 방향 이름(감정 표시 자리에만 쓴다)
     emo = _norm_emo((balloon or {}).get("emo"))
-    # 꼬리가 컷 안에 들도록 오른쪽 자리(상대방)는 여백을 꼬리 길이만큼 더 둔다
-    mg = max(8, TAIL_LEN + 6) if dkey == "right" else 8
+    mg = max(8, TAIL_LEN + 6) if _dkey == "right" else 8   # 꼬리가 컷 밖에 나가지 않게 상대방 쪽은 여유를 둔다
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     box_w = box_h = 0
     lines, font, fs, line_h = [], None, font_size, _text_line_height(font_size)
-    for fs_try in range(int(font_size), 13, -2):
+    # [2026-09-09] 사용자 지시: 풍선은 **가로 30% · 세로로 길게**. 글자를 그 폭에 맞춰 접는다.
+    #   (예전은 글자 폭에 맞춰 가로로 넓어지고 4줄에서 접혀, 얼굴을 덮는 넓은 풍선이 나왔다)
+    pad = BALLOON_PAD
+    wr = THOUGHT_W_RATIO if kind == "thought" else BALLOON_W_RATIO
+    for fs_try in range(int(font_size), FONT_FLOOR - 1, -2):     # 글자가 많으면 폰트를 줄여 담는다
         fnt = load_font(fs_try, font_path, role=role)
         lh = _text_line_height(fs_try)
-        avail_w = int(iw * (0.58 if side else 0.66))
-        ls = wrap_text(text, fnt, avail_w, probe, max_lines=4)
+        bw_target = max(96, int(iw * wr))
+        avail_w = int(bw_target / (ELLIPSE_FIT if kind == "thought" else 1.0)) - 2 * pad
+        cap_lines = max(2, int((ih - 2 * pad - 12) // lh))          # 줄 수 상한은 컷 높이에서 계산한다
+        ls = wrap_text(text, fnt, max(24, avail_w), probe, max_lines=cap_lines)
         if not ls:
             return None
-        pad = 14
         tw = 0
         for ln in ls:
             try:
                 tw = max(tw, probe.textlength(ln, font=fnt))
             except Exception:
                 tw = max(tw, len(ln) * fs_try * 0.6)
-        bw, bh = int(tw + 2 * pad), int(len(ls) * lh + 2 * pad)
-        if kind == "thought":                     # 타원은 모서리가 잘린다 → 여유를 둔다
-            bw, bh = int(bw / 0.74), int(bh / 0.60)
+        th = len(ls) * lh
+        if kind == "thought":
+            bw = int(min(max(bw_target, tw + 2 * pad), iw - 16))
+            # [2026-09-09] 20% 폭은 세로를 부른다 — 세로가 컷 높이의 THOUGHT_H_CAP을 넘으면
+            #   폭을 THOUGHT_W_RELIEF까지 넓혀 줄 수를 줄인다(글자를 버리는 대신 폭을 쓴다).
+            if bh_ratio(th, bw, tw) > THOUGHT_H_CAP and bw_target < iw * THOUGHT_W_RELIEF:
+                bw2 = int(min(iw * THOUGHT_W_RELIEF, iw - 16))
+                ls2 = wrap_text(text, fnt, max(24, int(bw2 / ELLIPSE_FIT) - 2 * pad), probe, max_lines=cap_lines)
+                if ls2 and len(ls2) <= len(ls):
+                    th2 = len(ls2) * lh
+                    if bh_ratio(th2, bw2, tw) <= THOUGHT_H_CAP or bh_ratio(th2, bw2, tw) < bh_ratio(th, bw, tw):
+                        ls, th, bw = ls2, th2, bw2
+            # 폭을 정해 두고 타원에 글자 블록을 넣으면: (w/2)²/a² + (h/2)²/b² = 1 → b는 여기서 나온다.
+            #   폭이 좁을수록 세로가 는다 — 그래서 세로를 '필요한 만큼만' 쓰는 것이 이 계산의 전부다.
+            a = max(1.0, bw / 2.0 - pad * 0.35)
+            k = min(0.90, (tw / 2.0) / a)
+            bh = int(th / max(0.40, (1.0 - k * k) ** 0.5) + 2 * pad * 0.5)
+        else:
+            bw = int(max(bw_target, min(iw - 16, tw + 2 * pad)))     # 직사각형은 컷의 20% 폭을 쓴다
+            bh = int(th + 2 * pad)
         if bw <= iw - 16 and bh <= ih - 16:
             lines, font, fs, line_h, box_w, box_h = ls, fnt, fs_try, lh, bw, bh
             break
         lines, font, fs, line_h = ls, fnt, fs_try, lh
         box_w, box_h = bw, bh
-        if fs_try <= 15:                          # 끝까지 좁아도 안 들어가면 최소 글자로 강행
+        if fs_try <= FONT_FLOOR + 2:               # 끝까지 좁아도 안 들어가면 최소 글자로 강행
             break
     if not lines or box_w <= 0 or box_h <= 0:
         return None
@@ -1085,17 +1127,17 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None                       # 자리가 없으면 겹쳐 쓰지 않고 생략한다
     x0, y0 = xy
     x1, y1 = x0 + box_w, y0 + box_h
-    tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, dkey)
+    # 말풍선은 **직사각형 + 삼각 꼬리**, 속마음은 **타원 + 작은 원**. 형태 그 자체로 화자를 구분한다.
+    tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, _dkey)
     if kind == "speech":
-        d.rounded_rectangle([x0, y0, x1, y1], radius=max(8, min(22, box_h // 3)),
-                            fill=plate, outline=frame, width=max(1, int(line)))
+        d.rectangle([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         _draw_tail(d, _tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih),
                    frame=frame, plate=plate, line=line)
-        ty0 = y0 + 12
+        ty0 = y0 + pad
     else:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty_, frame=frame, plate=plate, line=line)
-        ty0 = y0 + int(box_h * 0.24)
+        ty0 = y0 + int(box_h * 0.5 - len(lines) * line_h / 2)        # 타원 안에서는 글자 블록을 세로 가운데에 둔다
     ty = ty0
     for ln in lines:
         try:

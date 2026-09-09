@@ -186,6 +186,82 @@ def split_beats(text: str, n_beats: int = 0, max_chars: int = BEAT_MAX_CHARS) ->
     return groups
 
 
+def find_anchor_hits(text: str, anchors, skip_missing: bool = False) -> list:
+    """앵커(본문을 그대로 베낀 조각)를 순서대로 찾아 (앵커 번호, 시작 오프셋) 째로 돌려준다.
+
+    skip_missing=False: 하나라도 안 붙으면 [] — 막 앵커는 전부 붙어야 분할할 가치가 있다.
+    skip_missing=True : 이 조각에서 안 붙는 앵커는 건너뛴다 — 막 단위 분할에서는 다른 막의
+                        유닛이 안 붙는 것이 정상이다(Strict면 막 분할이 통째로 꺼진다).
+    좌표를 LLM에게 받지 않고 문자열로 찾는 이유는 이 모델이 글자 수를 세지 않기 때문이다.
+    """
+    t = str(text or "")
+    anch = [str(a).strip() for a in (anchors or []) if str(a or "").strip()]
+    if not anch:
+        return []
+    idx = [k for k, ch in enumerate(t) if not ch.isspace()]     # 공백 무관: 줄바꿈을 바꿔 베껴도 붙는다
+    norm_t = "".join(t[k] for k in idx)
+    hits, npos = [], 0
+    for n, s in enumerate(anch):
+        ns = re.sub(r"\s+", "", s)
+        j = norm_t.find(ns, npos)
+        if j < 0:
+            if skip_missing:
+                continue
+            return []
+        hits.append((n, idx[j]))
+        npos = j + max(1, len(ns) - 1)
+    return hits
+
+
+def _snap_to_line_start(text: str, b: int) -> int:
+    """앞이 '결: ' 같은 라벨뿐이면 줄 맨 앞까지 밀어, 라벨이 앞 막에 남는 것을 막는다."""""
+    t = str(text or "")
+    ls = t.rfind("\n", 0, b) + 1
+    gap = t[ls:b].strip()
+    return ls if (gap and gap.rstrip(" :：").strip("기승전결") == "") else b
+
+
+def find_anchor_bounds(text: str, anchors, min_len: int = 2, skip_missing: bool = False) -> list:
+    """find_anchor_hits → 시작 오프셋 목록. 요구 개수(min_len) 미만이면 []."""
+    hits = find_anchor_hits(text, anchors, skip_missing=skip_missing)
+    bounds = []
+    for n, b in hits:
+        b = _snap_to_line_start(text, b)
+        if bounds and b <= bounds[-1]:
+            if not skip_missing:
+                return []
+            continue
+        bounds.append(b)
+    if min_len <= 1:
+        return bounds
+    return bounds if len(bounds) >= int(min_len) else []
+
+
+def anchor_units(text: str, units, strong_weight: int = 2) -> list:
+    """이 조각 안에서 붙는 유닛만 골라 (시작 오프셋, LLM가 준 컷 수) 째를 돌려준다."""
+    units = normalize_units(units, strong_weight=strong_weight)
+    out = []
+    for n, b in find_anchor_hits(text, [u["at"] for u in units], skip_missing=True):
+        b = _snap_to_line_start(text, b)
+        if out and b <= out[-1][0]:
+            continue
+        out.append((b, int(units[n]["cuts"])))
+    return out
+
+
+def _windows_from_bounds(text: str, bounds) -> list:
+    """오프셋 목록 → 조각 목록 (첫 앵커 앞의 메타 줄은 1번째 조각에 붙인다)."""
+    t = str(text or "")
+    if len(bounds) < 2:
+        return []
+    cuts = list(bounds) + [len(t)]
+    wins = [t[cuts[k]:cuts[k + 1]].strip() for k in range(len(cuts) - 1)]
+    pre = t[:bounds[0]].strip()
+    if pre and wins:
+        wins[0] = f"{pre}\n\n{wins[0]}".strip()
+    return [w for w in wins if w]
+
+
 def split_by_segments(text: str, segments) -> list:
     """LLM이 본문에서 그대로 베껴 준 막 앵커(기/승/전/결 각 첫 문장)로 본문을 자른다 → [막, ...] or []
 
@@ -193,38 +269,128 @@ def split_by_segments(text: str, segments) -> list:
     앵커가 원문에서 순서대로 전부 찾아질 때만 분할한다(하나라도 어긋나면 [] → split_beats 폴백).
     첫 앵커 앞의 메타 줄(주인공:/상대방:…)은 1막에 속한다(장면 정보로 유용하다).
     """
-    t = str(text or "")
-    segs = [str(s).strip() for s in (segments or []) if str(s or "").strip()]
-    if len(segs) < 2:
-        return []
-    # 공백 무관 매칭: LLM이 줄바꿈/공백을 조금 바꿔 베껴도 붙는다. 정규화 인덱스를 원문 인덱스로 역상사.
-    idx = [k for k, ch in enumerate(t) if not ch.isspace()]
-    norm_t = "".join(t[k] for k in idx)
-    bounds, npos = [], 0
-    for s in segs:
-        ns = re.sub(r"\s+", "", s)
-        j = norm_t.find(ns, npos)
-        if j < 0:
-            return []                              # 앵커 하나가でも 안 붙면 전체 분할 포기
-        b = idx[j]
-        # 앵커 바로 앞이 "결: " 같은 라운 라벨뿐이면 줄 맨 앞까지 그 막으로 옮긴다(라벨이 앞막에 남는 것 방지)
-        ls = t.rfind("\n", 0, b) + 1
-        gap = t[ls:b].strip()
-        if gap and gap.rstrip(" :：").strip("기승전결") == "":
-            b = ls
-        if bounds and b <= bounds[-1]:
-            return []
-        bounds.append(b)
-        npos = j + max(1, len(ns) - 1)
+    bounds = find_anchor_bounds(text, segments, min_len=2)
     if len(bounds) < 2 or sorted(bounds) != bounds or len(set(bounds)) != len(bounds):
         return []
-    cuts = bounds + [len(t)]
-    windows = [t[cuts[k]:cuts[k + 1]].strip() for k in range(len(cuts) - 1)]
-    pre = t[:bounds[0]].strip()
-    if pre and windows:                               # [2026-09-08] 첫 앵커 앞 메타(장소/복장)는 1막 소속 —
-        windows[0] = f"{pre}\n\n{windows[0]}".strip()  #   docstring의 약속과 달리 버려졌다(ep01 실측 480자 소실)
-    windows = [w for w in windows if w]
+    windows = _windows_from_bounds(text, bounds)
     return windows if len(windows) >= 2 else []
+
+
+# --------------------------------------------------------------------------- #
+# [2026-09-09] 컷 배분을 '글자 수'에서 '일어난 사건(액션)'으로 옮긴다.
+#   실측: 본문 2666자 → 목표 6컷 → 레이아웃 8컷 → 4막 × 최소 2컷이 8을 다 써서 [2,2,2,2].
+#   기가 2컷인 이유는 본문이 짧아서가 아니라 **배분 저울이 글자 수**였기 때문이다.
+# --------------------------------------------------------------------------- #
+MIN_UNIT_CHARS = 90                  # 이보다 짧은 유닛 조각은 앞 유닛에 합친다(풍선 하나짜리 컷 남발 방지)
+UNITS_PER_CALL_MAX = 6               # 장면(=LLM 1호출)당 유닛 상한 — PANELS_PER_BEAT_MAX와 같은 JSON 보호선
+MAX_UNITS = 14                       # 회차 유닛 상한 (14개 × 강함 2컷 = 28컷이 물리적 상한)
+
+# '이 사건은 컷 2개짜리다'로 봐야 하는 큐 — 신체가 움직이거나 관계가 바뀌는 순간들.
+# (민감어는 넣지 않는다: 이 목록은 공개 코드에 탄다)
+_STRONG_CUES = (
+    "키스", "입맞춤", "포옹", "껴안", "안을", "손을 잡", "손잡", "만지", "어깨를 잡", "볼을",
+    "옷을", "단추", "벗", "상의", "침대로", "침대 위", "이불", "무릎",
+    "밀어내", "밀쳤", "피한다", "피해", "고백", "거절", "차단", "화해", "약속", "용서",
+    "무너", "울음", "울며", "눈물이", "후회", "고백하", "떠난", "뒤쫓", "잡으러",
+    "숨이", "뜨겁", "거칠", "깊게", "허리를", "속도를", "파도", "이성을", "한계를",
+    "문 열", "문이 열", "들어온", "들어난", "걸려", "불이 꺼", "비명이", "넘어",
+)
+
+
+def normalize_units(raw, max_units: int = MAX_UNITS, strong_weight: int = 2) -> list:
+    """LLM이 나눈 액션 유닛 목록을 [{at, cuts}]로 정규화한다.
+
+    받는 형태는 둘 다 허용한다(26B Q4는 객체를 깨뜨린다):
+      {"at": "사건 시작 문장(본문 복사)", "cuts": 2}   ← 권장: 나누는 판단과 컷 수를 LLM이 한다
+      "사건 시작 문장(본문 복사)"                       ← 컷 수는 our 큐 판정(폴백)
+    """
+    out = []
+    for u in (raw or []):
+        if isinstance(u, dict):
+            at = re.sub(r"\s+", " ", str(u.get("at") or u.get("anchor") or u.get("text") or "")).strip()
+            try:
+                cuts = int(u.get("cuts") or u.get("panels") or 0)
+            except Exception:
+                cuts = 0
+            cuts = cuts if 1 <= cuts <= 3 else 0          # 컷 3개를 넘는 유닛은 없다(넘기면 폴백 판정)
+        else:
+            at = re.sub(r"\s+", " ", str(u or "")).strip()
+            cuts = 0
+        if not (3 <= len(at) <= 160) or any(at == o["at"] for o in out):
+            continue
+        out.append({"at": at, "cuts": cuts or action_weight(at, strong_weight)})
+    return out[:max_units]
+
+
+def action_weight(text: str, strong_weight: int = 2) -> int:
+    """액션 유닛 하나(요약 또는 본문 조각)의 컷 가중치 — 강하면 strong_weight, 아니면 1."""
+    s = re.sub(r"\s+", " ", str(text or ""))
+    if not s:
+        return 1
+    sw = max(1, int(strong_weight))
+    return sw if any(c in s for c in _STRONG_CUES) else 1
+
+
+def split_acts_by_units(acts, units, strong_weight: int = 2,
+                        max_units_per_beat: int = UNITS_PER_CALL_MAX):
+    """막 조각을 **액션 유닛 앵커**로 더 쪼갠다 → (beats, beat_acts, weights)
+
+    유닛이 그 막 안에서 순서대로 찾아질 때만 쪼갠다(못 찾으면 막을 통째로 둔다).
+    너무 짧은 조각은 앞 조각에 합치고, 막당 유닛 수는 JSON 보호선(기본 6)으로 누른다.
+    컷 수는 **유닛을 나눈 LLM이 준 값**을 쓰고, 없으면(문자열로만 준 경우) 큐 판정으로 메꾼다.
+    """
+    beats, beat_acts, weights = [], [], []
+    for ai, act in enumerate(acts or []):
+        act = str(act or "").strip()
+        if not act:
+            continue
+        pairs = anchor_units(act, units, strong_weight)           # 다른 막의 유닛은 조용히 건너뛴다
+        cut_w = {b: w for b, w in pairs if b > 0}
+        bounds = [b for b, _ in pairs if b > 0]                   # 막의 첫 유닛은 막 자체의 시작
+        parts, pw = [], []
+        if bounds:
+            cuts = [0] + bounds + [len(act)]
+            for k in range(len(cuts) - 1):
+                seg = act[cuts[k]:cuts[k + 1]].strip()
+                if seg:
+                    parts.append(seg)
+                    pw.append(int(cut_w.get(cuts[k + 1], 0) or action_weight(seg, strong_weight)))
+        if not parts:
+            parts, pw = [act], [action_weight(act, strong_weight)]
+        # 짧은 조각은 앞 조각에 합친다 (풍선 하나만 들어갈 컷이 넘치면 화면이 산으로 간다)
+        merged, mw = [parts[0]], list(pw[:1])
+        for p, w in zip(parts[1:], pw[1:]):
+            if len(merged[-1]) < MIN_UNIT_CHARS:
+                merged[-1] = f"{merged[-1]}\n\n{p}".strip()
+                mw[-1] = max(mw[-1], w)
+            else:
+                merged.append(p)
+                mw.append(w)
+        # 막당 유닛 상한: 같은 막 안에서 더 쪼갠 것끼리 다시 합친다(가중치는 큰 쪽을 따른다)
+        while len(merged) > max_units_per_beat:
+            j = len(merged) - 2
+            merged[j] = f"{merged[j]}\n\n{merged[j + 1]}".strip()
+            mw[j] = max(mw[j], mw[j + 1])
+            del merged[j + 1], mw[j + 1]
+        beats += merged
+        beat_acts += [ai] * len(merged)
+        weights += mw
+    return beats, beat_acts, weights
+
+
+def target_panels_from_weights(weights, strong_weight: int = 2, min_panels: int = MIN_PANELS_AUTO,
+                               max_panels: int = 0, acts: int = 0, min_per_act: int = 2) -> int:
+    """액션 가중치 합 → 회차 컷 예산 (본문 길이는 더 이상 저울이 아니다).
+
+    하한: MIN_PANELS, 그리고 '막당 min_per_act컷' (기승전결이 1컷씩으로 납작해지는 것을 막는다).
+    상한: max_panels(0=무제한). 강한 사건은 strong_weight컷을 쓴다.
+    """
+    w = [max(1, int(x or 1)) for x in (weights or [])]
+    n = sum(w)
+    if acts:
+        n = max(n, int(min_per_act) * int(acts))
+    n = max(int(min_panels), n)
+    return min(n, int(max_panels)) if max_panels and int(max_panels) > 0 else n
 
 
 def target_panels(text: str, chars_per_panel: int = CHARS_PER_PANEL,
@@ -284,11 +450,18 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
     sh = (sheet_text or "")[:SHEET_TEXT_CAP]
     seg_schema = ('"segments": ["기/승/전/결 각 첫 문장의 **앞부분 ~40자를 본문에서 그대로 복사**(접두 조각도 OK, 총 4개)"],'
                   if need_segments else '"segments": [],')
+    # units는 항상 부탁한다 — 유닛은 컷 배분의 저울이라 막 앵커를 파서가 이미 갖고 있어도 필요하다.
+    unit_schema = '"units": [{"at": "사건이 시작하는 문장을 본문에서 그대로 복사", "cuts": 1}],'
+    unit_rule = ("6-b. units는 본문을 **사건(액션) 단위로 나눈 목록**이다 — 글자 수가 아니라 '누가 무엇을 했나'로 자른다.\n"
+                 "   한 유닛 = 사건 하나(이동·호칭·대사만 있는 장면은 앞 유닛에 합친다). 'at'은 그 사건이 시작하는\n"
+                 "   문장을 본문에서 그대로 복사(의역 금지), 'cuts'는 그 사건을 그릴 컷 수(평범한 사건 1,\n"
+                 "   신체 접촉·관계 변화·클라이맥스는 2). 총 4~12개, 일어난 순서대로.")
     rule6 = ("6. segments는 기/승/전/결 부분의 **첫 문장을 본문에서一字不사본**(의역/요약을 넣으면 앵커 매칭이\n"
              "   깨져 장면 분할이 사라진다). 문장이 길면 **앞 40자만 잘라 복사해도 된다**(부분 복사 OK, 총 4개).\n"
-             "   본문에 뚜렷한 4부 구조가 없으면 빈 배열."
-             if need_segments else
-             "6. segments는 항상 빈 배열 []로 두세요(막 경계는 이미 프로그램이 본문에서 확정했습니다).")
+             "   본문에 뚜렷한 4부 구조가 없으면 빈 배열.\n"
+             + unit_rule if need_segments else
+             "6. segments는 항상 빈 배열 []로 두세요(막 경계는 이미 프로그램이 본문에서 확정했습니다).\n"
+             + unit_rule)
     # [2026-09-09] 수위 정책 분기 — 기본은 청년향(상한 nsfw), --allow-explicit(local)에서만 explicit를 연다.
     #   상한을 문자열로 못 박아둔 자리라 여기서 나눠야 LLM이 explicit를 고를 수 있다.
     if anima_gen.explicit_allowed():
@@ -333,6 +506,7 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
  "partner": {{"name": "한국어 이름", "sex": "female 또는 male", "clothes": "영문 태그"}},
  "guides": {{"protagonist": ["기", "승", "전", "결 각 1문장 한국어"], "partner": ["상대방 시선 1~2문장"], "sub": []}},
  {seg_schema}
+ {unit_schema}
  "actions": ["본문에 실제로 등장하는 스킨십/로맨스 행동 이름만** 최대 4개 (2~6글자 명사구)"],
  {rating_schema}
 }}
@@ -475,6 +649,7 @@ def _normalize_extract(data: dict) -> dict:
     out["guides"] = {"protagonist": g_pro, "partner": g_part, "sub": []}
     out["actions"] = acts[:MAX_ACTIONS]
     out["segments"] = segs[:12]
+    out["units"] = normalize_units(data.get("units"))      # [2026-09-09] 사건 단위를 LLM이 나누고 컷 수까지 준다
     out["rating"] = rating
     return out
 
@@ -518,6 +693,10 @@ def _merge_extracts(parts: list) -> dict:
     base["guides"] = {"protagonist": g_pro[:GUIDE_LINES_MAX], "partner": g_part[:8], "sub": []}
     base["actions"] = acts[:MAX_ACTIONS]
     base["segments"] = segs[:12]
+    _u = []
+    for p in parts:                                        # 창별 유닛은 순서대로 합친다(중복 앵커는 첫 개만)
+        _u += [u for u in normalize_units(p.get("units")) if not any(u["at"] == o["at"] for o in _u)]
+    base["units"] = _u[:MAX_UNITS]
     base["rating"] = rating
     return base
 
@@ -558,7 +737,8 @@ def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,
             parts.append(d)
             if len(windows) > 1:
                 clog(f"추출 창 {wi}/{len(windows)} ({len(w)}자): "
-                     f"가이드 {len(d['guides']['protagonist'])}줄 · 행동 {d['actions']} · "
+                     f"가이드 {len(d['guides']['protagonist'])}줄 · 사건 {len(d.get('units') or [])}개"
+                     f"(컷 {sum(u['cuts'] for u in (d.get('units') or []))}) · 행동 {d['actions']} · "
                      f"rating={d['rating'] or '(자동)'}")
     if not parts:
         return {}
@@ -570,7 +750,8 @@ def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,
         clog(f"⚠ 추출 결과 필수 태그 누락: {missing} (렌더 필수 검증 실패 가능)")
     clog(f"추출 완료({len(windows)}창 병합): {proto.get('name')}/{proto.get('sex')} · "
          f"상대방 {(data.get('partner') or {}).get('name')} · "
-         f"가이드 {len(data['guides']['protagonist'])}줄 · 행동 {data['actions']} · "
+         f"가이드 {len(data['guides']['protagonist'])}줄 · 사건 {len(data.get('units') or [])}개"
+         f"(컷 {sum(u['cuts'] for u in (data.get('units') or []))}) · 행동 {data['actions']} · "
          f"rating={data['rating'] or '(자동)'}")
     return data
 
@@ -684,6 +865,9 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     #   segments 인자가 오면 그것을 우선한다(local progress 포맷은 막 경계를 원문으로 갖고 있다).
     _segs = list(segments) if segments else list((data or {}).get("segments") or [])
     config.ep_beat_segments = {**(getattr(config, "ep_beat_segments", {}) or {}), ep_num: _segs}
+    # [2026-09-09] 사건(액션) 단위 + 컷 수 — 컷 배분의 저울을 '글자 수'에서 '사건'으로 옮긴다 (comic_gen)
+    config.ep_action_units = {**(getattr(config, "ep_action_units", {}) or {}),
+                              ep_num: normalize_units((data or {}).get("units"))}
 
     # 에피소드 본문: progress/ 가 없으므로 config 폴백이 유일한 원천
     while len(config.episode_content) <= idx:

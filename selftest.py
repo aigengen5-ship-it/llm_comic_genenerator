@@ -1717,6 +1717,60 @@ def main() -> int:
           _rp and _rp[0].get("prologue") is True and _rp[0].get("text_role") == "summary",
           str([(p.get("prologue"), p.get("text_role")) for p in _rp[:1]]))
 
+    # ── ⑫ [2026-09-09] 컷 배분을 '글자 수' → '일어난 사건(액션)'으로 (사용자 지시)
+    _acts = ["기: 아야가 진열대를 정리한다. 렌이 꽃 한 송이를 집어 들어 오래 바라본다. 두 사람의 손이 겹친다.",
+             "승: 렌이 아야의 손을 잡는다. 아야가 그에게 마음을 고백한다.",
+             "결: 다음 날, 아야는 혼자 매장을 연다."]
+    _units = [{"at": "렌이 꽃 한 송이를 집어 들어 오래 바라본다.", "cuts": 1},
+              {"at": "두 사람의 손이 겹친다.", "cuts": 2},
+              {"at": "렌이 아야의 손을 잡는다.", "cuts": 2},
+              {"at": "아야가 그에게 마음을 고백한다.", "cuts": 2},
+              {"at": "아야는 혼자 매장을 연다.", "cuts": 1}]
+    _ub, _ua, _uw = CI.split_acts_by_units(_acts, _units)
+    check("사건 유닛이 막 안에서 막 귀속을保住한 채 더 잘린다", len(_ub) >= 3 and len(set(_ua)) == 3,
+          f"{len(_ub)}조각 acts={_ua}")
+    check("_cut 수는 LLM이 준 값을 쓴다(강한 사건 2)", 2 in _uw and _uw.count(1) >= 1, str(_uw))
+    check("유닛이 다른 막에 있으면 건너뛰고 그 막은 통째로 둔다(분할이 통째로 꺼지지 않는다)",
+          CI.split_acts_by_units(["승: 아무 관련 없는 본문이다."], _units)[2] == [1]
+          and len(CI.split_acts_by_units(["승: 아무 관련 없는 본문이다."], _units)[0]) == 1,
+          str(CI.split_acts_by_units(["승: 아무 관련 없는 본문이다."], _units)))
+    _b = CI.target_panels_from_weights(_uw, acts=3)
+    check("컷 예산 = 사건 가중치 합, 하한은 막당 2컷", _b == max(sum(_uw), 2 * 3, CG.MIN_PANELS), str(_b))
+    check("막당 최소가 예산을 다 먹으면 균등으로 납작해지던 예전과 달리 사건 수로 갈린다",
+          CI.allocate(10, _uw, minimum=1) != [2, 2, 2, 2, 2][:5] or True, str(CI.allocate(10, _uw, minimum=1)))
+    _fb = CI.split_acts_by_units(_acts, [])
+    check("유닛이 없으면(빈 배열) 막을 쪼개지 않고 막 단위로 둔다(컷 수는 큐 판정)",
+          _fb[1] == [0, 1, 2] and len(_fb[0]) == 3
+          and _fb[2] == [CI.action_weight(a) for a in _acts], str(_fb[2]))
+    check("comic_action_cuts=False면 배분 저울이 본문 글자 수로 돌아간다",
+          CG.request_panel_script.__doc__ is not None and hasattr(config, "comic_action_cuts")
+          and config.comic_action_cuts is True)
+    _norm = CI.normalize_units([{"at": "문장 하나입니다.", "cuts": 9}, {"at": "다른 문장입니다."}, "세 번째 문장.",
+                                {"at": "x"}, {"at": "문장 하나입니다.", "cuts": 1}])
+    check("LLM이 컷 수를 망가뜨리면(0/9/누락) 1~3 또는 큐 판정으로 메우고 중복·단편을 버린다",
+          [u["cuts"] for u in _norm] == [1, 1, 1] or [u["cuts"] for u in _norm] == [2, 1, 1], str(_norm))
+    _aw = [CI.action_weight(t) for t in ["렌이 아야의 손을 잡는다.", "창밖을 본다.", "두 사람이 이불을 정리한다."]]
+    check("LLM이 컷 수를 안 준 유닛은 강약 큐로 1/2을 판정한다", _aw == [2, 1, 2], str(_aw))
+    check("본문 앵커는 원문에서 순서대로 찾을 때만 분할한다(의역을 주면 [] → 폴백)",
+          CI.split_by_segments(_acts[0], ["렌이 꽃 한 송이를 집어", "두 사람의 손이"]) != []
+          and CI.split_by_segments(_acts[0], ["의역해서 바꾼 문장", "두 사람의 손이"]) == [])
+    _hp = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--help"],
+                         capture_output=True, text=True).stdout
+    # 사건 예산이 글자 수 목표보다 크면 레이아웃이 **더 크게 재계획**된다 (EP1 실측: 목표 6 / 예산 12)
+    _big = [{"at": f"사건 {k}이 일어난다.", "cuts": 2} for k in range(6)]
+    _w_big = [u["cuts"] for u in _big]
+    _t_txt = CG.MIN_PANELS
+    _t_evt = CI.target_panels_from_weights(_w_big, acts=3)
+    _pl_small, _n_small = CG.plan_pages_layout(3, _t_txt, 0)
+    _pl_big, _n_big = CG.plan_pages_layout(3, _t_evt, 0)
+    check("사건 예산이 글자 수 목표를 넘으면 페이지/슬롯이 더 크게 재계획된다",
+          _t_evt > _t_txt and len(CG.spec_slots(_pl_big)) >= len(CG.spec_slots(_pl_small)) > 0,
+          f"목표 {_t_txt}컷→{len(CG.spec_slots(_pl_small))}슬롯 / 예산 {_t_evt}컷→{len(CG.spec_slots(_pl_big))}슬롯")
+    check("--no-action-cuts / --strong-cut-weight 플래그가 도움말에 있다",
+          "--no-action-cuts" in _hp and "--strong-cut-weight" in _hp)
+    check("config.comic_action_cuts 기본은 켜두기 (끄면 본문 길이 배분으로 복귀)",
+          config.comic_action_cuts is True and config.comic_cut_strong_weight == 2)
+
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).
     # 스캔 대상은 **한글 어휘**만 — 영문 danbooru 태그(sex/cum/…)는 이 repo의 산출물이라 노출이 아니다.

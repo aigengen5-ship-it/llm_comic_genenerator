@@ -644,6 +644,10 @@ def main() -> int:
                     help="★에필로그(마지막 회차 끝의 반투명 이벤트신 1칸 + 큰 여운 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
+    ap.add_argument("--no-action-cuts", action="store_true",
+                    help="컷 배분을 본문 '글자 수'로 되돌린다 (기본: LLM이 나눈 사건(액션) 단위로 배분)")
+    ap.add_argument("--strong-cut-weight", type=int, default=0,
+                    help="사건 유닛이 컷 수를 안 줬을 때 강한 사건으로 보는 컷 수 (기본 2)")
     ap.add_argument("--no-prologue", action="store_true", dest="no_prologue",
                     help="★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷 = 배경만 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-emo-marks", action="store_true", dest="no_emo_marks",

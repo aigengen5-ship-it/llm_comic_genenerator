@@ -109,10 +109,13 @@ comic_font_narration = ""         # 설명(지문)
 comic_font_dialog = ""            # 대사(말풍선)
 comic_font_thought = ""           # 속마음(풍선)
 comic_font_sfx = ""               # 의성어/의태어
-comic_summary_cuts = True         # ★서두 요약 컷: 각 기승전결 첫 컷 = 배경만 + 큰 지문(컷 70%)
-comic_epilogue = True               # ★에필로그 컷: 결 끝에 반투명 이벤트신 2컷 + 큰 지문
+comic_summary_cuts = True         # ★회차 도입 요약: **각 회차의 첫 컷**만 배경만 + 큰 지문 (기승전결 페이지마다 아님)
+comic_epilogue = True               # ★에필로그: **마지막 회차 끝**에만 반투명 이벤트신 1칸 + 큰 여운 지문
 comic_emo_marks = True              # 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) → --no-emo-marks
 comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차** 맨 앞에 도입 1컷(배경만+큰 지문)
+# [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
+comic_action_cuts = True            # False = 예전처럼 본문 길이(600자 = 컷 1)로만 배분
+comic_cut_strong_weight = 2         # LLM이 컷 수를 안 준 유닛을 강한 사건으로 볼 때의 컷 수
 comic_book_num = 0                # 0 = comic/bookNNN 자동
 angle_llm_cli = False             # -angle: action 컷에 angle.txt 구도 적용
 camera_canon_cli = False          # -camera_canon: 카메라 뷰 태그 정석화 A/B

@@ -1277,6 +1277,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     segs = _segs_map.get(ep_num_1based) or _segs_map.get(str(ep_num_1based)) or []
     acts = CI.split_by_segments(body, segs) if segs else []
     beat_acts = None
+    unit_w = None                                    # 사건(액션) 기준 배분이 켜지면 유닛별 컷 수가 들어온다
     n_beats = max(1, -(-n_cut // CI.PANELS_PER_BEAT_MAX))
     if 2 <= len(acts) <= 8:
         if n_cut < 2 * len(acts):                  # 막당 2컷을 담을 컷 수부터 확보 (레이아웃 재계획)
@@ -1293,7 +1294,28 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
                 page_plans, n_pages = plan_pages_layout(ep_num_1based, max(target, 2 * len(acts)), need_pages)
                 slots = spec_slots(page_plans)
                 n_cut = len(slots) if slots else target
-        if n_cut >= len(acts):
+        # [2026-09-09] 컷 배분의 저울을 '글자 수'에서 '사건(액션)'으로 옮긴다.
+        #   실측: 본문 2666자 → 목표 6컷 → 레이아웃 8컷 → 4막×최소2컷이 8을 다 써서 [2,2,2,2].
+        #   기가 2컷인 이유는 본문이 짧아서가 아니라 저울이 글자 수였기 때문이다.
+        #   이제 LLM이 나눈 사건 유닛(강한 사건 2컷)이 예산과 배분을 모두 결정하고,
+        #   글자 수 배분은 유닛이 없을 때의 폴백으로 남는다.
+        _umap = getattr(config, "ep_action_units", {}) or {}
+        units = _umap.get(ep_num_1based) or _umap.get(str(ep_num_1based)) or []
+        unit_w = None
+        if bool(getattr(config, "comic_action_cuts", True)) and units:
+            ub, ua, uw = CI.split_acts_by_units(acts, units, strong_weight=int(
+                getattr(config, "comic_cut_strong_weight", 2) or 2))
+            if len(ub) >= 2:
+                beats, beat_acts = ub, ua
+                target = CI.target_panels_from_weights(uw, min_panels=MIN_PANELS, max_panels=maxp,
+                                                       acts=len(acts))
+                if target != n_cut:                              # 사건이 요구하는 컷 수로 레이아웃 재계획
+                    page_plans, n_pages = (plan_pages_layout(ep_num_1based, target, pages)
+                                           if pages >= 0 else (page_plans, n_pages))
+                    slots = spec_slots(page_plans)
+                    n_cut = len(slots) if slots else target
+                unit_w = uw
+        if unit_w is None and n_cut >= len(acts):
             beats, beat_acts = list(acts), list(range(len(acts)))
             while len(beats) < max(n_beats, len(acts)) and len(beats) < n_cut:  # JSON 보호선(컷6) 맞출까지만 긴 막 추가 분할
                 i = max(range(len(beats)), key=lambda k: len(beats[k]))
@@ -1301,13 +1323,16 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
                 if len(parts) < 2:
                     break
                 beats[i:i + 1], beat_acts[i:i + 1] = parts, [beat_acts[i], beat_acts[i]]
-        else:
+        elif unit_w is None:
             beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
     else:
         beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
-    quotas = CI.allocate(n_cut, [max(1, len(b)) for b in beats],
-                         minimum=(2 if (beat_acts is not None and n_cut >= 2 * len(beats))
+    quotas = CI.allocate(n_cut, (unit_w if unit_w else [max(1, len(b)) for b in beats]),
+                         minimum=(2 if (beat_acts is not None and unit_w is None and n_cut >= 2 * len(beats))
                                   else (1 if n_cut >= len(beats) else 0)))
+    if unit_w:
+        _clog(f"EP{ep_num_1based} 사건 {len(unit_w)}개(강한 사건 {sum(1 for w in unit_w if w > 1)}개 = 컷 2) "
+              f"→ 컷 예산 {sum(unit_w)} / 레이아웃 {n_cut}컷 — 배분 저울은 '글자 수'가 아니라 '일어난 사건'")
     _clog(f"EP{ep_num_1based} 본문 {len(body)}자 → 목표 {target}컷 / 레이아웃 {n_cut}컷"
           + (f" ({n_pages}페이지 {[pl['template_id'] for pl in page_plans]})" if page_plans else " (자동 레이아웃)")
           + (f" → 장면 {len(beats)}개 {quotas} (기승전결 막 분할: "

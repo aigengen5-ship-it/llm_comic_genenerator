@@ -114,11 +114,12 @@ BUNDLED_FONTS = {
                   "MaruBuri-Bold.ttf", "MaruBuri-Regular.ttf",
                   "NotoSerifKR-Bold.ttf", "NotoSerifKR-Regular.ttf",
                   "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
-    "dialog":    ("Jua-Regular.ttf", "DoHyeon-Regular.ttf",
+    "dialog":    ("Jua-Regular.ttf", "Gaegu-Regular.ttf", "DoHyeon-Regular.ttf",
                   "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
-    "thought":   ("DoHyeon-Regular.ttf", "NanumPenScript-Regular.ttf",
-                  "NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"),
-    "sfx":       ("BlackHanSans-Regular.ttf", "Jua-Regular.ttf",
+    # 속마음 = Gaegu(손글씨·표정 있는 붓체) → Do Hyeon 순. 속마음은 글씨체가 제일 살아나는 자리다.
+    "thought":   ("Gaegu-Regular.ttf", "Gaegu-Bold.ttf", "DoHyeon-Regular.ttf",
+                  "NanumPenScript-Regular.ttf", "NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"),
+    "sfx":       ("BlackHanSans-Regular.ttf", "Gaegu-Bold.ttf", "Jua-Regular.ttf",
                   "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
 }
 font_role_paths = {}                     # role → 사용자 지정 경로(--font-narration 등)
@@ -180,11 +181,17 @@ FONTS_MANIFEST = (
     ("DoHyeon-Regular.ttf", "https://github.com/google/fonts/raw/main/ofl/dohyeon/DoHyeon-Regular.ttf"),
     ("BlackHanSans-Regular.ttf",
      "https://github.com/google/fonts/raw/main/ofl/blackhansans/BlackHanSans-Regular.ttf"),
+    # [2026-09-09] Gaegu(개인 손글씨·아이 같고 표정 있는 붓체, OFL) — 속마음 1순위/대사·의성어 후보.
+    #   3종(Light/Regular/Bold) 다 합치면 9MB가 넘어 Basic 2종만 받습니다(Light은 직접 넣어 쓰시면 됩니다).
+    ("Gaegu-Regular.ttf",
+     "https://github.com/google/fonts/raw/main/ofl/gaegu/Gaegu-Regular.ttf"),
+    ("Gaegu-Bold.ttf", "https://github.com/google/fonts/raw/main/ofl/gaegu/Gaegu-Bold.ttf"),
     ("OFL-gowunbatang.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/gowunbatang/OFL.txt"),
     ("OFL-jua.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/jua/OFL.txt"),
     ("OFL-dohyeon.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/dohyeon/OFL.txt"),
     ("OFL-blackhansans.txt",
      "https://raw.githubusercontent.com/google/fonts/main/ofl/blackhansans/OFL.txt"),
+    ("OFL-gaegu.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/gaegu/OFL.txt"),
 )
 
 

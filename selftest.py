@@ -1470,6 +1470,11 @@ def main() -> int:
           len(CPM.FONTS_MANIFEST) >= 6
           and all(u.startswith("https://") for _, u in CPM.FONTS_MANIFEST)
           and any(n.endswith(".txt") for n, _ in CPM.FONTS_MANIFEST), str(len(CPM.FONTS_MANIFEST)))
+    check("Gaegu(손글씨 붓체·OFL)도 다운로드 목록과 속마음 후보에 있다",
+          any("gaegu" in u.lower() and u.lower().endswith(".ttf") for _, u in CPM.FONTS_MANIFEST)
+          and any("gaegu" in u.lower() and u.lower().endswith(".txt") for _, u in CPM.FONTS_MANIFEST)
+          and any("gaegu" in f.lower() for f in CPM.BUNDLED_FONTS["thought"]),
+          str([n for n, _ in CPM.FONTS_MANIFEST if "gaegu" in n.lower()]))
     _gi = open(os.path.join(ROOT, ".gitignore"), encoding="utf-8").read()
     check("data/fonts/는 gitignore(폰트는 실행 환경에서 받아 쓴다 — repo는 가볍게)",
           "data/fonts/" in _gi or "data/fonts" in _gi)

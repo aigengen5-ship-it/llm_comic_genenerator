@@ -429,12 +429,16 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 
 #### 화면 문법 폰트 (무료 · OFL) — `--get-fonts` 한 번
 
-| 용도 | 폰트 | 라이선스 |
+| 용도 | 폰트 (앞이 1순위, 뒤는 후보) | 라이선스 |
 |---|---|---|
 | 설명(지문) | Gowun Batang (세리프) | OFL 1.1 |
-| 대사(말풍선) | Jua | OFL 1.1 |
-| 속마음 | Do Hyeon | OFL 1.1 |
-| 의성어 | Black Han Sans | OFL 1.1 |
+| 대사(말풍선) | Jua → Gaegu | OFL 1.1 |
+| 속마음 | **Gaegu** (손글씨 붓체) → Do Hyeon | OFL 1.1 |
+| 의성어 | Black Han Sans → Gaegu Bold | OFL 1.1 |
+
+> 다 합쳐도 전부 **SIL OFL 1.1**(무료·재배포 가능)입니다. `Gaegu Light`는 자동 다운로드 목록에 없습니다
+> (3종이면 9MB를 넘는다) — 필요하시면 `data/fonts/Gaegu-Light.ttf`를 직접 넣으시면 후보가 됩니다.
+> 속마음을 다른 글씨로 쓰려면: `--font-thought data/fonts/DoHyeon-Regular.ttf`
 
 ```
 python3 run_comic.py --get-fonts        # data/fonts/로 받습니다(이미 있는 건 건너뜀 · .gitignore 대상)

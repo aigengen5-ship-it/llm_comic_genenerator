@@ -1646,6 +1646,25 @@ def main() -> int:
           _narrow and _narrow[3] - _narrow[1] <= 500 * CPM.NARR_BALLOON_H_RATIO + 12,
           str(_narrow[3] - _narrow[1] if _narrow else 0))
 
+    # [2026-09-09] 사용자 지시 2건 — ★지문 글자가 너무 크고, 박스가 컷의 절반만져서 글자가 잘린다
+    _lp = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "짧은 ★지문", font_size=20, large=True)
+    _lg = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "★지문이 길어서 여러 줄로 접힌다 " * 5, font_size=20, large=True)
+    check("★회차 도입·에필로그 지문은 컷 폭을 다 쓴다(짧은 글자도 박스를 당기지 않는다)",
+          _lp and _lg and (_lp[2] - _lp[0]) >= 700 * 0.90 and (_lg[2] - _lg[0]) >= 700 * 0.90,
+          f"short={_lp[2]-_lp[0]} long={_lg[2]-_lg[0]} /700")
+    check("★지문 글자 배율은 1.3배 이내로 줄인다(예전 1.5배는 다른 컷 대비 지나치게 컸다)",
+          _lp and _lp[4] > 20 and _lp[4] <= int(20 * 1.30)
+          and CPM.NARR_LARGE_FONT_RATIO <= 1.30, f"fs={_lp[4] if _lp else 0} ratio={CPM.NARR_LARGE_FONT_RATIO}")
+    check("넓어진 폭 덕분에 같은 글씨가 더 적은 줄로 들어간다(잘림 감소)",
+          _lg and len(_lg[5]) <= 3, f"lines={len(_lg[5]) if _lg else 0}")
+    _wide_evt = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "이벤트 컷의 긴 설명 문장입니다 " * 5,
+                                      font_size=20, narrow=True)
+    check("이벤트 컷 설명도 컷 폭의 절반은 쓸 수 있다(예전 46% 상한에서는 글자가 짤렸다)",
+          _wide_evt and _wide_evt[2] - _wide_evt[0] >= 700 * 0.55, str(_wide_evt[2] - _wide_evt[0]))
+    check("대사가 없는 일반 설명은 컷 폭의 80%까지 쓸 수 있다", CPM.NARR_W_RATIO >= 0.78
+          and CPM.NARR_W_RATIO_WITH_BALLOON >= 0.60,
+          f"{CPM.NARR_W_RATIO}/{CPM.NARR_W_RATIO_WITH_BALLOON}")
+
     # (4) 감정 이모티콘 — 종류마다 다른 색으로, 컷 안에만
     _seen = {}
     for _k in CPM.EMOTIF_KINDS:

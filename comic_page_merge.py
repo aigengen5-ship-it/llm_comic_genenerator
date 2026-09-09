@@ -136,8 +136,11 @@ NARR_LARGE_COVER = 0.70                  # 요약 지문이 컷 면적의 70%를
 NARR_MAX_LINES = 99                      # [2026-09-09] 줄 수로 설명을 자르지 않는다(글자가 다 보여야 한다)
 NARR_MAX_LINES_WITH_BALLOON = 99         #   대신 대사가 있는 컷은 **높이 비율**로 설명을 제한한다
 NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스는 컷 높이의 55% 이내(나머지는 풍선)
-NARR_W_RATIO = 0.60                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 줄어든다
-NARR_W_RATIO_WITH_BALLOON = 0.46         # 대사가 있으면 설명 폭 상한을 더 낮춘다
+NARR_W_RATIO = 0.80                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 다시 줄어든다
+NARR_W_RATIO_WITH_BALLOON = 0.62         # 대사가 있으면 설명 폭 상한을 더 낮춘다(풍선 자리)
+# [2026-09-09] 사용자 지시 2건: ★큰 지문은 글자가 다른 컷 대비 너무 크고, 박스가 컷의 절반만 써서 글자가 잘린다.
+NARR_W_RATIO_LARGE = 1.00                # ★회차 도입·에필로그 지문은 **컷 폭을 다 쓴다**(짧은 글자도 박스를 당기지 않는다)
+NARR_LARGE_FONT_RATIO = 1.25             # ★큰 지문의 글자 배율 (예전 1.5 → 지나치게 컸다)
 TAIL_LEN = 11                            # 풍선 꼬리 길이 — 아주 작게(사용자 지시)
 TAIL_BASE = 13                           # 풍선 꼬리 밑변(너무 크면 그림을 가린다)
 THOUGHT_BUBBLES = (6, 4, 3)              # 속마음 물방울 반지름 (역시 작게)
@@ -966,7 +969,7 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
       · 박스 폭·높이는 실제 글자 폭/줄 수 만큼만 쓴다 (빈 공간으로 컷을 채우지 않는다)
       · 컷 안에 안 들어가면 줄 수를 늘리고, 그래도 모자라면 폰트를 13px까지 줄인다
       · 대사가 있는 이벤트 컷(narrow)은 폭 상한·줄 수를 더 낮춰 풍선 자리를 남긴다
-      · large(★서두 요약·★에필로그)만 예외로 글자를 크게 쓴다(그래도 컷의 70%를 넘기지 않는다)
+      · large(★회차 도입·★에필로그)만 예외로 글자를 크게 쓰고 **컷 폭을 다 쓴다**(그래야 줄 수가 줄어 안 잘린다)
     → (x0, y0, x1, y1, font_size, 그은 줄 목록) 또는 None
     """
     text = str(text or "").strip()
@@ -977,8 +980,8 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
     # 폭 상한: 컷 폭의 일정 비율 이내 (대사가 있으면 더 좁게)
     w_cap = min(iw - 2 * margin,
                 int(round(iw * (NARR_W_RATIO_WITH_BALLOON if narrow else NARR_W_RATIO))))
-    if large:
-        w_cap = min(iw - 2 * margin, int(round(iw * 0.86)))
+    if large:                                        # ★지문은 컷 폭 전체가 무대다(폭이 넓어야 줄 수가 줄어 잘리지 않는다)
+        w_cap = min(iw - 2 * margin, int(round(iw * NARR_W_RATIO_LARGE)))
     # 높이 상한: 컷 안. large는 여기서도 70%를 넘기지 않는다.
     box_cap = ih - 2 * margin
     if narrow and not large:
@@ -986,7 +989,7 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
         box_cap = min(box_cap, max(72, int(round(ih * NARR_BALLOON_H_RATIO))))
     if large:
         box_cap = min(box_cap, max(96, int(round(ih * NARR_LARGE_COVER))))
-    fs_hi = max(16, int(font_size * 1.5)) if large else int(font_size)
+    fs_hi = max(16, int(font_size * NARR_LARGE_FONT_RATIO)) if large else int(font_size)
     lines_cap = max(1, min(int(max_lines),
                            NARR_MAX_LINES_WITH_BALLOON if narrow and not large else 99))
     fs, lines, line_h, font = fs_hi, [], _text_line_height(fs_hi), None
@@ -1005,7 +1008,8 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
     tw = 0.0
     for ln in lines:
         tw = max(tw, text_w(ln, font, probe, "narration", font_path))
-    box_w = int(max(72, min(w_cap, tw + 20)))
+    # 박스는 실제 글자 폭만큼만(짧은 설명이 컷을 채우지 않는다) — 단 ★지문은 컷 폭을 그대로 쓴다
+    box_w = w_cap if large else int(max(72, min(w_cap, tw + 20)))
     box_h = int(min(box_cap, len(lines) * line_h + 16))
     x0 = ix + margin
     y1 = iy + ih - margin

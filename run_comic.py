@@ -641,9 +641,9 @@ def main() -> int:
     ap.add_argument("--font-thought", dest="font_thought", default="", help="속마음 풍선 폰트 경로")
     ap.add_argument("--font-sfx", dest="font_sfx", default="", help="의성어/의태어 폰트 경로")
     ap.add_argument("--no-epilogue", action="store_true", dest="no_epilogue",
-                    help="★에필로그(결 끝의 반투명 이벤트신 2컷 + 큰 지문)를 붙이지 않는다")
+                    help="★에필로그(마지막 회차 끝의 반투명 이벤트신 1칸 + 큰 여운 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
-                    help="★서두 요약 컷(각 기승전결 첫 컷 = 배경만 + 컷 70%% 큰 지문)을 끈다")
+                    help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
     ap.add_argument("--no-prologue", action="store_true", dest="no_prologue",
                     help="★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷 = 배경만 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-emo-marks", action="store_true", dest="no_emo_marks",

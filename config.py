@@ -8,6 +8,7 @@
 #   init_anima_tags/comic_gen/comic_page_merge/_build_tag_block이 읽는 값 +
 #   plot.json/Lora 경로 설정.
 import json
+import os
 
 # Setup - plot.json 매번 새로 읽기 (cache 금지)
 def get_json_value():
@@ -116,6 +117,9 @@ comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차
 # [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
 comic_action_cuts = True            # False = 예전처럼 본문 길이(600자 = 컷 1)로만 배분
 comic_cut_strong_weight = 2         # LLM이 컷 수를 안 준 유닛을 강한 사건으로 볼 때의 컷 수
+# [2026-09-09] 이름 고정 — 추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오지 못하게 못 박는다.
+pin_name = ""                    # 주인공 이름 (비우면 추출/시트가 정한 이름 사용)
+pin_name2 = ""                   # 상대방 이름
 comic_book_num = 0                # 0 = comic/bookNNN 자동
 angle_llm_cli = False             # -angle: action 컷에 angle.txt 구도 적용
 camera_canon_cli = False          # -camera_canon: 카메라 뷰 태그 정석화 A/B
@@ -223,6 +227,17 @@ def apply_local_settings(data: dict = None) -> dict:
     counter_alias = _str_map(d.get("counter_alias"))   # 집계 항목 이름(로컬 산출물 이름)
     counter_alias = {k: ([str(x).strip() for x in v if str(x).strip()] if isinstance(v, (list, tuple))
                          else str(v).strip()) for k, v in counter_alias.items()}
+    # 이름 고정: local_settings → 환경변수 → (run_comic의) CLI 순으로 이긴다
+    nm = str(d.get("name") or "").strip()
+    if nm:
+        globals()["pin_name"] = nm
+    nm2 = str(d.get("partner_name") or d.get("name2") or "").strip()
+    if nm2:
+        globals()["pin_name2"] = nm2
+    for env_key, attr in (("COMIC_PIN_NAME", "pin_name"), ("COMIC_PIN_NAME2", "pin_name2")):
+        ev = str(os.environ.get(env_key, "") or "").strip()
+        if ev:
+            globals()[attr] = ev
     cv = d.get("climax_vocab")
     climax_vocab_local = [str(x).strip().lower() for x in cv if str(x).strip()] \
         if isinstance(cv, (list, tuple)) else []

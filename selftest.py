@@ -576,6 +576,42 @@ def main() -> int:
           and "서로 다른 감정" in str(open("anima_gen.py", encoding="utf-8").read()))
     config.face_tag, config.expression_arr = _keep_face
 
+    # ── [2026-09-09] 이름 고정 — 시트의 #캐릭터 태그#에서 이름이 새어들었다 (실측: AMD 소녀 → 치토게)
+    _data_nm = {"protagonist": {"name": "치토게", "sex": "female", "hair_color": "blonde hair",
+                                "hair_style": "long hair", "eye_color": "brown eyes",
+                                "skin_color": "fair skin", "face_style": "blushing",
+                                "clothes": "school uniform", "body_shape": "slim", "job": "학생"},
+                "partner": {"name": "남자", "sex": "male", "clothes": "shirt"},
+                "guides": {"protagonist": ["기", "승", "전", "결"], "partner": [], "sub": []},
+                "actions": [], "segments": [], "units": [], "rating": "safe"}
+    _keep_pin = (config.pin_name, config.pin_name2)
+    config.pin_name, config.pin_name2 = "", ""
+    CI.apply_to_config(_data_nm, "본문입니다. " * 200, "#Kirisaki Chitoge from Nisekoi#", ep_num=1)
+    check("이름 고정이 없으면 추출이 정한 이름(실측 회귀: 치토게)이 그대로 쓴다",
+          config.name == "치토게" and config.char_tags == ["Kirisaki Chitoge from Nisekoi"],
+          f"{config.name}/{config.char_tags}")
+    config.pin_name, config.pin_name2 = "AMD 소녀", "카미유 렌"
+    CI.apply_to_config(_data_nm, "본문입니다. " * 200, "#Kirisaki Chitoge from Nisekoi#", ep_num=1)
+    check("이름을 고정하면 추출 이름을 이긴다(#태그는 그림 참조로만 남는다)",
+          config.name == "AMD 소녀" and config.name2 == "카미유 렌"
+          and config.char_tags == ["Kirisaki Chitoge from Nisekoi"], f"{config.name}/{config.name2}")
+    config.apply_local_settings({"name": "로컬이름", "partner_name": "로컬상대"})
+    check("local_settings의 name/partner_name이 기본값 자리를 채운다",
+          config.pin_name == "로컬이름" and config.pin_name2 == "로컬상대", f"{config.pin_name}/{config.pin_name2}")
+    os.environ["COMIC_PIN_NAME"] = "환경이름"
+    config.apply_local_settings({"name": "로컬이름"})
+    check("우선순위: 환경변수 > local_settings (그리고 run_comic의 --name이 마지막에 이긴다)",
+          config.pin_name == "환경이름", config.pin_name)
+    del os.environ["COMIC_PIN_NAME"]
+    config.pin_name, config.pin_name2 = _keep_pin
+    _ep_src = open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read()
+    check("추출 프롬프트가 #태그 영문 이름을 이름 필드에 옮기는 것을 금지한다",
+          "7-b. protagonist.name" in _ep_src and "Kirisaki Chitoge" in _ep_src)
+    check("추출 프롬프트가 고정 이름을 LLM에게 알린다", "{name_lock}" in _ep_src and "이름이 고정되었습니다" in _ep_src)
+    _hp2 = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--help"],
+                          capture_output=True, text=True).stdout
+    check("--name / --name2 플래그가 도움말에 있다", "--name2" in _hp2 and "주인공 이름을 고정" in _hp2)
+
     # ── [2026-09-09] 복장 누드화 — 컷 clothes가 회차 의상을 덮어쓰던 문제 (p02 실측)
     _keep_clo = (config.clothes, config.p_exposure_tag, config.exposure_tag, config.bodystyle_tag)
     config.clothes = "bimbo school uniform, tight clothes, short skirt"

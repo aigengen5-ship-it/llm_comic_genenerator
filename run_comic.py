@@ -395,6 +395,10 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
         p(f"  화면 문법 폰트: 설명/대사/속마음/의성어 중 미설치 "
           f"{('없음(전부 OS 폰트로 렌더 — ' + ', '.join(_miss) + ')') if _miss else '없음(4종 모두 data/fonts)'}"
           + (" · scripts/get_fonts.sh 한 번 돌려주시면 만화체가 들어갑니다" if _miss else ""))
+        _pn, _pn2 = str(getattr(config, "pin_name", "") or "").strip(), str(getattr(config, "pin_name2", "") or "").strip()
+        p(f"  이름 고정    : 주인공 '{_pn or '(추출이 정한 이름)'}' · 상대방 '{_pn2 or '(추출이 정한 이름)'}'"
+          + ("  (--name/--name2 · local_settings name/partner_name · COMIC_PIN_NAME)"
+             if (_pn or _pn2) else "  — 시트의 #캐릭터 태그#에서 이름이 새어들면 --name으로 고정하세요"))
         p(f"  ★화면 문법 : 서두 요약 컷 {'ON' if getattr(config, 'comic_summary_cuts', True) else 'off'} · "
           f"에필로그 컷 {'ON' if getattr(config, 'comic_epilogue', True) else 'off'} · "
           f"감정 표시 {'ON' if getattr(config, 'comic_emo_marks', True) else 'off'} · "
@@ -644,6 +648,8 @@ def main() -> int:
                     help="★에필로그(마지막 회차 끝의 반투명 이벤트신 1칸 + 큰 여운 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
+    ap.add_argument("--name", default="", help="주인공 이름을 고정한다 (추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오는 것을 막는다)")
+    ap.add_argument("--name2", default="", help="상대방 이름을 고정한다")
     ap.add_argument("--no-action-cuts", action="store_true",
                     help="컷 배분을 본문 '글자 수'로 되돌린다 (기본: LLM이 나눈 사건(액션) 단위로 배분)")
     ap.add_argument("--strong-cut-weight", type=int, default=0,

@@ -451,6 +451,10 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
     seg_schema = ('"segments": ["기/승/전/결 각 첫 문장의 **앞부분 ~40자를 본문에서 그대로 복사**(접두 조각도 OK, 총 4개)"],'
                   if need_segments else '"segments": [],')
     # units는 항상 부탁한다 — 유닛은 컷 배분의 저울이라 막 앵커를 파서가 이미 갖고 있어도 필요하다.
+    _pn, _pn2 = str(getattr(config, "pin_name", "") or "").strip(), str(getattr(config, "pin_name2", "") or "").strip()
+    name_lock = ("7-c. 이름이 고정되었습니다: 주인공 = '{p}', 상대방 = '{q}' — 두 필드에 이 이름 외의 것을 넣지 말고, "
+                 "가이드 문장에서도 이 호칭을 쓴다.".format(p=_pn or "(임의)", q=_pn2 or "(임의)")
+                 if (_pn or _pn2) else "")
     unit_schema = '"units": [{"at": "사건이 시작하는 문장을 본문에서 그대로 복사", "cuts": 1}],'
     unit_rule = ("6-b. units는 본문을 **사건(액션) 단위로 나눈 목록**이다 — 글자 수가 아니라 '누가 무엇을 했나'로 자른다.\n"
                  "   한 유닛 = 사건 하나(이동·호칭·대사만 있는 장면은 앞 유닛에 합친다). 'at'은 그 사건이 시작하는\n"
@@ -518,8 +522,10 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
 4. 성별은 문맥(대명사/서술) 기준으로 판단, 애매하면 female.
 {rule5}
 {rule6}
+{name_lock}
 7. 시트의 #…# 로 감싼 글자는 그 캐릭터의 **공식 캐릭터 태그(트리거)**입니다. 이름·정체성 판단에만
    참고하고 hair_color/clothes 같은 외모 태그 필드에는 **복사하지 마세요**(그 태그는 별도 주입됩니다).
+7-b. protagonist.name / partner.name에는 **본문에서 불리는 한국어 호칭**만 쓴다. #캐릭터 태그#의 영문 이름(예: Kirisaki Chitoge)이나 작품 제목을 이름으로 옮기지 않는다 — #태그는 그림 참조일 뿐이고, 이름은 화면 지문·대사에 쓰인다. 본문에 이름이 안 나오면 시트에 적힌 호칭(예: 'AMD 소녀')을 그대로 쓴다.
 
 [캐릭터 시트(평문)]
 {sh}
@@ -819,7 +825,12 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
             _rs.append([0] * 7)
 
     # anima_gen.init_anima_tags 필수 10필드
-    config.name = proto.get("name") or "주인공"
+    # [2026-09-09] 이름 고정(config.pin_name / local_settings name / COMIC_PIN_NAME / --name) —
+    #   시트에 '#Kirisaki Chitoge from Nisekoi#' 같은 렌더 참조 태그가 있으면 추출 LLM이 그 캐릭터명을
+    #   주인공 이름으로 주워온다(실측: 'AMD 소녀' → '치토게'). 태그는 그림 참조, 이름은 별도다.
+    _pn = str(getattr(config, "pin_name", "") or "").strip()
+    _pn2 = str(getattr(config, "pin_name2", "") or "").strip()
+    config.name = _pn or proto.get("name") or "주인공"
     config.sex = proto.get("sex") or "female"
     config.hair_color = proto.get("hair_color") or "black hair"
     config.hair_style = proto.get("hair_style") or "long hair"
@@ -842,7 +853,7 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
         clog(f"#캐릭터 태그 인식: 주인공={ct['protagonist'] or '(없음)'} "
              f"상대방={ct['partner'] or '(없음)'} — 모든 컷 프롬프트에 강제 주입됩니다")
 
-    config.name2 = part.get("name") or "상대"
+    config.name2 = _pn2 or part.get("name") or "상대"
     config.sex2 = "남자" if part.get("sex") == "male" else "여자"
     config.outfit2 = part.get("clothes") or "casual"
 

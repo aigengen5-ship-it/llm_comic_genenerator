@@ -110,7 +110,8 @@ comic_font_dialog = ""            # 대사(말풍선)
 comic_font_thought = ""           # 속마음(풍선)
 comic_font_sfx = ""               # 의성어/의태어
 comic_summary_cuts = True         # ★서두 요약 컷: 각 기승전결 첫 컷 = 배경만 + 큰 지문(컷 70%)
-comic_epilogue = True             # ★에필로그 컷: 결 끝에 반투명 이벤트신 2컷 + 큰 지문
+comic_epilogue = True               # ★에필로그 컷: 결 끝에 반투명 이벤트신 2컷 + 큰 지문
+comic_emo_marks = True              # 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) → --no-emo-marks
 comic_book_num = 0                # 0 = comic/bookNNN 자동
 angle_llm_cli = False             # -angle: action 컷에 angle.txt 구도 적용
 camera_canon_cli = False          # -camera_canon: 카메라 뷰 태그 정석화 A/B

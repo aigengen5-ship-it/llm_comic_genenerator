@@ -513,8 +513,9 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 출력 형식 (JSON 배열 외 텍스트 금지, ```로 감싸도 됨):
 [
   {{"no": 1, "type": "face", "caption_ko": "설명(지문) — 없으면 \"\" (주어+서술 완전 문장)",
-   "lines": [{{"kind": "speech", "who": "{name1}", "text": "대사 또는 신음(최장 {DIALOG_MAX_LEN}자)"}},
-             {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)"}}],
+   "lines": [{{"kind": "speech", "who": "{name1}", "text": "대사 또는 신음(최장 {DIALOG_MAX_LEN}자)",
+              "emo": "anger|surprise|sweat|heart|gloom|sparkle|question 중 하나 (없으면 \"\")"}},
+             {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
    "wide": false, "facing": "front", "clothes": "police uniform",
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
@@ -544,12 +545,16 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
    화자 이름은 who에 쓰고 text에는 넣지 않는다(화면에 이름이 안 찍히고 풍선 꼬리만 화자를 가리킨다).
    신음소리·파상음·잘려 나가는 말 적극 사용 (text 예: "아… 응… ♡", "좋아, 다 나오잖아.").
    **대사가 없는 컷은 lines를 []로 비워도 된다**(그때는 설명이 있어야 한다).
+   emo는 그 대사의 감정도(풍선 곁에 작은 표시를 그린다): anger(분노) | surprise(놀람) | sweat(식은땀) |
+     heart(두근) | gloom(가라앉음) | sparkle(반짝) | question(의문) | ""(없음) — 애매하면 ""로 둔다.
+   ※ who에 정확한 화자 이름을 적어야 풍선 자리가 잡힌다(주인공=왼쪽, 상대방=오른쪽).
    ※ 옛 형식 `"dialog": ["{name1}: 대사", "{name2}: 대사"]`이나 `"(속마음)"` 문자열 출력도 그대로 받는다(자동 변환).
 {rule10}
 11. 얼굴 클로즈업 컷(face)은 표정을 언어로 분명히 적는다 (예: "Her eyes are wet, lips parted.").
 12. facing(모든 컷 필수)은 딱 두 값 중 하나 — 컷의 구도 규칙이다:
     "front" = 인물 몸/얼굴이 정면(독자/카메라를 정면으로)
-    "right" = 인물이 화면 왼쪽에 서서 왼쪽→오른쪽으로 향함/봄 → 풍선 꼬리가 화면 오른쪽을 가리킨다
+    "right" = 인물이 화면 왼쪽에 서서 왼쪽→오른쪽으로 향함/봄
+    ※ 풍선 자리·꼬리는 기본적으로 **화자(lines[].who)**가 정하고, facing은 화자를 모를 때만 보조로 쓰인다
     wide=true 컷은 무조건 "right". **face 컷은 무조건 "front"** — 얼굴 전체가 보이는 정면 초상화만
     허용(측면/후면/POV/고개꺾기 금지. 위반 시 보정 단계에서 front+close_up로 강제 정규화).
     pose 문장에도 이를 반영해 쓴다 (예: front → "She faces the viewer, ...", right → "She is on the
@@ -740,6 +745,51 @@ _THOUGHT_MARK_RE = re.compile(
     r"^\s*[\(\u300c\uff08]?\s*(?:속마음|혼잣말|마음속)\s*[:：]?\s*(.*?)\s*[\)\u300d\uff09]?\s*$", re.S)
 
 
+# [2026-09-09] 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) — 대사에서 냄새가 나면 풍선 곁에 그린다.
+#   LLM이 lines[].emo 로 직접 주면 그것을 우선하고, 없으면 아래 표로 추정한다.
+_EMOTIF_HINTS = (("anger", ("짜증", "젠장", "으으윽", "분노", "이런", "칫")),
+                 ("surprise", ("어?", "설마", "뭐?", "헉", "앗", "설마야")),
+                 ("sweat", ("땀", "어떡", "식은땀", "icolo")),
+                 ("heart", ("하트", "두근", "사랑스", "귀여", "좋아한다")),
+                 ("gloom", ("쓸쓸", "외로", "시무룩", "풀죽")),
+                 ("sparkle", ("반짝", "눈부", "예뻐", "멋있")))
+_EMOTIF_RE = re.compile(r"^(anger|surprise|sweat|heart|gloom|sparkle|question)$", re.I)
+
+
+def _emo_guess(text: str) -> str:
+    """대사 텍스트 → 감정 키(모르면 ""). 표시가 애매하면 그냥 안 그린다."""
+    t = str(text or "")
+    for kind, cues in _EMOTIF_HINTS:
+        if any(c in t for c in cues if c):
+            return kind
+    tail = t.rstrip()
+    if tail.endswith("?") or tail.endswith("？"):
+        return "question"
+    if tail.endswith("!!") or tail.endswith("!?") or tail.endswith("?!"):
+        return "surprise"
+    return ""
+
+
+def _speaker_of(who: str) -> str:
+    """화자 표기 → "me"(주인공) | "other"(상대방) — 풍선 자리와 꼬리 방향을 이 값으로 정한다.
+
+    사용자가 정한 화면 규칙: 주인공 = 왼쪽 위(→왼쪽 아래), 상대방 = 오른쪽 위(→오른쪽 아래).
+    비어 있으면 주인공 시점(이 만화의 기본), 두 사람 이름 어디에도 안 걸리면 제3자 = other.
+    """
+    w = re.sub(r"\s+", "", str(who or "")).lower()
+    if not w:
+        return "me"
+    n1 = re.sub(r"\s+", "", str(getattr(config, "name", "") or "")).lower()
+    n2 = re.sub(r"\s+", "", str(getattr(config, "name2", "") or "")).lower()
+    if n1 and (w == n1 or w in n1 or n1 in w):
+        return "me"
+    if n2 and (w == n2 or w in n2 or n2 in w):
+        return "other"
+    if w in ("나", "필자", "주인공", "pov", "me"):
+        return "me"
+    return "other"
+
+
 def _norm_lines(v) -> list:
     """[2026-09-09] 컷 화면 텍스트(대사/속마음) → [{"kind":"speech|thought","who":str,"text":str}]
 
@@ -759,11 +809,12 @@ def _norm_lines(v) -> list:
         items = [str(v)]
     out = []
     for it in items:
-        who, kind, s = "", "speech", ""
+        who, kind, s, emo = "", "speech", "", ""
         if isinstance(it, dict):
             kind = str(it.get("kind") or it.get("type") or "speech").strip().lower()
             who = str(it.get("who") or it.get("speaker") or "").strip()
             s = str(it.get("text") or it.get("line") or it.get("dialog") or "").strip()
+            emo = str(it.get("emo") or it.get("emotion") or "").strip().lower()
         else:
             s = str(it or "").strip().replace("\n", " ").strip('"').strip()
         if not s:
@@ -781,8 +832,10 @@ def _norm_lines(v) -> list:
         if len(s) > DIALOG_MAX_LEN:
             s = s[:DIALOG_MAX_LEN - 1].rstrip() + "…"
         if s:
+            if not _EMOTIF_RE.fullmatch(emo or ""):
+                emo = _emo_guess(s)                       # LLM이 안 주면 대사에서 추정
             out.append({"kind": "thought" if kind.startswith("t") else "speech",
-                        "who": who, "text": s})
+                        "who": who, "text": s, "emo": emo if _EMOTIF_RE.fullmatch(emo) else ""})
         if len(out) >= DIALOG_LINES:
             break
     return out
@@ -792,9 +845,12 @@ def panel_text_payload(panel) -> dict:
     """컷 1개 → comic_page_merge 화면 문법 페이로드 (설명 박스 + 풍선 ≤2 + 의성어)."""
     p = panel or {}
     role = str(p.get("text_role") or "")
+    emo_on = bool(getattr(config, "comic_emo_marks", True))
     return {"narration": str(p.get("caption_ko") or "").strip(),
             "narr_large": bool(p.get("narr_large")) or role in ("summary", "epilogue"),
             "balloons": [{"kind": b["kind"], "text": b["text"],
+                          "speaker": _speaker_of(b.get("who") or ""),
+                          "emo": (b.get("emo") or "") if emo_on else "",
                           "side": ("left" if str(p.get("facing") or "").lower() == "left" else
                                    "right" if str(p.get("facing") or "").lower() == "right" else None)}
                          for b in (p.get("lines") or [])],

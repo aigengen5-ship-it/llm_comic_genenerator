@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """comic_page_merge.py — 만화 컷 이미지를 격자 페이지로 합성하는 순수 PIL 모듈 (LLM/anima 의존 없음)
 
-프레임 스타일: 페이지 배경 흰색 + 그림 경계 검은 선 (옅은 회색 keyline 보조).
+프레임 스타일: 페이지 배경 흰색 + **굵은 검은 선이 그림 경계에 곧장** 붙는다(흰 여백·회색 이중선 없음).
 
-[2026-09-09] 화면 문법 v3 (사용자 지시) — 텍스트를 그림 위에 만화 규약으로 그린다:
+[2026-09-09] 화면 문법 v4 (사용자 지시) — 텍스트를 그림 위에 만화 규약으로 그린다:
   1) **설명(지문)** : 컷 **하단 왼쪽** 흰 박스 + 검은 테두리 + 검은 글씨 (`_draw_caption_box`).
-     ★서두 요약/에필로그는 지문이 컷 면적의 ~70%를 채운다(`narr_large`).
-  2) **대사** : 만화 말풍선(꼬리가 화자 방향) / **속마음** : 타원 + 물방울 꼬리 (`_draw_balloon`, ≤2개)
+     박스는 **글자 덩치에 맞추어** 작아지고, 대사가 있는 컷(`narrow`)은 폭·줄 수를 더 줄여
+     대화 자리를 남긴다. ★서두 요약/에필로그만 예외로 컷 면적의 ~70%를 채운다(`narr_large`).
+  2) **대사** : 만화 말풍선 / **속마음** : 타원 + 물방울 (`_draw_balloon`, ≤2개).
+     자리는 화자별로 고정 — `speaker="me"`(주인공)는 **왼쪽 위 → 왼쪽 아래**, `speaker="other"`
+     (상대방)는 **오른쪽 위 → 오른쪽 아래**. 꼬리는 아주 작게(`TAIL_LEN/TAIL_BASE`) 넣고
+     주인공은 컷 **중앙** 쪽으로, 상대방은 컷 **오른쪽 끝**으로 향한다(`_balloon_slot_pref`).
   3) **의성어/의태어** : 대형 흰 글씨 + 검은 윤곽, 살짝 기운 각도 (`_draw_sfx`)
+  4) **감정 표시** : 풍선 곁의 작은 이모티콘(`_draw_emotif`) — anger/surprise/sweat/heart/
+     gloom/sparkle/question, 감정마다 색이 다르다. PIL 벡터라 폰트 설치와 무관하다.
   → 이미지 안 오른쪽 흰 플레이트는 폐기(화면 문법 통일). 모든 요소는 컷 안에서만 쓰이고 서로 안
     겹치며 배치는 결정론(같은 입력 → 같은 자리). ★에필로그 컷은 `apply_fade`로 반투명해진다.
 
@@ -21,19 +27,24 @@
   - wide 컷 → 페이지 폭 전체 스플래시
   - (face, action) / (action, face) 페어 → 혼합 행: face 42% + action 58% (세로는 행 높이로 맞춘다)
   - 그 외 → 2열 균등. 짝 없는 마지막 컷은 2열 폭(레거시 규칙 유지)
-  - [2026-09-07] 행 높이를 텍스트로 쓰지 않는다(간격 8+6*2 → 그림 사이 20px) — 텍스트는 전부 이미지 '안' 오버레이.
+  - [2026-09-09] 행 높이를 텍스트로 쓰지 않는다 — 텍스트는 전부 이미지 '안' 오버레이.
+    행 안의 컷은 **행 높이로 함께** 그려진다(그림이 셀 높이로 끝나면 프레임 안에 흰 띠가 남는다).
+    거터는 검정선 두 개가 맞붙는 폭(기본 6 = 2*lw)이라 컷 사이에 흰 실금이 생기지 않는다.
 
 사용 예:
     import comic_page_merge as C
     texts = [{"narration": "深夜 2시, 옥상 물탱크가 끊기는 소리가 났다.",          # 설명
-              "balloons": [{"kind": "speech",  "text": "무거운 건 저에게 맡기세요."},
-                           {"kind": "thought", "text": "이 사람, 알고 있었다."}],   # 풍선 ≤2
+              "balloons": [{"kind": "speech",  "text": "무거운 건 저에게 맡기세요.",
+                           "speaker": "other", "emo": "surprise"},                  # 상대방=오른쪽 위
+                           {"kind": "thought", "text": "이 사람, 알고 있었다.",
+                           "speaker": "me", "emo": "heart"}],                       # 주인공=왼쪽 위
               "sfx": "두근", "fade": 0.0}, ...]
     C.compose_pages(paths, texts, "comic/book001", "episode_03",
                     panels_per_page=5, panel_wide=[...], panel_face=[...],
                     panel_facing=["front"|"right", ...])
     # 옛 입력도 그대로 받는다: ["상황 묘사", "유즈키: 으…", "소타: 봐."] → 설명 + 말풍선 2개
 """
+import math
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -45,12 +56,14 @@ DEFAULT_PAGE_W = 1024
 DEFAULT_PAGE_H = 1454
 DEFAULT_COLS = 2
 DEFAULT_PANELS_PER_PAGE = 5
-DEFAULT_GUTTER = 8            # 컷 사이 여백 (흰 프레임의 일부) [2026-09-07] 16→8 (사용자: 간격 과함)
+DEFAULT_GUTTER = 6            # 컷 사이 여백 [2026-09-09] 8→6: 검정선이 그림에 붙으므로
+                              #   두 컷의 선이 만나 곧장 굵은 경계 하나가 된다(흰 빈틈 없음)
 DEFAULT_BG = (255, 255, 255)      # 페이지 배경 = 흰색 프레임
 DEFAULT_FRAME = (0, 0, 0)         # 그림 경계 검은 선
-DEFAULT_FRAME_WIDTH = 3
-DEFAULT_FRAME_PAD = 6             # 검은 선 바깥 흰 여백 [2026-09-07] 10→6 (그림↔그림 36→20px)
-DEFAULT_KEYLINE = (150, 150, 156) # 프레임 바깥 옅은 회색 1px (흰 화면에서 컷 경계 표시)
+DEFAULT_FRAME_WIDTH = 3           # 굵은 검정선
+DEFAULT_FRAME_PAD = 0             # [2026-09-09] 사용자 지시: 그림↔검은 선 사이 흰 여백 폐지(0)
+                                  #   → 경계선과 컷 사이 빈틈이 없고 굵은 검정선만 보인다
+DEFAULT_KEYLINE = None            # [2026-09-09] 옅은 회색 이중선 폐지 — 검정선만 남긴다
 DEFAULT_PLATE = (255, 255, 255)   # 오른쪽 텍스트 플레이트
 DEFAULT_TEXT = (16, 16, 18)
 DEFAULT_LABEL = (110, 110, 118)
@@ -116,6 +129,19 @@ BALLOON_FONT_SIZE = 22                   # 말풍선/속마음 글자
 NARR_LARGE_FONT_SIZE = 30                # 서두 요약/에필로그의 큰 지문
 SFX_FONT_SIZE = 54                       # 의성어 대형
 NARR_LARGE_COVER = 0.70                  # 요약 지문이 컷 면적의 70%를 채운다(사용자 지시)
+NARR_MAX_LINES = 3                       # 평범한 컷 설명의 최대 줄 수
+NARR_MAX_LINES_WITH_BALLOON = 2          # 대사가 있는 이벤트 컷은 설명을 더 좁게(사용자: 대화에 맞추어)
+NARR_W_RATIO = 0.60                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 줄어든다
+NARR_W_RATIO_WITH_BALLOON = 0.46         # 대사가 있으면 설명 폭 상한을 더 낮춘다
+TAIL_LEN = 11                            # 풍선 꼬리 길이 — 아주 작게(사용자 지시)
+TAIL_BASE = 13                           # 풍선 꼬리 밑변(너무 크면 그림을 가린다)
+THOUGHT_BUBBLES = (6, 4, 3)              # 속마음 물방울 반지름 (역시 작게)
+EMOTIF_SIZE = 19                         # 감정 이모티콘 한 변 기본 크기
+EMOTIF_KINDS = ("anger", "surprise", "sweat", "heart", "gloom", "sparkle", "question")
+EMOTIF_COLORS = {                        # 감정마다 색을 다르게(사용자 지시)
+    "anger": (198, 32, 40), "surprise": (240, 162, 2), "sweat": (46, 123, 214),
+    "heart": (232, 64, 122), "gloom": (106, 106, 114), "sparkle": (245, 197, 24),
+    "question": (46, 123, 214)}
 FADE_ALPHA = 0.45                        # 에필로그 이벤트신을 반투명하게 하는 정도(흰 쪽 blend)
 
 
@@ -283,11 +309,35 @@ def caption_blocks(cap) -> list:
     return out
 
 
+_SPEAKER_ALIASES = {"me": "me", "protagonist": "me", "mc": "me", "1": "me", "주인공": "me",
+                    "other": "other", "partner": "other", "rival": "other", "2": "other",
+                    "상대방": "other", "oppa": "other"}
+
+
+def _norm_speaker(v) -> str:
+    """풍선 화자 표기 → "me"(주인공) | "other"(상대방) | ""(모름)."""
+    k = str(v or "").strip().lower()
+    return _SPEAKER_ALIASES.get(k, "") if k else ""
+
+
+def _norm_emo(v) -> str:
+    """감정 표기 → EMOTIF_KINDS 중 하나 (모르면 "")."""
+    k = str(v or "").strip().lower()
+    return k if k in EMOTIF_KINDS else ""
+
+
+def _balloon(kind, text, side=None, speaker="", emo="") -> dict:
+    return {"kind": "thought" if str(kind).startswith("t") else "speech",
+            "text": str(text).strip(), "side": side or None,
+            "speaker": _norm_speaker(speaker), "emo": _norm_emo(emo)}
+
+
 def text_payload(item) -> dict:
     """컷 화면 텍스트 입력(str/list/dict) → 화면 문법 페이로드로 정규화.
 
       {"narration": 설명(지문), "narr_large": 컷 70% 큰 지문(서두 요약/에필로그),
-       "balloons": [{"kind":"speech|thought","text":…, "side":"left|right|None"}] ≤2,
+       "balloons": [{"kind":"speech|thought","text":…, "side":"left|right|None",
+                     "speaker":"me(주인공)|other(상대방)|None", "emo":"anger|surprise|…"}] ≤2,
        "sfx": 의성어, "fade": 이벤트신을 반투명하게 하는 정도(0~0.9)}
 
     str → 설명 하나 / [a,b,c] → [설명, 대사, 대사] 하위호환(옛 selftest·재조립 경로).
@@ -303,7 +353,7 @@ def text_payload(item) -> dict:
         if seq:
             out["narration"] = seq[0]
         for s in seq[1:1 + BALLOON_MAX]:
-            out["balloons"].append({"kind": "speech", "text": s, "side": None})
+            out["balloons"].append(_balloon("speech", s))
         return out
     if not isinstance(item, dict):
         return out
@@ -312,14 +362,14 @@ def text_payload(item) -> dict:
     out["narr_large"] = bool(item.get("narr_large") or item.get("summary") or item.get("epilogue"))
     for b in list(item.get("balloons") or [])[:BALLOON_MAX]:
         if isinstance(b, str) and b.strip():
-            out["balloons"].append({"kind": "speech", "text": b.strip(), "side": None})
+            out["balloons"].append(_balloon("speech", b.strip()))
         elif isinstance(b, dict):
-            kind = str(b.get("kind") or "speech").strip().lower()
-            side = str(b.get("side") or "").strip().lower() or None
             txt = str(b.get("text") or b.get("line") or "").strip()
             if txt:
-                out["balloons"].append({"kind": "thought" if kind.startswith("t") else "speech",
-                                        "text": txt, "side": side})
+                out["balloons"].append(_balloon(
+                    b.get("kind") or "speech", txt,
+                    str(b.get("side") or "").strip().lower() or None,
+                    b.get("speaker") or b.get("who") or "", b.get("emo") or b.get("emotion") or ""))
     out["sfx"] = str(item.get("sfx") or item.get("oto") or "").strip()
     try:
         out["fade"] = max(0.0, min(0.9, float(item.get("fade") or 0.0)))
@@ -367,6 +417,145 @@ def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
             continue
         return xy
     return None
+
+
+# ---------------------------------------------------------------- [2026-09-09] 풍선 자리·꼬리·감정 표시
+def _balloon_slot_pref(balloon, facing: str = None):
+    """(풍선 자리 순서, 꼬리 방향 키) — 사용자 지시:
+
+      주인공(me)    : 왼쪽 위 → 왼쪽 아래(2개일 때)      꼬리는 **중앙 쪽**
+      상대방(other) : 오른쪽 위 → 오른쪽 아래(2개일 때)   꼬리는 **오른쪽 끝**
+      화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
+    """
+    sp = str((balloon or {}).get("speaker") or "").strip().lower()
+    if sp == "me":
+        return ("tl", "bl", "ml", "center"), "center"
+    if sp == "other":
+        return ("tr", "br", "mr", "center"), "right"
+    side = str((balloon or {}).get("side") or facing or "").strip().lower()
+    if side in ("", "left"):
+        return ("tr", "br", "mr", "center"), "left"
+    return ("tl", "bl", "ml", "center"), "right"
+
+
+def _tail_target(ix: int, iy: int, iw: int, ih: int, x0: int, y0: int, x1: int, y1: int, dkey: str):
+    """꼬리가 향할 점(화자 쪽). 주인공 = 컷 중앙, 상대방 = 컷 오른쪽 끝."""
+    if dkey == "center":
+        return ix + iw // 2, iy + ih // 2
+    if dkey == "right":
+        return ix + iw - 2, min(iy + ih - 2, y1 + 3)
+    if dkey == "left":
+        return ix + 2, min(iy + ih - 2, y1 + 3)
+    return ix + iw // 2, iy + int(ih * 0.8)
+
+
+def _tail_geom(x0: int, y0: int, x1: int, y1: int, tx: int, ty: int,
+               ix: int, iy: int, iw: int, ih: int, length: int = TAIL_LEN, base: int = TAIL_BASE):
+    """풍선 테두리에서 목표 방향으로 **아주 짧게** 내리는 꼬리의 기하(꼭짓점·방향·반폭)."""
+    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    dx, dy = tx - cx, ty - cy
+    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+        dx, dy = 0.0, 1.0
+    hw, hh = max(1.0, (x1 - x0) / 2.0), max(1.0, (y1 - y0) / 2.0)
+    r = min(hw / max(abs(dx), 1e-6), hh / max(abs(dy), 1e-6))
+    ax, ay = cx + dx * r, cy + dy * r                       # 테두리를 나가는 점
+    n = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / n, dy / n
+    tipx, tipy = max(ix + 1, min(ix + iw - 2, ax + ux * length)), \
+        max(iy + 1, min(iy + ih - 2, ay + uy * length))     # 컷 밖으로 안 나간다
+    return {"a": (ax, ay), "tip": (tipx, tipy), "p": (-uy, ux), "u": (ux, uy),
+            "bh": max(3.0, base / 2.0)}
+
+
+def _draw_tail(d, g, *, frame=DEFAULT_FRAME, plate=DEFAULT_PLATE, line: int = DEFAULT_FRAME_WIDTH):
+    """꼬리 그리기(풍선 몸체를 그린 **뒤**에) — 테두리를 지우고 작은 outlined 삼각을 붙인다."""
+    (ax, ay), (tipx, tipy), (px, py), (ux, uy), bh = g["a"], g["tip"], g["p"], g["u"], g["bh"]
+    lw = max(1, int(line))
+    d.line([(ax - px * (bh + 2), ay - py * (bh + 2)), (ax + px * (bh + 2), ay + py * (bh + 2))],
+           fill=plate, width=max(2, lw + 1))                # 붙는 자리의 풍선 테두리를 지운다
+    d.polygon([(ax + px * bh, ay + py * bh), (ax - px * bh, ay - py * bh), (tipx, tipy)], fill=frame)
+    ib = max(1.0, bh - max(1.5, lw * 0.9))
+    d.polygon([(ax + px * ib + ux * 2, ay + py * ib + uy * 2),
+               (ax - px * ib + ux * 2, ay - py * ib + uy * 2),
+               (tipx - (tipx - ax) * 0.18, tipy - (tipy - ay) * 0.18)], fill=plate)
+
+
+def _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty, *, frame=DEFAULT_FRAME, plate=DEFAULT_PLATE,
+                          line: int = DEFAULT_FRAME_WIDTH, radii=THOUGHT_BUBBLES):
+    """속마음 풍선의 물방울 — 화자 쪽으로 **아주 작게** 작아지며 3개(꼬리 대신)."""
+    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    bx, by = (x0 + x1) / 2.0, y1
+    n = len(radii)
+    for i, rr in enumerate(radii):
+        f = (i + 1) / float(n)
+        px_ = bx + (tx - bx) * (0.25 + 0.55 * f)
+        py_ = by + (ty - by) * (0.20 + 0.55 * f)
+        px_ = max(x0 - TAIL_LEN, min(x1 + TAIL_LEN, px_))
+        d.ellipse([px_ - rr, py_ - rr, px_ + rr, py_ + rr], fill=plate, outline=frame,
+                  width=max(1, int(line)))
+    return cx, cy
+
+
+def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: int, ih: int,
+                 kind: str, *, size: int = EMOTIF_SIZE, font_path=None):
+    """[2026-09-09] 감정 이모티콘 — 풍선 바깥 위 모서리에 **감정마다 다른 색**으로 그린다.
+
+      anger(분노 X표) surprise(!) sweat(땀) heart(하트) gloom(음영선) sparkle(반짝) question(?)
+    폰트 이모지와 달리 PIL 벡터로 그려서 폰트 설치와 무관하게 나오고 색도 자유롭게 바꾼다.
+    → 그린 상자 (x0,y0,x1,y1) 또는 None
+    """
+    kind = _norm_emo(kind)
+    if not kind:
+        return None
+    col = EMOTIF_COLORS[kind]
+    r = max(7, int(size) // 2)
+    lw = max(2, int(size) // 6)
+    # 풍선 바깥쪽(컷 안쪽) 모서리에 붙이고, 컷 밖으로는 나가지 않는다
+    out_right = (x0 + x1) / 2.0 < ix + iw / 2.0
+    cx = min(x1 + r + 4, ix + iw - r - 2) if out_right else max(x0 - r - 4, ix + r + 2)
+    cy = max(y0 + r, iy + r + 2)
+    if kind == "anger":                      # 혈관 X표(💢) — 빨강
+        for ang in (45, 135, 225, 315):
+            rr = math.radians(ang)
+            d.line([(cx, cy), (cx + r * math.cos(rr), cy + r * math.sin(rr))], fill=col, width=lw)
+    elif kind == "surprise":                 # 느낌표 + 방사선 — 주황
+        d.line([(cx, cy - r), (cx, cy + int(r * 0.35))], fill=col, width=lw)
+        d.ellipse([cx - lw // 2, cy + r - lw, cx + lw - lw // 2, cy + r], fill=col)
+        for ang in (150, 30):
+            rr = math.radians(ang)
+            d.line([(cx + r * 1.1 * math.cos(rr), cy - r * 1.1 * math.sin(rr)),
+                    (cx + r * 1.5 * math.cos(rr), cy - r * 1.5 * math.sin(rr))], fill=col,
+                   width=max(2, lw - 1))
+    elif kind == "sweat":                    # 땀방울(💧) — 파랑
+        d.polygon([(cx, cy - r), (cx - r * 0.8, cy + r * 0.2), (cx + r * 0.8, cy + r * 0.2)],
+                  fill=col)
+        d.ellipse([cx - r * 0.8, cy - r * 0.2, cx + r * 0.8, cy + r], fill=col)
+    elif kind == "heart":                    # 하트(♥) — 분홍
+        rr = r * 0.55
+        d.ellipse([cx - rr * 2, cy - rr * 1.6, cx, cy], fill=col)
+        d.ellipse([cx, cy - rr * 1.6, cx + rr * 2, cy], fill=col)
+        d.polygon([(cx - rr * 1.9, cy - rr * 0.25), (cx + rr * 1.9, cy - rr * 0.25),
+                   (cx, cy + r * 0.95)], fill=col)
+    elif kind == "gloom":                    # 음영선 — 회색
+        for i in range(4):
+            gx = cx - r + i * (r * 2 // 3)
+            d.line([(gx, cy - r), (gx - r // 3, cy + r)], fill=col, width=max(2, lw - 1))
+    elif kind == "sparkle":                  # 반짝이 별 — 노랑
+        pts = []
+        for i in range(8):
+            ang = math.radians(i * 45)
+            rad = r if i % 2 == 0 else r * 0.34
+            pts.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+        d.polygon(pts, fill=col)
+    else:                                    # question — 파랑 물음표
+        fnt = load_font(int(size * 1.5), font_path, role="dialog")
+        try:
+            d.text((cx - size * 0.4, cy - size * 0.75), "?", font=fnt, fill=col)
+        except Exception:
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=col, width=2)
+    pad = 2
+    return (max(ix, cx - r - pad), max(iy, cy - r - pad), min(ix + iw, cx + r + pad),
+            min(iy + ih, cy + r + pad))
 
 
 # ---------------------------------------------------------------- 이미지 맞춤
@@ -425,7 +614,7 @@ def _wrap_blocks(blocks, font, width: int, d, max_lines: int) -> list:
 # ---------------------------------------------------------------- 행 배치(plan)
 def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
                unit_w: int, cols: int, gutter: int, pad: int, border: int,
-               font_size: int, font_path: str = None,
+               font_size: int, font_path: str = None, frame_width: int = DEFAULT_FRAME_WIDTH,
                caption_lines: int = MAX_CAPTION_LINES,
                panel_aspect: float = DEFAULT_PANEL_ASPECT,
                wide_aspect: float = DEFAULT_WIDE_ASPECT,
@@ -441,6 +630,7 @@ def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
     cell: {"idx","w","h","zone":"right"|"bottom","blocks","cap_lines","font_size","face"}
     """
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    inset = _frame_inset(pad, frame_width)        # 검은 선이 그림을 감싸는 폭
     page_w = unit_w * cols + gutter * (cols + 1)
     if page_size:
         # 페이지 폭 고정: 단위 폭을 페이지 폭에서 역산(격자가 페이지 폭과 정확히 일치)
@@ -512,7 +702,7 @@ def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
         cells, row_h, bottom_lines = [], 0, 0
         for p_idx, pw_cell in zip(idxs, widths):
             aspect = wide_aspect if flags_w[p_idx] else panel_aspect
-            ph = int(round((pw_cell - 2 * pad) * aspect)) + 2 * pad
+            ph = int(round((pw_cell - 2 * inset) * aspect)) + 2 * inset
             zone = zone_of(p_idx)
             blocks = caption_blocks(caps[p_idx])
             cell = {"idx": p_idx, "w": pw_cell, "h": ph, "zone": zone,
@@ -520,7 +710,7 @@ def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
                     "text": caps[p_idx],           # 화면 문법 페이로드 원본(렌더가 그대로 읽는다)
                     "font_size": int(font_size)}
             if zone == "right":
-                img_w = pw_cell - 2 * pad
+                img_w = pw_cell - 2 * inset
                 pl_w = int(img_w * _plate_ratio(img_w))
                 txt_w = pl_w - 2 * (pad + 8)
                 pf = _plate_font_size(font_size, txt_w)
@@ -531,7 +721,7 @@ def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
                 # [2026-09-07] bottom 존도 이제 이미지 '안' 하단 박스에 든다 → 행 높이 미사용.
                 # (캡션은 렌더 단계 _draw_inner_caption이 그림 위에 오버레이)
                 wrapped = _wrap_blocks(blocks, load_font(font_size, font_path),
-                                       pw_cell - 2 * pad - 32, probe, caption_lines)
+                                       pw_cell - 2 * inset - 32, probe, caption_lines)
                 cell["blocks"] = wrapped
                 cell["cap_lines"] = 0
             cells.append(cell)
@@ -573,15 +763,29 @@ def _plan_rows(n: int, captions, wide_flags, face_flags, zone_flags, *,
 
 
 # ---------------------------------------------------------------- 프레임/플레이트 그리기
+def _frame_inset(pad, line) -> int:
+    """그림이 셀 안에서 물리는 폭 — 검은 선 두께만큼은 무조건 물린다(선과 그림 사이 빈틈 없음)."""
+    return max(int(pad or 0), max(1, int(line or 1)))
+
+
 def _draw_framed_panel(canvas, d, x: int, y: int, w: int, h: int, img=None, *,
                        frame=DEFAULT_FRAME, pad=DEFAULT_FRAME_PAD, line=DEFAULT_FRAME_WIDTH,
                        bg=DEFAULT_BG, keyline=DEFAULT_KEYLINE):
-    """흰 프레임 + 그림 바로 밖 검은 선 (+옅은 keyline). → 그림 사각형 (ix,iy,iw,ih)"""
-    ix, iy = x + pad, y + pad
-    iw, ih = max(1, w - 2 * pad), max(1, h - 2 * pad)
+    """[2026-09-09] 컷 프레임 — 굵은 검정선이 그림 경계에 **곧장** 붙는다(흰 여백 없음).
+
+    PIL rectangle(outline, width)은 주어진 사각형 **바깥쪽에서 안쪽으로** 그려지므로,
+    그림(ix..ix+iw-1)보다 정확히 lw 바깥에 사각형을 잡으면 선이 그림을 덮지 않고 빈틈도 없다.
+    이웃한 컷과는 거터(=2*lw)만 두고이라 두 선이 맞붙어 굵은 경계 하나가 된다.
+    → 그림 사각형 (ix,iy,iw,ih)
+    """
+    lw = max(1, int(line))
+    inset = _frame_inset(pad, lw)
+    ix, iy = x + inset, y + inset
+    iw, ih = max(1, w - 2 * inset), max(1, h - 2 * inset)
     canvas.paste(img, (ix, iy)) if img is not None else d.rectangle(
         [ix, iy, ix + iw - 1, iy + ih - 1], fill=bg)
-    d.rectangle([ix - 1, iy - 1, ix + iw, iy + ih], outline=frame, width=max(1, int(line)))
+    d.rectangle([ix - lw, iy - lw, ix + iw + lw - 1, iy + ih + lw - 1],
+                outline=frame, width=lw)
     if keyline:
         d.rectangle([x, y, x + w - 1, y + h - 1], outline=keyline, width=1)
     return ix, iy, iw, ih
@@ -637,10 +841,13 @@ def _draw_right_plate(d, ix, iy, iw, ih, blocks, *, plate=DEFAULT_PLATE, frame=D
 def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
                       large: bool = False, font_size: int = DEFAULT_FONT_SIZE,
                       plate=DEFAULT_PLATE, frame=DEFAULT_FRAME, line: int = DEFAULT_FRAME_WIDTH,
-                      text_color=DEFAULT_TEXT, font_path=None, max_lines: int = 3):
+                      text_color=DEFAULT_TEXT, font_path=None, max_lines: int = NARR_MAX_LINES,
+                      narrow: bool = False):
     """[2026-09-09] 설명(지문) 박스 — 컷 **하단 왼쪽**, 흰 배경 + 검은 테두리 + 검은 글씨.
 
-    large(각 기승전결 첫 컷·에필로그): 컷 면적의 ~70%를 채우는 큰 지문(사용자 지시).
+    크기는 **글자 덩치에 맞추어** 줄인다(사용자 지시: 중간 이벤트 컷의 박스가 너무 컸다).
+      narrow(대사가 있는 이벤트 컷) : 폭 상한을 낮추고 줄 수도 2줄로 줄여 풍선 자리를 남긴다
+      large(★서두 요약·★에필로그)  : 예외적으로 컷 면적의 ~70%를 채우는 큰 지문
     글자가 박스에 안 들어가면 폰트를 단계로 줄이고, 그래도 넘치면 … 로 자른다.
     → (x0, y0, x1, y1, font_size) 또는 None
     """
@@ -656,22 +863,34 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
         box_cap = box_h_fixed
         fs_hi, lines_cap = max(16, int(font_size * 1.5)), 40
     else:
-        box_w = max(110, min(iw - 2 * margin, int(round(iw * 0.60))))
+        w_cap = min(iw - 2 * margin,
+                    int(round(iw * (NARR_W_RATIO_WITH_BALLOON if narrow else NARR_W_RATIO))))
         box_h_fixed = 0
         box_cap = ih - 2 * margin
-        fs_hi, lines_cap = int(font_size), max(1, int(max_lines))
+        fs_hi = int(font_size)
+        lines_cap = min(max(1, int(max_lines)),
+                        NARR_MAX_LINES_WITH_BALLOON if narrow else NARR_MAX_LINES)
     fs, lines, line_h = fs_hi, [], _text_line_height(fs_hi)
     for fs_try in range(fs_hi, 13, -2):
         font = load_font(fs_try, font_path, role="narration")
         line_h = _text_line_height(fs_try)
         cap = min(lines_cap, max(1, (box_cap - 14) // line_h))
-        lines = wrap_text(text, font, box_w - 20, probe, max_lines=cap)
+        lines = wrap_text(text, font, (box_w if large else w_cap) - 20, probe, max_lines=cap)
         if lines and len(lines) <= cap:
             fs = fs_try
             break
         fs = fs_try
     if not lines:
         return None
+    if not large:
+        # 박스를 글자 폭에 딱 맞게(짧은 설명이 컷의 60%를 채우지 않게)
+        tw = 0.0
+        for ln in lines:
+            try:
+                tw = max(tw, probe.textlength(ln, font=load_font(fs, font_path, role="narration")))
+            except Exception:
+                tw = max(tw, len(ln) * fs * 0.62)
+        box_w = int(max(72, min(w_cap, tw + 20)))
     box_h = box_h_fixed if large else min(box_cap, len(lines) * line_h + 16)
     x0 = ix + margin
     y1 = iy + ih - margin
@@ -709,6 +928,10 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None
     role = "thought" if kind == "thought" else "dialog"
     side = str((balloon or {}).get("side") or facing or "").strip().lower() or None
+    prefer, dkey = _balloon_slot_pref(balloon, facing)
+    emo = _norm_emo((balloon or {}).get("emo"))
+    # 꼬리가 컷 안에 들도록 오른쪽 자리(상대방)는 여백을 꼬리 길이만큼 더 둔다
+    mg = max(8, TAIL_LEN + 6) if dkey == "right" else 8
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     box_w = box_h = 0
     lines, font, fs, line_h = [], None, font_size, _text_line_height(font_size)
@@ -738,35 +961,25 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             break
     if not lines or box_w <= 0 or box_h <= 0:
         return None
-    prefer = (("tr", "br", "mr", "tl", "center") if side in (None, "left")
-              else ("tl", "bl", "ml", "tr", "center"))
-    xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid, prefer=prefer)
+    xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid, prefer=prefer, margin=mg)
     if not xy:
-        xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid,
-                             prefer=("center", "top") + prefer)
+        xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid, margin=mg,
+                             prefer=tuple(k for k in ("tl", "tr", "bl", "br", "center")
+                                          if k not in prefer) + prefer)
     if not xy:
         return None                       # 자리가 없으면 겹쳐 쓰지 않고 생략한다
     x0, y0 = xy
     x1, y1 = x0 + box_w, y0 + box_h
-    ax = ix + int(iw * (0.30 if side == "left" else 0.70 if side == "right" else 0.5))
-    ay = iy + int(ih * 0.80)
-    ax = max(ix + 6, min(ix + iw - 6, ax))
-    ay = max(y1 + 8, min(iy + ih - 6, ay))
+    tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, dkey)
     if kind == "speech":
-        bx = max(x0 + 20, min(x1 - 20, ax))
-        d.polygon([(bx - 18, y1 - 6), (bx + 18, y1 - 6), (ax, ay)], fill=frame)   # 굵은 테두리용
         d.rounded_rectangle([x0, y0, x1, y1], radius=max(8, min(22, box_h // 3)),
                             fill=plate, outline=frame, width=max(1, int(line)))
-        d.polygon([(bx - 8, y1 - 2), (bx + 8, y1 - 2), (ax, ay - 2)], fill=plate)  # 풍선 목(흰 부분)
-        d.line([(bx - 9, y1 - 1), (bx + 9, y1 - 1)], fill=plate, width=max(2, int(line) + 1))
+        _draw_tail(d, _tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih),
+                   frame=frame, plate=plate, line=line)
         ty0 = y0 + 12
     else:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
-        for i, (rr, frac) in enumerate(((10, 0.86), (7, 0.66), (5, 0.44))):
-            tx = (x0 + x1) / 2 + (ax - (x0 + x1) / 2) * frac
-            ty = y1 + (ay - y1) * (0.18 + 0.30 * i)
-            d.ellipse([tx - rr, ty - rr, tx + rr, ty + rr], fill=plate, outline=frame,
-                      width=max(1, int(line)))
+        _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty_, frame=frame, plate=plate, line=line)
         ty0 = y0 + int(box_h * 0.24)
     ty = ty0
     for ln in lines:
@@ -776,7 +989,12 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             wln = len(ln) * fs * 0.6
         d.text(((x0 + x1 - wln) // 2, ty), ln, font=font, fill=text_color)
         ty += line_h
-    return x0, y0, x1, y1
+    box = (x0, y0, x1, y1)
+    if emo:
+        e = _draw_emotif(d, x0, y0, x1, y1, ix, iy, iw, ih, emo, font_path=font_path)
+        if e:
+            box = (min(x0, e[0]), min(y0, e[1]), max(x1, e[2]), max(y1, e[3]))
+    return box
 
 
 def _draw_sfx(canvas, d, ix: int, iy: int, iw: int, ih: int, text, *,
@@ -848,7 +1066,8 @@ def _draw_panel_text(canvas, d, ix: int, iy: int, iw: int, ih: int, item, *,
     if tp["narration"]:
         r = _draw_caption_box(d, ix, iy, iw, ih, tp["narration"], large=tp["narr_large"],
                               font_size=font_size, plate=plate, frame=frame,
-                              line=frame_width, text_color=text_color, font_path=font_path)
+                              line=frame_width, text_color=text_color, font_path=font_path,
+                              narrow=bool(tp["balloons"]))        # 대사가 있으면 설명을 좁게
         if r:
             placed.append(r[:4])
     for b in tp["balloons"][:BALLOON_MAX]:
@@ -912,6 +1131,7 @@ def compose_page(panel_paths, captions, *,
         n, captions, panel_wide, panel_face, panel_zone,
         unit_w=int(cell_w), cols=cols, gutter=gutter, pad=frame_pad, border=border,
         font_size=font_size, font_path=font_path, caption_lines=caption_lines,
+        frame_width=frame_width,
         panel_aspect=panel_aspect, wide_aspect=wide_aspect, wide_odd_last=wide_odd_last,
         row_spec=row_spec, page_size=page_size, label_h=label_h)
 
@@ -932,12 +1152,15 @@ def compose_page(panel_paths, captions, *,
         cx = r["x"]
         for c in r["cells"]:
             p_idx = c["idx"]
+            inset = _frame_inset(pad, frame_width)
+            # 행 안의 컷은 행 높이로 함께 그린다(c["h"]는 계획값) — 그림이 셀 높이로 끝나면
+            # 프레임이 행 높이까지 내려가 프레임 안에 흰 띠가 남는다(사용자: 경계선과 컷 사이 빈틈).
+            aw, ah = max(1, c["w"] - 2 * inset), max(1, r["h"] - 2 * inset)
             try:
-                img = fit_cover(_load_rgb(panel_paths[p_idx]),
-                                c["w"] - 2 * pad, c["h"] - 2 * pad,
+                img = fit_cover(_load_rgb(panel_paths[p_idx]), aw, ah,
                                 bias_x=0.42 if (panel_wide or [False] * n)[p_idx] else 0.5)
             except Exception:
-                img = Image.new("RGB", (max(1, c["w"] - 2 * pad), max(1, c["h"] - 2 * pad)), bg)
+                img = Image.new("RGB", (aw, ah), bg)
             tp = text_payload(c.get("text") if c.get("text") is not None else c["blocks"])
             img = apply_fade(img, tp["fade"])                    # 에필로그 이벤트신 = 반투명
             ix, iy, iw, ih = _draw_framed_panel(canvas, d, cx, y, c["w"], r["h"], img,

@@ -32,7 +32,9 @@
   실전 로그 확인: log/anima_gen.log의 "[ComfyUI LoRA] lora_1=…(강도) … | trigger=…" 한 줄
 
 [2026-09-09] 화면 문법(만화 규약) — 컷마다 설명/대사/속마음 중 하나를 고릅니다:
-  # 설명=하단 왼쪽 흰 박스 / 대사=말풍선 / 속마음=속마음 풍선 / 의성어=큰 글씨 (풍선은 최대 2개)
+  # 설명=하단 왼쪽 흰 박스(글자 수에 맞춰 작게) / 대사=말풍선 / 속마음=속마음 풍선 / 의성어=큰 글씨 (풍선 최대 2개)
+  # 풍선 자리: 주인공=왼쪽 위(2개면 아래까지) · 상대방=오른쪽 위(2개면 아래까지), 꼬리는 아주 작게
+  # 감정 표시: lines[].emo → 분노/놀람/땀/하트/음영/반짝/물음 이모티콘을 감정마다 다른 색으로    → --no-emo-marks
   # ★서두 요약: 각 기승전결의 첫 컷은 인물 없이 배경만 + 요약 지문(컷의 70%)   → --no-summary-cuts
   # ★에필로그 : 결 뒤에 반투명 이벤트신 2컷 + 큰 지문 1페이지가 자동 추가된다   → --no-epilogue
   python3 run_comic.py --get-fonts                    # 만화체 폰트 4종(전부 OFL)을 data/fonts/로 받습니다
@@ -394,7 +396,8 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
           f"{('없음(전부 OS 폰트로 렌더 — ' + ', '.join(_miss) + ')') if _miss else '없음(4종 모두 data/fonts)'}"
           + (" · scripts/get_fonts.sh 한 번 돌려주시면 만화체가 들어갑니다" if _miss else ""))
         p(f"  ★화면 문법 : 서두 요약 컷 {'ON' if getattr(config, 'comic_summary_cuts', True) else 'off'} · "
-          f"에필로그 컷 {'ON' if getattr(config, 'comic_epilogue', True) else 'off'}")
+          f"에필로그 컷 {'ON' if getattr(config, 'comic_epilogue', True) else 'off'} · "
+          f"감정 표시 {'ON' if getattr(config, 'comic_emo_marks', True) else 'off'}")
 
     if need_comfy:
         ok = _tcp(*COMFY_URL)
@@ -548,7 +551,10 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
             if tp["narration"]:
                 p(f"         설명{'(컷 70%)' if tp['narr_large'] else ''}: {tp['narration']}")
             for b in tp["balloons"]:
-                p(f"         {'속마음풍선' if b['kind'] == 'thought' else '말풍선'}: {b['text']}")
+                spot = {"me": "주인공·왼쪽", "other": "상대방·오른쪽"}.get(b.get("speaker") or "", "")
+                p(f"         {'속마음풍선' if b['kind'] == 'thought' else '말풍선'}"
+                  f"{('[' + spot + ']') if spot else ''}"
+                  f"{('[감정:' + b['emo'] + ']') if b.get('emo') else ''}: {b['text']}")
             if tp["sfx"]:
                 p(f"         의성어: {tp['sfx']}")
         if args.preview:
@@ -634,6 +640,8 @@ def main() -> int:
                     help="★에필로그(결 끝의 반투명 이벤트신 2컷 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★서두 요약 컷(각 기승전결 첫 컷 = 배경만 + 컷 70%% 큰 지문)을 끈다")
+    ap.add_argument("--no-emo-marks", action="store_true", dest="no_emo_marks",
+                    help="감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끄는다")
     ap.add_argument("--get-fonts", dest="get_fonts", action="store_true",
                     help="만화 화면 문법 폰트(설명/대사/속마음/의성어, 전부 OFL)를 data/fonts/로 받고 종료")
     ap.add_argument("--angle", action="store_true", help="action 컷에 angle.txt 구도 적용")
@@ -726,6 +734,8 @@ def main() -> int:
         config.comic_epilogue = False
     if args.no_summary_cuts:
         config.comic_summary_cuts = False
+    if args.no_emo_marks:
+        config.comic_emo_marks = False
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.
     #   우선순위: CLI 인자 > env(COMIC_ALLOW_EXPLICIT) > local_settings.yaml > 기본 — CLI 주입은 아래에서 된다.
     if config.local_settings:

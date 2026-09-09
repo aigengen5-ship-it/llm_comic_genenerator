@@ -356,17 +356,27 @@ def main() -> int:
     px = im.load()
     check("네 귀퉁이 흰색", all(px[x, y] == (255, 255, 255) for x, y in
                           ((1, 1), (W - 2, 1), (1, H - 2), (W - 2, H - 2))))
+    # [2026-09-09] 사용자 지시: 컷 경계선과 그림 사이 흰 빈틈을 없앤다 → 검은 선이 그림에 곧장 붙는다
     g, pad = CPM.DEFAULT_GUTTER, CPM.DEFAULT_FRAME_PAD
-    ix, iy = g + pad, g + int(CPM.DEFAULT_FONT_SIZE * 1.6) + pad   # 라벨부 높이 = font*1.6
-    check("그림 경계는 검은 선", sum(px[ix, iy + 40]) < 90, str(px[ix, iy + 40]))
-    check("그 선 바깥 2px는 흰 프레임", px[ix - 3, iy + 40] == (255, 255, 255), str(px[ix - 3, iy + 40]))
-    check("그 선 바깥은 흰 프레임", px[g + 2, iy + 40] == (255, 255, 255), str(px[g + 2, iy + 40]))
-    wide_ys = [y for y in range(H) if px[g + pad + 30, y][0] > 150 and px[g + pad + 30, y][1] < 120]
+    lw = CPM.DEFAULT_FRAME_WIDTH
+    inset = CPM._frame_inset(pad, lw)
+    ix, iy = g + inset, g + int(CPM.DEFAULT_FONT_SIZE * 1.6) + inset   # 라벨부 높이 = font*1.6
+    check("컷 경계는 굵은 검은 선(lw 두께가 그대로 선이다)",
+          all(sum(px[x, iy + 40]) < 90 for x in range(ix - lw, ix)), str(px[ix - 1, iy + 40]))
+    check("검은 선과 컷 사이에 흰 틈이 없다(선 안쪽 1px는 곧 그림)",
+          px[ix, iy + 40] != (255, 255, 255), str(px[ix, iy + 40]))
+    check("선 바깥은 흰 여백(이웃 컷과 거터로만 갈라진다)",
+          px[ix - lw - 1, iy + 40] == (255, 255, 255), str(px[ix - lw - 1, iy + 40]))
+    check("거터 = 두 컷의 선이 맞붙는 폭(흰 실금이 남지 않는다)",
+          CPM.DEFAULT_GUTTER <= 2 * lw + 2, f"gutter={CPM.DEFAULT_GUTTER} lw={lw}")
+    check("옅은 회색 이중선은 폐지(검정선만)", CPM.DEFAULT_KEYLINE is None)
+    wide_ys = [y for y in range(H) if px[g + inset + 30, y][0] > 150 and px[g + inset + 30, y][1] < 120]
     check("wide 행 존재(픽셀 스캔)", len(wide_ys) > 300, str(len(wide_ys)))
     wy = (min(wide_ys) + max(wide_ys)) // 2 if wide_ys else 0
-    whites = [x for x in range(g + pad, W - g - pad) if px[x, wy] == (255, 255, 255)]
-    check("wide 오른쪽에 흰 플레이트", whites and min(whites) > W * 0.5,
-          f"plate_x0={min(whites) if whites else -1} W={W}")
+    lines_x = [x for x in range(2, W - 2) if sum(px[x, wy]) < 90]
+    check("wide 컷은 페이지 폭 끝까지(플레이트 자리 없음)",
+          lines_x and lines_x[0] <= g + lw + 2 and lines_x[-1] >= W - g - lw - 3,
+          f"x0={lines_x[0] if lines_x else -1} x1={lines_x[-1] if lines_x else -1} W={W}")
     shutil.rmtree(tmp, ignore_errors=True)
 
     # [2026-09-07] 레이아웃 v2: face+event 혼합 행(face 축소) + 텍스트 존(front=아래/right=오른쪽)
@@ -396,13 +406,14 @@ def main() -> int:
     im2 = Image.open(page2).convert("RGB")
     p2 = im2.load()
     fc = cells[0]
-    fx0 = rows2[0].get("x", 16) + pad                # face 패널 이미지 시작 x
-    fy0 = g                                          # 첫 행의 이미지 시작 y
+    inset2 = CPM._frame_inset(pad, lw)
+    fx0 = rows2[0].get("x", 16) + inset2             # face 패널 이미지 시작 x (검은 선 안쪽)
+    fy0 = g + inset2                                 # 첫 행의 이미지 시작 y
     # [2026-09-09] 화면 문법 통일(사용자 지시 7.1): 오른쪽 플레이트를 없애고 전부
     # '하단 왼쪽 설명 박스 + 풍선'으로 그린다 → 왼쪽 아래에서 흰 박스가 시작되는지 확인
-    cap_y = fy0 + rows2[0]["h"] - pad - 20
+    cap_y = fy0 + rows2[0]["h"] - inset2 - 30        # 설명 박스 안쪽(박스는 아래에서 8px 뜨고 3px 테두리)
     cap_white = 0
-    probe_x = fx0 + 16                                  # 설명 박스 안쪽(글자 시작보다 왼쪽)
+    probe_x = fx0 + 13                                  # 테두리(3px)를 지난 박스 안 흰 자리
     for dy in range(0, 100):
         if p2[probe_x, cap_y - dy] != (255, 255, 255):
             break
@@ -415,11 +426,15 @@ def main() -> int:
           f"right_white={right_white}")
     # [2026-09-07] bottom 존: 텍스트가 패널 '안' 하단 흰 박스에 그려지는지 픽셀 확인
     ec = cells[1]
-    ex_mid = rows2[0]["x"] + cells[0]["w"] + g + ec["w"] // 2
-    ey_box = g + rows2[0]["h"] - pad - 30            # 이미지 하단 안쪽(박스 자리)
-    inner_white = sum(1 for dx in range(-40, 40)
-                      if p2[ex_mid + dx, ey_box] == (255, 255, 255))
-    check("bottom 존: 패널 안 하단 흰 캡션 박스", inner_white > 50, str(inner_white))
+    ex0 = fx0 + cells[0]["w"] + g + 13                  # 두 번째 컷 안쪽 하단 왼쪽 = 설명 박스 자리
+    ey_box = cap_y
+    inner_white = sum(1 for dx in range(0, 40)
+                      if p2[ex0 + dx, ey_box] == (255, 255, 255))
+    check("bottom 존: 패널 안 하단 왼쪽에 흰 설명 박스", inner_white > 12, str(inner_white))
+    # [2026-09-09] 혼합 행에서 그림은 셀 높이·선은 행 높이였던 빈틈: 그림이 행 높이까지 채운다
+    art_bottom = p2[fx0 + cells[0]["w"] - inset2 - 24, fy0 + rows2[0]["h"] - inset2 - 3]
+    check("프레임 안에 흰 띠가 남지 않는다(그림이 행 높이까지 채운다)",
+          art_bottom != (255, 255, 255), str(art_bottom))
     shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n== ⑤ comic_gen: wide 해상도/태그/텍스트 ==")
@@ -1520,6 +1535,123 @@ def main() -> int:
           _star_panels[0]["caption_ko"].startswith("기 서두")
           and _star_panels[1]["caption_ko"].startswith("승 서두") and _star_panels[0]["narr_large"],
           str([p["caption_ko"] for p in _star_panels]) + " / " + str(_star_notes))
+
+    # ---------------------------------------------------------------------------
+    # ⑪ [2026-09-09] 화면 문법 v4 — 사용자 지시 4건
+    #   1) 주인공 풍선 = 왼쪽 위(2개면 아래), 상대방 = 오른쪽 위(2개면 아래), 꼬리는 아주 작게
+    #   2) 중간 이벤트 컷의 설명 박스는 대화에 맞추어 작게
+    #   3) 컷 경계선과 그림 사이 빈틈 없이 굵은 검정선만  (④에서 픽셀로 확인)
+    #   4) 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) — 감정마다 다른 색
+    # ---------------------------------------------------------------------------
+    print("\n== ⑪ 화면 문법 v4: 풍선 자리·꼬리 크기 / 설명 크기 / 감정 표시 ==")
+    sp_me = CPM._balloon_slot_pref({"speaker": "me"})
+    sp_ot = CPM._balloon_slot_pref({"speaker": "other"})
+    check("주인공 풍선은 왼쪽 위 → 왼쪽 아래, 꼬리는 중앙 쪽",
+          sp_me == (("tl", "bl", "ml", "center"), "center"), str(sp_me))
+    check("상대방 풍선은 오른쪽 위 → 오른쪽 아래, 꼬리는 오른쪽 끝",
+          sp_ot == (("tr", "br", "mr", "center"), "right"), str(sp_ot))
+
+    # 실제 렌더: 주인공 2개 + 상대방 2개를 한 컷에
+    _cv = Image.new("RGB", (PW, PH), (70, 130, 190))
+    _dd = ImageDraw.Draw(_cv)
+    _rects = []
+    for _b in ({"kind": "speech", "text": "먼저 한 마디", "speaker": "me"},
+               {"kind": "speech", "text": "두 번째 마디", "speaker": "me"},
+               {"kind": "speech", "text": "상대 말1", "speaker": "other"},
+               {"kind": "speech", "text": "상대 말2", "speaker": "other"}):
+        _r = CPM._draw_balloon(_dd, PX, PY, PW, PH, _b, avoid=_rects)
+        if _r:
+            _rects.append(_r)
+    _me = [r for r, b in zip(_rects, ["me", "me", "other", "other"]) if b == "me"]
+    _ot = [r for r, b in zip(_rects, ["me", "me", "other", "other"]) if b == "other"]
+    check("주인공 풍선 2개가 실제로 왼쪽 위/왼쪽 아래에 놓인다",
+          len(_me) == 2 and all((r[0] + r[2]) / 2 < PX + PW * 0.5 for r in _me)
+          and _me[0][1] < PY + PH * 0.5 < _me[1][1],
+          str([(r[0], r[1]) for r in _me]))
+    check("상대방 풍선 2개가 실제로 오른쪽 위/오른쪽 아래에 놓인다",
+          len(_ot) == 2 and all((r[0] + r[2]) / 2 > PX + PW * 0.5 for r in _ot)
+          and _ot[0][1] < PY + PH * 0.5 < _ot[1][1],
+          str([(r[0], r[1]) for r in _ot]))
+    check("풍선은 컷 밖으로 나가지 않는다",
+          all(r[0] >= PX and r[1] >= PY and r[2] <= PX + PW and r[3] <= PY + PH for r in _rects),
+          str(_rects))
+
+    # 꼬리 크기: 몸체 상자 밖으로 나가는 검은 픽션의 길이 = 꼬리 길이(아주 작아야 한다)
+    _cv2 = Image.new("RGB", (PW, PH), (255, 255, 255))
+    _dd2 = ImageDraw.Draw(_cv2)
+    _body = CPM._draw_balloon(_dd2, PX, PY, PW, PH,
+                             {"kind": "speech", "text": "꼬리 길이 재기", "speaker": "me"})
+    _px2 = _cv2.load()
+    _by1 = _body[3]
+    _run = 0
+    for _y in range(_by1 + 1, PY + PH):
+        if any(sum(_px2[x, _y]) < 120 for x in range(_body[0], _body[2])):
+            _run += 1
+        else:
+            break
+    check("꼬리는 몸체 밖으로 " + str(CPM.TAIL_LEN + 3) + "px 이내로 아주 작게만 나온다",
+          0 < _run <= CPM.TAIL_LEN + 3, f"tail_run={_run}")
+    check("꼬리 밑변도 작다(풍선 폭의 절반을 넘지 않는다)", CPM.TAIL_BASE <= 20, str(CPM.TAIL_BASE))
+
+    # (2) 설명 박스는 글자 수에 맞추어 작아진다
+    _cv3 = Image.new("RGB", (700, 500), (40, 120, 200))
+    _dd3 = ImageDraw.Draw(_cv3)
+    _short = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "짧은 설명", font_size=20)
+    _long = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "긴 설명" * 14, font_size=20)
+    _narrow = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "긴 설명" * 14, font_size=20, narrow=True)
+    check("설명은 하단 왼쪽 고정 + 짧은 설명은 박스도 작다(컷 60%를 채우지 않는다)",
+          _short and _short[0] == 8 and _short[3] == 492 and _short[2] < 700 * 0.35, str(_short))
+    check("대사가 있는 이벤트 컷(narrow)은 설명 박스가 더 좁고 낮다",
+          _narrow and _long and _narrow[2] - _narrow[0] <= _long[2] - _long[0]
+          and _narrow[3] - _narrow[1] <= _long[3] - _long[1],
+          f"narrow={_narrow[2]-_narrow[0]}x{_narrow[3]-_narrow[1]} long={_long[2]-_long[0]}x{_long[3]-_long[1]}")
+    _large = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "짧은 설명", font_size=20, large=True)
+    _area = lambda r: max(0, r[2] - r[0]) * max(0, r[3] - r[1])
+    check("★요약/에필로그(large)만 예외로 컷의 절반 넘게 채운다(평범한 컷은 10% 안쪽)",
+          _area(_large) >= 700 * 500 * 0.55 and _area(_short) <= 700 * 500 * 0.10,
+          f"large={_area(_large)} short={_area(_short)}")
+
+    # (4) 감정 이모티콘 — 종류마다 다른 색으로, 컷 안에만
+    _seen = {}
+    for _k in CPM.EMOTIF_KINDS:
+        _c = Image.new("RGB", (PW, PH), (255, 255, 255))
+        _d3 = ImageDraw.Draw(_c)
+        _rr = CPM._draw_emotif(_d3, 120, 60, 360, 130, PX, PY, PW, PH, _k)
+        _cols = {p for p in _c.getdata() if p != (255, 255, 255)}
+        _seen[_k] = _cols
+        if not (_rr and _rr[0] >= PX and _rr[1] >= PY and _rr[2] <= PX + PW and _rr[3] <= PY + PH):
+            break
+    check("감정 이모티콘 7종을 컷 안에 그린다( anger/surprise/sweat/heart/gloom/sparkle/question )",
+          all(_seen.get(k) for k in CPM.EMOTIF_KINDS), str({k: bool(v) for k, v in _seen.items()}))
+    check("감정마다 색이 다르다",
+          len({sorted(_seen[k])[0] for k in ("anger", "surprise", "heart")}) == 3,
+          str({k: sorted(_seen[k])[0] for k in ("anger", "surprise", "heart")}))
+    check("모르는 감정은 그리지 않는다", CPM._draw_emotif(ImageDraw.Draw(Image.new("RGB", (10, 10))),
+                                                       1, 1, 8, 6, 0, 0, 10, 10, "unknown") is None)
+
+    # 페이로드가 화자·감정을 싣고, 스위치를 끄면 감정은 빠진다
+    _bak_name, _bak_name2 = config.name, config.name2
+    config.name, config.name2 = "유즈키", "카에데"
+    _pn = {"caption_ko": "두 사람은 마주 앉았다.", "facing": "front",
+           "lines": CG._norm_lines([{"kind": "speech", "who": "유즈키", "text": "여기 앉아요"},
+                                    {"kind": "speech", "who": "카에데", "text": "…설마 아직 안 끝났어?"}])}
+    _tp = CG.panel_text_payload(_pn)
+    check("who → 화자 판정(주인공=me / 상대방=other)이 페이로드로 간다",
+          [b["speaker"] for b in _tp["balloons"]] == ["me", "other"],
+          str([b["speaker"] for b in _tp["balloons"]]))
+    check("LLM이 emo를 안 줘도 대사 분위기에서 감정을 추정한다",
+          [b["emo"] for b in _tp["balloons"]] == ["", "surprise"],
+          str([b["emo"] for b in _tp["balloons"]]))
+    _e_bak = config.comic_emo_marks
+    config.comic_emo_marks = False
+    check("--no-emo-marks면 감정 표시가 사라진다(자리는 그대로)",
+          all(not b["emo"] for b in CG.panel_text_payload(_pn)["balloons"])
+          and [b["speaker"] for b in CG.panel_text_payload(_pn)["balloons"]] == ["me", "other"])
+    config.comic_emo_marks = _e_bak
+    config.name, config.name2 = _bak_name, _bak_name2
+    _cp = CG.build_panel_script_prompt(1, 3, "유즈키", "카에데", "줄거리", ["기", "승", "전", "결"], [], panels_expected=8, episode_text="본문")
+    check("컷 대본 프롬프트가 emo 필드·화자 이름 규칙을 시킨다",
+          '"emo"' in _cp and "주인공=왼쪽" in _cp, "")
 
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).

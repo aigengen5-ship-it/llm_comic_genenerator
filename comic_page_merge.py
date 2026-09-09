@@ -114,8 +114,11 @@ BUNDLED_FONTS = {
                   "MaruBuri-Bold.ttf", "MaruBuri-Regular.ttf",
                   "NotoSerifKR-Bold.ttf", "NotoSerifKR-Regular.ttf",
                   "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
-    "dialog":    ("Jua-Regular.ttf", "Gaegu-Regular.ttf", "DoHyeon-Regular.ttf",
-                  "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
+    # 대사 = Poor Story(부드러운 손글씨 · 화면 실측 문자를 전부 그린다) → Jua → Gaegu 순.
+    #   [2026-09-09] Jua/Gaegu/NanumPen/Stylish 는 U+2026('…') 글리프가 없어 말풍선이 □로 깨졌다.
+    #   Itim은 테스트 결과 한글 자체로 없어서 탈락(자세히는 selftest의 폰트 커버리지 검사).
+    "dialog":    ("PoorStory-Regular.ttf", "Jua-Regular.ttf", "Gaegu-Regular.ttf",
+                  "DoHyeon-Regular.ttf", "NotoSansKR-Bold.ttf", "NotoSansKR-Regular.ttf"),
     # 속마음 = Gaegu(손글씨·표정 있는 붓체) → Do Hyeon 순. 속마음은 글씨체가 제일 살아나는 자리다.
     "thought":   ("Gaegu-Regular.ttf", "Gaegu-Bold.ttf", "DoHyeon-Regular.ttf",
                   "NanumPenScript-Regular.ttf", "NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"),
@@ -130,8 +133,9 @@ BALLOON_FONT_SIZE = 22                   # 말풍선/속마음 글자
 NARR_LARGE_FONT_SIZE = 30                # 서두 요약/에필로그의 큰 지문
 SFX_FONT_SIZE = 54                       # 의성어 대형
 NARR_LARGE_COVER = 0.70                  # 요약 지문이 컷 면적의 70%를 채운다(사용자 지시)
-NARR_MAX_LINES = 3                       # 평범한 컷 설명의 최대 줄 수
-NARR_MAX_LINES_WITH_BALLOON = 2          # 대사가 있는 이벤트 컷은 설명을 더 좁게(사용자: 대화에 맞추어)
+NARR_MAX_LINES = 99                      # [2026-09-09] 줄 수로 설명을 자르지 않는다(글자가 다 보여야 한다)
+NARR_MAX_LINES_WITH_BALLOON = 99         #   대신 대사가 있는 컷은 **높이 비율**로 설명을 제한한다
+NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스는 컷 높이의 55% 이내(나머지는 풍선)
 NARR_W_RATIO = 0.60                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 줄어든다
 NARR_W_RATIO_WITH_BALLOON = 0.46         # 대사가 있으면 설명 폭 상한을 더 낮춘다
 TAIL_LEN = 11                            # 풍선 꼬리 길이 — 아주 작게(사용자 지시)
@@ -186,12 +190,17 @@ FONTS_MANIFEST = (
     ("Gaegu-Regular.ttf",
      "https://github.com/google/fonts/raw/main/ofl/gaegu/Gaegu-Regular.ttf"),
     ("Gaegu-Bold.ttf", "https://github.com/google/fonts/raw/main/ofl/gaegu/Gaegu-Bold.ttf"),
+    # [2026-09-09] 대사 1순위 Poor Story(OFL) — 말풍선 글자가 □로 깨지지 않는 것으로 실측 확인된 것만 쓴다.
+    ("PoorStory-Regular.ttf",
+     "https://github.com/google/fonts/raw/main/ofl/poorstory/PoorStory-Regular.ttf"),
     ("OFL-gowunbatang.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/gowunbatang/OFL.txt"),
     ("OFL-jua.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/jua/OFL.txt"),
     ("OFL-dohyeon.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/dohyeon/OFL.txt"),
     ("OFL-blackhansans.txt",
      "https://raw.githubusercontent.com/google/fonts/main/ofl/blackhansans/OFL.txt"),
     ("OFL-gaegu.txt", "https://raw.githubusercontent.com/google/fonts/main/ofl/gaegu/OFL.txt"),
+    ("OFL-poorstory.txt",
+     "https://raw.githubusercontent.com/google/fonts/main/ofl/poorstory/OFL.txt"),
 )
 
 
@@ -255,6 +264,107 @@ def load_font(size: int = DEFAULT_FONT_SIZE, path: str = None, role: str = None)
             f = None
     _FONT_CACHE[key] = f
     return f
+
+
+# ── 글리프 커버리지 (2026-09-09) ────────────────────────────────────────────
+# 만화 화면의 글씨는 LLM이 마음대로 섞는다 — '…'(U+2026), '♡', '★' 같은 기호가 대사 한복판에 들어온다.
+# 한글 폰트는 이런 기호가 빠진 게 흔하다(Jua·Gaegu·NanumPen·Stylish 전부 U+2026 없음) → 말풍선이 □로 깨진다.
+# 그래서 글자마다 "이 폰트가 그 글자를 그리는지" 보고, 못 그리면 그리는 폰트로 바꿔 그린다.
+_NOTDEF = "\ue000"            # 어디에도 배정되지 않은 사영 문자 — 이걸과 화선이 같으면 "못 그린다"
+_GLYPH_CACHE = {}
+_FALLBACK_CACHE = {}
+
+
+def _glyph_sig(font, ch: str) -> bytes:
+    im = Image.new("L", (80, 48), 0)
+    ImageDraw.Draw(im).text((4, 4), ch, font=font, fill=255)
+    return im.tobytes()
+
+
+def _font_id(f) -> str:
+    return f"{getattr(f, 'path', '') or ''}@{getattr(f, 'size', 0)}"
+
+
+def font_can_draw(font, ch: str) -> bool:
+    """폰트가 그 글자를 그리는지 (토방 = .notdef 와 같은 화선이면 False)."""
+    if not ch or not ch.strip():
+        return True                      # 공백은 그려도 안 그려도 상관 없다
+    key = (_font_id(font), ch)
+    hit = _GLYPH_CACHE.get(key)
+    if hit is None:
+        hit = _glyph_sig(font, ch) != _glyph_sig(font, _NOTDEF)
+        _GLYPH_CACHE[key] = hit
+    return hit
+
+
+def glyph_fallback(font, ch: str, role: str = None, font_path: str = None):
+    """그 글자를 그릴 수 있는 다음 후보 폰트 (용도 후보 → 설명 폰트 → OS 폰트)."""
+    size = int(getattr(font, "size", DEFAULT_FONT_SIZE) or DEFAULT_FONT_SIZE)
+    key = (role or "", size, font_path or "", ch)
+    hit = _FALLBACK_CACHE.get(key)
+    if hit is None:
+        hit = font
+        tried = {_font_id(font)}
+        for r in [role, "narration", "dialog", "sfx", "thought", None]:
+            if not r or r in tried:
+                continue
+            tried.add(r)
+            cand = load_font(size, font_path, role=r)
+            if cand is not None and font_can_draw(cand, ch):
+                hit = cand
+                break
+        _FALLBACK_CACHE[key] = hit
+    return hit
+
+
+def coverage_runs(text: str, font, role: str = None, font_path: str = None) -> list:
+    """텍스트 → [(연속 조각, 그 조각을 그릴 폰트)] — 못 그리는 글자만 폴백으로 바꾼다."""
+    runs, cur, curf = [], "", font
+    for ch in str(text):
+        f = font if font_can_draw(font, ch) else glyph_fallback(font, ch, role, font_path)
+        if f is not curf and cur:
+            runs.append((cur, curf))
+            cur = ""
+        cur, curf = cur + ch, f
+    if cur:
+        runs.append((cur, curf))
+    return runs or [(str(text), font)]
+
+
+def draw_text_runs(d, x: int, y: int, text: str, *, font, fill=DEFAULT_TEXT,
+                   role: str = None, font_path: str = None, center_w: int = 0) -> float:
+    """글자마다 그릴 수 있는 폰트로 바꿔 그린다(□ 토방 방지). 반환: 그린 폭."""
+    text = str(text)
+    if font_can_draw(font, text) if len(text) == 1 else all(font_can_draw(font, c) for c in text):
+        if center_w:
+            x = x - int(_run_w(text, font) / 2)
+        d.text((x, y), text, font=font, fill=fill)
+        return _run_w(text, font)
+    runs = coverage_runs(text, font, role, font_path)
+    total = sum(_run_w(c, f) for c, f in runs)
+    cx = x - int(total / 2) if center_w else x
+    for chunk, f in runs:
+        d.text((int(cx), y), chunk, font=f, fill=fill)
+        cx += _run_w(chunk, f)
+    return total
+
+
+def _run_w(chunk: str, font) -> float:
+    try:
+        return float(font.getlength(chunk))
+    except Exception:
+        return len(chunk) * float(getattr(font, "size", 20) or 20) * 0.6
+
+
+def text_w(text: str, font, probe=None, role: str = None, font_path: str = None) -> float:
+    """폭 잰도 폰트를 바꿔 그리므로 조각별로 합산한다(박스 크기가 실제 폭과 어긋나면 안 된다)."""
+    text = str(text)
+    if all(font_can_draw(font, c) for c in text):
+        try:
+            return float(probe.textlength(text, font=font)) if probe else float(font.getlength(text))
+        except Exception:
+            return len(text) * float(getattr(font, "size", 20) or 20) * 0.6
+    return sum(_run_w(c, f) for c, f in coverage_runs(text, font, role, font_path))
 
 
 def has_cjk_font() -> bool:
@@ -848,73 +958,67 @@ def _draw_right_plate(d, ix, iy, iw, ih, blocks, *, plate=DEFAULT_PLATE, frame=D
 def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
                       large: bool = False, font_size: int = DEFAULT_FONT_SIZE,
                       plate=DEFAULT_PLATE, frame=DEFAULT_FRAME, line: int = DEFAULT_FRAME_WIDTH,
-                      text_color=DEFAULT_TEXT, font_path=None, max_lines: int = NARR_MAX_LINES,
+                      text_color=DEFAULT_TEXT, font_path=None, max_lines: int = 99,
                       narrow: bool = False):
     """[2026-09-09] 설명(지문) 박스 — 컷 **하단 왼쪽**, 흰 배경 + 검은 테두리 + 검은 글씨.
 
-    크기는 **글자 덩치에 맞추어** 줄인다(사용자 지시: 중간 이벤트 컷의 박스가 너무 컸다).
-      narrow(대사가 있는 이벤트 컷) : 폭 상한을 낮추고 줄 수도 2줄로 줄여 풍선 자리를 남긴다
-      large(★서두 요약·★에필로그)  : 예외적으로 컷 면적의 ~70%를 채우는 큰 지문
-    글자가 박스에 안 들어가면 폰트를 단계로 줄이고, 그래도 넘치면 … 로 자른다.
-    → (x0, y0, x1, y1, font_size) 또는 None
+    크기는 글자 덩치에 맞추되 **글자가 전부 들어가야 한다**(사용자 지시: 설명이 잘리면 안 된다).
+      · 박스 폭·높이는 실제 글자 폭/줄 수 만큼만 쓴다 (빈 공간으로 컷을 채우지 않는다)
+      · 컷 안에 안 들어가면 줄 수를 늘리고, 그래도 모자라면 폰트를 13px까지 줄인다
+      · 대사가 있는 이벤트 컷(narrow)은 폭 상한·줄 수를 더 낮춰 풍선 자리를 남긴다
+      · large(★서두 요약·★에필로그)만 예외로 글자를 크게 쓴다(그래도 컷의 70%를 넘기지 않는다)
+    → (x0, y0, x1, y1, font_size, 그은 줄 목록) 또는 None
     """
     text = str(text or "").strip()
     if not text or iw <= 40 or ih <= 40:
         return None
     margin = 8
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    # 폭 상한: 컷 폭의 일정 비율 이내 (대사가 있으면 더 좁게)
+    w_cap = min(iw - 2 * margin,
+                int(round(iw * (NARR_W_RATIO_WITH_BALLOON if narrow else NARR_W_RATIO))))
     if large:
-        # [2026-09-09] 사용자 지시: ★요약/에필로그 지문은 컷의 ~70%를 채운다 → 박스 크기를 고정보다
-        box_w = max(120, min(iw - 2 * margin, int(round(iw * 0.86))))
-        box_h_fixed = max(96, min(ih - 2 * margin, int(round(ih * (NARR_LARGE_COVER / 0.86)))))
-        box_cap = box_h_fixed
-        fs_hi, lines_cap = max(16, int(font_size * 1.5)), 40
-    else:
-        w_cap = min(iw - 2 * margin,
-                    int(round(iw * (NARR_W_RATIO_WITH_BALLOON if narrow else NARR_W_RATIO))))
-        box_h_fixed = 0
-        box_cap = ih - 2 * margin
-        fs_hi = int(font_size)
-        lines_cap = min(max(1, int(max_lines)),
-                        NARR_MAX_LINES_WITH_BALLOON if narrow else NARR_MAX_LINES)
-    fs, lines, line_h = fs_hi, [], _text_line_height(fs_hi)
-    for fs_try in range(fs_hi, 13, -2):
-        font = load_font(fs_try, font_path, role="narration")
-        line_h = _text_line_height(fs_try)
-        cap = min(lines_cap, max(1, (box_cap - 14) // line_h))
-        lines = wrap_text(text, font, (box_w if large else w_cap) - 20, probe, max_lines=cap)
-        if lines and len(lines) <= cap:
-            fs = fs_try
+        w_cap = min(iw - 2 * margin, int(round(iw * 0.86)))
+    # 높이 상한: 컷 안. large는 여기서도 70%를 넘기지 않는다.
+    box_cap = ih - 2 * margin
+    if narrow and not large:
+        # 대사가 있는 이벤트 컷: 설명이 컷을 다 채우면 풍선 자리가 없다 → 높이로만 제한한다
+        box_cap = min(box_cap, max(72, int(round(ih * NARR_BALLOON_H_RATIO))))
+    if large:
+        box_cap = min(box_cap, max(96, int(round(ih * NARR_LARGE_COVER))))
+    fs_hi = max(16, int(font_size * 1.5)) if large else int(font_size)
+    lines_cap = max(1, min(int(max_lines),
+                           NARR_MAX_LINES_WITH_BALLOON if narrow and not large else 99))
+    fs, lines, line_h, font = fs_hi, [], _text_line_height(fs_hi), None
+    for fs_try in range(fs_hi, 12, -1):
+        fnt = load_font(fs_try, font_path, role="narration")
+        lh = _text_line_height(fs_try)
+        cap = min(lines_cap, max(1, (box_cap - 14) // lh))
+        ls = wrap_text(text, fnt, w_cap - 20, probe, max_lines=cap)
+        if ls and len(ls) <= cap:
+            fs, lines, line_h, font = fs_try, ls, lh, fnt
             break
-        fs = fs_try
+        fs, lines, line_h, font = fs_try, ls, lh, fnt      # 마지막 시도는 그대로 쓴다(잘림 최소화)
     if not lines:
         return None
-    if not large:
-        # 박스를 글자 폭에 딱 맞게(짧은 설명이 컷의 60%를 채우지 않게)
-        tw = 0.0
-        for ln in lines:
-            try:
-                tw = max(tw, probe.textlength(ln, font=load_font(fs, font_path, role="narration")))
-            except Exception:
-                tw = max(tw, len(ln) * fs * 0.62)
-        box_w = int(max(72, min(w_cap, tw + 20)))
-    box_h = box_h_fixed if large else min(box_cap, len(lines) * line_h + 16)
+    # 박스는 실제 글자 폭만큼만 (짧은 설명이 컷을 채우지 않는다)
+    tw = 0.0
+    for ln in lines:
+        tw = max(tw, text_w(ln, font, probe, "narration", font_path))
+    box_w = int(max(72, min(w_cap, tw + 20)))
+    box_h = int(min(box_cap, len(lines) * line_h + 16))
     x0 = ix + margin
     y1 = iy + ih - margin
     y0 = max(iy + margin, y1 - box_h)
     x1 = x0 + box_w
     d.rectangle([x0, y0, x1, y1], fill=plate)
     d.rectangle([x0, y0, x1 - 1, y1 - 1], outline=frame, width=max(1, int(line)))
-    font = load_font(fs, font_path, role="narration")
-    if large:
-        # 큰 박스에서는 위 여백을 두고 시작(아래로 떨어뜨리면 첫 줄이 잘려 보인다)
-        ty = y0 + max(10, (box_h - len(lines) * line_h) // 5)
-    else:
-        ty = y0 + 8
+    ty = y0 + 8
     for ln in lines:
-        d.text((x0 + 10, ty), ln, font=font, fill=text_color)
+        draw_text_runs(d, x0 + 10, ty, ln, font=font, fill=text_color,
+                       role="narration", font_path=font_path)
         ty += line_h
-    return x0, y0, x1, y1, fs
+    return x0, y0, x1, y1, fs, lines
 
 
 def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),

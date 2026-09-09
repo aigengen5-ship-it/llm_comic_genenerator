@@ -397,7 +397,9 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
           + (" · scripts/get_fonts.sh 한 번 돌려주시면 만화체가 들어갑니다" if _miss else ""))
         p(f"  ★화면 문법 : 서두 요약 컷 {'ON' if getattr(config, 'comic_summary_cuts', True) else 'off'} · "
           f"에필로그 컷 {'ON' if getattr(config, 'comic_epilogue', True) else 'off'} · "
-          f"감정 표시 {'ON' if getattr(config, 'comic_emo_marks', True) else 'off'}")
+          f"감정 표시 {'ON' if getattr(config, 'comic_emo_marks', True) else 'off'} · "
+          f"★프롤로그 {'ON(첫 회차에만)' if getattr(config, 'comic_prologue_cut', True) else 'off'} · "
+          f"★에필로그는 마지막 회차(전 {getattr(config, 'total_episodes', 1)}회)에만 붙습니다")
 
     if need_comfy:
         ok = _tcp(*COMFY_URL)
@@ -542,6 +544,8 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
             pg = f"p{pnl['page']}t{pnl['tier']} {int(round(float(pnl.get('share', 1)) * 100)):3d}% " if "page" in pnl else ""
             role = {"summary": " ★서두요약(배경만)", "epilogue": " ★에필로그(반투명)"}.get(
                 str(pnl.get("text_role") or ""), "")
+            if role.startswith(" ★서두요약") and pnl.get("prologue"):
+                role = " ★프롤로그(배경만)"
             tp = CG.panel_text_payload(pnl)
             mode = ("설명+대사(이벤트)" if tp["narration"] and tp["balloons"] else
                     "설명만" if tp["narration"] else "대사/속마음만" if tp["balloons"] else "텍스트 없음")
@@ -640,6 +644,8 @@ def main() -> int:
                     help="★에필로그(결 끝의 반투명 이벤트신 2컷 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★서두 요약 컷(각 기승전결 첫 컷 = 배경만 + 컷 70%% 큰 지문)을 끈다")
+    ap.add_argument("--no-prologue", action="store_true", dest="no_prologue",
+                    help="★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷 = 배경만 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-emo-marks", action="store_true", dest="no_emo_marks",
                     help="감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끄는다")
     ap.add_argument("--get-fonts", dest="get_fonts", action="store_true",
@@ -736,6 +742,8 @@ def main() -> int:
         config.comic_summary_cuts = False
     if args.no_emo_marks:
         config.comic_emo_marks = False
+    if args.no_prologue:
+        config.comic_prologue_cut = False
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.
     #   우선순위: CLI 인자 > env(COMIC_ALLOW_EXPLICIT) > local_settings.yaml > 기본 — CLI 주입은 아래에서 된다.
     if config.local_settings:

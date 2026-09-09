@@ -1457,8 +1457,8 @@ def main() -> int:
     _big = _placed({"narration": _big_text, "narr_large": True})
     _bb = _big[0]
     _cover = (_bb[2] - _bb[0]) * (_bb[3] - _bb[1]) / float(PW * PH)
-    check("★요약/에필로그 지문은 컷 면적의 약 70%를 채운다(55% 이상)", _cover >= 0.55,
-          f"cover={_cover:.2f}")
+    check("★요약/에필로그 지문은 컷의 70%를 넘기지 않는다(화면을 다 가리지 않는다)",
+          _cover <= 0.72, f"cover={_cover:.2f}")
     _fade_img = CPM.apply_fade(Image.new("RGB", (8, 8), (40, 60, 80)), CPM.FADE_ALPHA)
     check("에필로그 이벤트신은 흰 쪽으로 반투명해진다(지문이 읽힌다)",
           all(b > a for a, b in zip((40, 60, 80), _fade_img.getpixel((0, 0)))), str(_fade_img.getpixel((0, 0))))
@@ -1486,20 +1486,45 @@ def main() -> int:
                                                "comic_font_thought", "comic_font_sfx",
                                                "comic_epilogue", "comic_summary_cuts")))
 
-    _plans_on = CG.plan_pages(7, 2)
-    _story = [pl for pl in _plans_on if not pl.get("epilogue")]
-    check("★각 기승전결 페이지의 첫 슬롯은 summary(배경만 + 큰 설명)로 강제",
-          _story and all(pl["slots"][0]["role"] == "summary" for pl in _story),
-          str([pl["slots"][0]["role"] for pl in _story]))
-    check("★에필로그 페이지가 결 뒤에 자동 추가된다(슬롯 전부 epilogue)",
-          bool(_plans_on[-1].get("epilogue"))
-          and all(s["role"] == "epilogue" for s in _plans_on[-1]["slots"]),
-          str([pl.get("template_id") for pl in _plans_on]))
-    config.comic_epilogue = config.comic_summary_cuts = False
-    _plans_off = CG.plan_pages(7, 2)
-    config.comic_epilogue = config.comic_summary_cuts = True
+    # [2026-09-09] 수정 1: ★큰 지문(70% 박스)은 (1) 회차집 첫 회차 프롤로그 (2) 각 회차의 첫 컷
+    #   (3) 마지막 회차 끝 에필로그 — 여기에만 들어간다. 그 외 컷은 평범한 설명/풍선 컷이다.
+    _te_bak = config.total_episodes
+    config.comic_prologue_cut = True
+    _plans_mid = CG.plan_pages(7, 2)                    # 중간 회차(7/12): 프롤로그도 에필로그도 없다
+    _story_mid = [pl for pl in _plans_mid if not pl.get("prologue")]
+    check("★요약은 회차의 **첫 컷 하나만**(페이지마다 붙이지 않는다)",
+          _story_mid and _story_mid[0]["slots"][0]["role"] == "summary"
+          and not any(pl["slots"][0]["role"] == "summary" for pl in _story_mid[1:])
+          and not any(pl.get("epilogue") for pl in _plans_mid),
+          str([[s["role"] for s in pl["slots"][:1]] for pl in _story_mid]))
+    _plans_ep1 = CG.plan_pages(1, 2)                    # 첫 회차: ★프롤로그 1컷이 맨 앞에 붙는다
+    check("★프롤로그는 회차집의 **첫 회차** 맨 앞에 1컷으로 붙는다",
+          len(_plans_ep1[0]["slots"]) == 1 and _plans_ep1[0].get("prologue") is True
+          and _plans_ep1[0]["slots"][0]["role"] == "prologue"
+          and len(_plans_ep1) == 3, str([pl.get("template_id") for pl in _plans_ep1]))
+    check("두 번째 회차에는 프롤로그가 없다",
+          not any(pl.get("prologue") for pl in CG.plan_pages(2, 2)))
+    config.total_episodes = 7
+    _plans_last = CG.plan_pages(7, 2)                   # 마지막 회차: ★에필로그 1페이지(1칸)
+    check("★에필로그는 **마지막 회차 끝**에만, 1칸(전폭 1컷)으로 붙는다",
+          bool(_plans_last[-1].get("epilogue"))
+          and len(_plans_last[-1]["slots"]) == 1
+          and all(s["role"] == "epilogue" for s in _plans_last[-1]["slots"]),
+          f"{len(_plans_last[-1]['slots'])}칸 {[_pl.get('template_id') for _pl in _plans_last]}")
+    _star_total = 0
+    for _e in range(1, 11):                             # 사용자 계산: 1 + 10 + 1 = 12
+        config.total_episodes = 10
+        _star_total += sum(1 for pl in CG.plan_pages(_e, 2)
+                           for s in pl["slots"] if s.get("role"))
+    config.total_episodes = _te_bak
+    check("10회 기준 ★ 개수 = 프롤로그 1 + 회차 앞 10 + 마지막 에필로그 1 = 12",
+          _star_total == 12, str(_star_total))
+    config.comic_epilogue = config.comic_summary_cuts = config.comic_prologue_cut = False
+    config.total_episodes = 1
+    _plans_off = CG.plan_pages(1, 2)
+    config.comic_epilogue = config.comic_summary_cuts = config.comic_prologue_cut = True
     check("스위치를 끄면 ★슬롯이 완전히 사라진다(평범한 컷만 남는다)",
-          not any(pl.get("epilogue") for pl in _plans_off)
+          not any(pl.get("epilogue") or pl.get("prologue") for pl in _plans_off)
           and not any(s.get("role") for pl in _plans_off for s in pl["slots"]),
           str([s.get("role") for pl in _plans_off for s in pl["slots"]]))
     check("에필로그 템플릿은 일반 기승전결 페이지로 뽑히지 않는다",
@@ -1605,16 +1630,21 @@ def main() -> int:
     _long = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "긴 설명" * 14, font_size=20)
     _narrow = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "긴 설명" * 14, font_size=20, narrow=True)
     check("설명은 하단 왼쪽 고정 + 짧은 설명은 박스도 작다(컷 60%를 채우지 않는다)",
-          _short and _short[0] == 8 and _short[3] == 492 and _short[2] < 700 * 0.35, str(_short))
+          _short and _short[0] == 8 and _short[3] == 492 and _short[2] - _short[0] < 700 * 0.35,
+          str(_short[2] - _short[0]))
     check("대사가 있는 이벤트 컷(narrow)은 설명 박스가 더 좁고 낮다",
           _narrow and _long and _narrow[2] - _narrow[0] <= _long[2] - _long[0]
           and _narrow[3] - _narrow[1] <= _long[3] - _long[1],
           f"narrow={_narrow[2]-_narrow[0]}x{_narrow[3]-_narrow[1]} long={_long[2]-_long[0]}x{_long[3]-_long[1]}")
-    _large = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "짧은 설명", font_size=20, large=True)
-    _area = lambda r: max(0, r[2] - r[0]) * max(0, r[3] - r[1])
-    check("★요약/에필로그(large)만 예외로 컷의 절반 넘게 채운다(평범한 컷은 10% 안쪽)",
-          _area(_large) >= 700 * 500 * 0.55 and _area(_short) <= 700 * 500 * 0.10,
-          f"large={_area(_large)} short={_area(_short)}")
+    # [2026-09-09] 사용자 지시: 설명은 **글자가 다 보일만큼** — 박스가 글을 자르면 안 된다
+    _mid = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "설명 문장이 계속 길어지는 문장입니다 " * 6, font_size=20)
+    check("설명이 잘리지 않는다 — 글자가 늘면 박스가 같이 커지고 끝이 … 로 안 잘린다",
+          _mid and len(_mid[5]) >= 3 and _mid[3] - _mid[1] > _short[3] - _short[1] + 20
+          and not any(ln.endswith("…") for ln in _mid[5]),
+          f"lines={len(_mid[5]) if _mid else 0} h={_mid[3] - _mid[1] if _mid else 0}")
+    check("대사가 있는 컷의 설명은 높이로만 제한된다(풍선 자리를 남긴다)",
+          _narrow and _narrow[3] - _narrow[1] <= 500 * CPM.NARR_BALLOON_H_RATIO + 12,
+          str(_narrow[3] - _narrow[1] if _narrow else 0))
 
     # (4) 감정 이모티콘 — 종류마다 다른 색으로, 컷 안에만
     _seen = {}
@@ -1657,6 +1687,35 @@ def main() -> int:
     _cp = CG.build_panel_script_prompt(1, 3, "유즈키", "카에데", "줄거리", ["기", "승", "전", "결"], [], panels_expected=8, episode_text="본문")
     check("컷 대본 프롬프트가 emo 필드·화자 이름 규칙을 시킨다",
           '"emo"' in _cp and "주인공=왼쪽" in _cp, "")
+
+    # ── [2026-09-09] 지문 폴백/잘기 + 글리프 폴백 (EP1 실측: '장소: … 호…' / 말풍선 □)
+    _guide = ("장소: 비가 그친 골목의 꽃가게. 유리 진열장에 물방울이 남는다. "
+              "상황: 퇴근을 앞둔 아야가 단골에게 마지막 수국을 건넨다. 시간: 저녁무렵")
+    check("★지문 폴백은 가이드 라벨('장소:' '상황:')을 버리고 서술 문장만 쓴다",
+          CG._first_sentence(_guide).startswith("비가 그친"), CG._first_sentence(_guide)[:48])
+    _cut = CG._clamp_caption("첫 문장이 끝난다. 둘째 문장이 아주 길어서 여기서 잘려 나가는 상황을 보여 주는 본문입니다. 셋째는 안 보인다.", 44)
+    check("지문을 길이로 자를 때 절/문장 경계에서 자른다('…호' 토막 마감 금지)",
+          _cut.endswith("…") and not _cut[:-1].endswith("호"), _cut)
+    check("말풍선 글자가 폰트에 없으면 그리는 폰트로 바꿔 그린다(U+2026 실측 회귀)",
+          not CPM.font_can_draw(CPM.load_font(22, os.path.join(CPM.BUNDLED_FONT_DIR, "Jua-Regular.ttf")), "…")
+          if os.path.exists(os.path.join(CPM.BUNDLED_FONT_DIR, "Jua-Regular.ttf")) else True)
+    _cv4 = Image.new("L", (300, 40), 0)
+    _jua = CPM.load_font(22, os.path.join(CPM.BUNDLED_FONT_DIR, "Jua-Regular.ttf"))
+    CPM.draw_text_runs(ImageDraw.Draw(_cv4), 4, 4, "윽… 이상해", font=_jua, fill=255, role="dialog",
+                       font_path=os.path.join(CPM.BUNDLED_FONT_DIR, "Jua-Regular.ttf"))
+    check("실제 렌더에서 □ 없이 그려진다(화선에 잉크가 있다)", sum(_cv4.tobytes()) > 500,
+          str(sum(_cv4.tobytes())))
+    check("기본 대화 폰트는 실측 문자를 전부 그린다(Poor Story)",
+          all(CPM.font_can_draw(CPM.load_font(22, role="dialog"), c)
+              for c in "가나다….!?~()'\"0123456789ABCabc"),
+          CPM.font_for_role("dialog"))
+    _pl_ep1 = CG.plan_pages(1, 1)
+    _rp, _rn = CG._repair_panels([{"no": 1, "type": "action", "caption_ko": "도입", "pose": "She stands.",
+                                   "camera": "side_view", "position": "NONE", "facing": "right",
+                                   "clothes": "uniform"}], page_plans=_pl_ep1)
+    check("★프롤로그 컷은 레이블이 프롤로그로 구분된다(text_role=summary + prologue=True)",
+          _rp and _rp[0].get("prologue") is True and _rp[0].get("text_role") == "summary",
+          str([(p.get("prologue"), p.get("text_role")) for p in _rp[:1]]))
 
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).

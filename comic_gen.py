@@ -142,6 +142,9 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
     tmpls = load_cut_templates()
     if not tmpls or not pages or int(pages) <= 0:
         return None
+    total0 = max(1, int(getattr(config, "total_episodes", 1) or 1))
+    prologue_pages = 1 if (int(ep_num_1based) <= 1
+                           and bool(getattr(config, "comic_prologue_cut", True))) else 0
     cap = max(1, int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO))
     pages = max(1, min(cap, int(pages)))                 # 기승전결 비례 대응, 1~cap 페이지
     rng = random.Random(f"cut:{ep_num_1based}:{pages}")
@@ -164,6 +167,8 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
                            "desc": tier["description"]})
         return sl
 
+    total_eps = max(1, int(getattr(config, "total_episodes", 1) or 1))
+    first_ep, last_ep = int(ep_num_1based) <= 1, int(ep_num_1based) >= total_eps
     plans = []
     for pi in range(pages):
         sit = _SITUATIONS[0] if pages == 1 else _SITUATIONS[min(3, int(round(pi * 3 / (pages - 1))))]
@@ -171,16 +176,29 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
         pool = [t for t in pool if sit in t["situations"]] or pool
         t = rng.choice(pool)
         slots = _slots_of(t)
-        # [2026-09-09] 사용자 지시: **각 기승전결의 가장 앞 컷은 설명 컷**(배경만 + 큰 지문, 컷의 70%)
-        if slots and bool(getattr(config, "comic_summary_cuts", True)):
+        # [2026-09-09] 사용자 지시 (수정): ★큰 지문(요약)은 **회차의 가장 첫 컷 하나だけ**.
+        #   페이지마다(=기승전결마다) 붙이던 예전 규칙은 70% 박스가 화면을 뒤덮어 폐지했다.
+        if pi == 0 and slots and bool(getattr(config, "comic_summary_cuts", True)):
             slots[0]["role"] = slots[0].get("role") or "summary"
         for si, s in enumerate(slots):
-            s["page"] = pi + 1
-        plans.append({"page": pi + 1, "situation": sit, "template_id": t["id"],
+            s["page"] = pi + 1 + prologue_pages
+        plans.append({"page": pi + 1 + prologue_pages, "situation": sit, "template_id": t["id"],
                       "template_name": t["name"], "single_tier": len(t["tiers"]) == 1, "slots": slots})
+    # [2026-09-09] ★프롤로그: 회차집의 **첫 회차**에만 맨 앞 1컷(배경만 + 큰 지문)을 둔다.
+    #   10회 기준 ★ = 프롤로그 1 + 회차 앞 10 + 마지막 회차 에필로그 1 = 12개(사용자 지정 계산)
+    if prologue_pages:
+        plans.insert(0, {"page": 1, "situation": _SITUATIONS[0], "template_id": "prologue_opening",
+                         "template_name": "프롤로그 (배경만 + 큰 지문)", "single_tier": True,
+                         "prologue": True,
+                         "slots": [{"page": 1, "tier": 1, "share": 1.0, "center": False,
+                                    "h": 0.0, "role": "prologue", "wide": False,
+                                    "desc": "전폭 1컷 - 회차집의 첫 장면. 인물 없이 배경만 + 큰 도입 지문"}]})
     # [2026-09-09] ★에필로그: 결 페이지 뒤에 '반투명 이벤트신 + 큰 지문' 페이지를 한 장 더 둔다
     #   (페이지 상한 comic_max_pages를 넘겨서는 안 된다 — 상한까지 채워졌으면 붙이지 않는다)
-    if bool(getattr(config, "comic_epilogue", True)) and len(plans) < cap:
+    #   ★에필로그는 회차집의 **마지막 회차 끝**에만 붙인다(회차마다 붙이면 ★이 남발된다).
+    if (bool(getattr(config, "comic_epilogue", True))
+            and int(ep_num_1based) >= max(1, int(getattr(config, "total_episodes", 1) or 1))
+            and len(plans) < cap):
         ep = next((t for t in tmpls.values() if t.get("epilogue")), None)
         if ep:
             slots = _slots_of(ep)
@@ -269,8 +287,14 @@ def _layout_block(page_plans, slot_range=None):
                      (f"세로 슬림({w}% 폭)" if s["share"] <= 0.4 else f"세로({w}% 폭)")))
             cen = " 중앙 정렬," if s.get("center") else ""
             hnt = f" (행 높이 {int(round(s['h'] * 100))}%)" if s.get("h") else ""
-            star = {"summary": " ★서두 요약: 인물 없이 배경만 + 큰 설명(컷의 70%, 풍선 없음)",
-                    "epilogue": " ★에필로그: 이벤트 신을 반투명하게 + 큰 설명(풍선 없음)"}.get(
+            star = {
+                "summary": (" ★회차 도입 요약: 인물 없이 배경만 + 큰 지문 1개(풍선 없음). "
+                            "이 회차 뭘 하는 회차인지 상황 설명 — 본문을 옮겨 적지 말고 미리 보듯이 쓴다"),
+                "prologue": (" ★회차집 프롤로그: 인물 없이 배경만 + 큰 도입 지문 1개(풍선 없음). "
+                             "작품 전체의 문을 여는 한 문장(사건 설명 금지, 분위기/상황만)"),
+                "epilogue": (" ★에필로그: 이벤트 신을 반투명하게 + 큰 여운 지문 1개(풍선·대사 없음). "
+                             "**본문 마지막 장면을 그대로 옮겨 적지 않는다** — 그 '다음'(시간 경과, "
+                             "일상 복귀, 서로를 의식하는 거리)을 쓴다")}.get(
                     str(s.get("role") or ""), "")
             lines.append(f"  - 슬롯{gn} p{pl['page']}t{s['tier']}: {kind}{cen}{hnt} — "
                          f"{s['desc'][:70]}{star}")
@@ -877,6 +901,11 @@ def _apply_text_role(p: dict, role: str, notes: list) -> dict:
       epilogue : 결의 마지막 이벤트신 — 컷을 **반투명**으로처리하고 에필로그 큰 지문
     """
     role = str(role or "")
+    if role == "prologue":                     # ★프롤로그 = 회차집 첫 회차만 나오는 도입 요약 컷
+        if not bool(getattr(config, "comic_prologue_cut", True)):
+            return p
+        role = "summary"
+        p["prologue"] = True                   # 화면에서는 요약과 같지만 라벨/진단에서 구분한다
     if role == "summary" and not bool(getattr(config, "comic_summary_cuts", True)):
         return p
     if role == "epilogue" and not bool(getattr(config, "comic_epilogue", True)):
@@ -898,18 +927,24 @@ def _apply_text_role(p: dict, role: str, notes: list) -> dict:
     return p
 
 
-def _default_text_roles(panels: list, notes: list):
-    """cut.yaml 밖(레거시 자동 레이아웃)에서도 ★규칙은 같은 형태로 적용: 회차 첫 컷 = 서두 요약,
-    마지막 컷 = 에필로그."""
+def _default_text_roles(panels: list, notes: list, ep_num_1based: int = 1):
+    """cut.yaml 밖(레거시 자동 레이아웃)에서도 ★규칙은 같은 형태로 적용한다.
+
+    [2026-09-09] 사용자 지정 계산대로 ★는 여기만: 회차의 **첫 컷** 하나 + (마지막 회차라면)
+    끝 **에필로그** 하나. 그 외 컷은 평범한 설명/풍선 컷으로 남는다.
+    """
     if not panels:
         return
     if bool(getattr(config, "comic_summary_cuts", True)):
         _apply_text_role(panels[0], "summary", notes)
-    if len(panels) > 1 and bool(getattr(config, "comic_epilogue", True)):
+    total_eps = max(1, int(getattr(config, "total_episodes", 1) or 1))
+    if (len(panels) > 1 and bool(getattr(config, "comic_epilogue", True))
+            and int(ep_num_1based) >= total_eps):
         _apply_text_role(panels[-1], "epilogue", notes)
 
 
-def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: int = MAX_PANELS):
+def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: int = MAX_PANELS,
+                   ep_num_1based: int = 1):
     """LLM 컷 목록 → 검증/수정된 컷 리스트. (panels, notes) 반환
 
     page_plans(cut.yaml) 모드: 컷 수 = 슬롯 수로 확정(부족하면 폴백 컷 패딩/초과 절단),
@@ -929,8 +964,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         if "#" in pose:                                  # LLM이 슬롯을 붙여 쓰면 버리고 ours로 재조립
             pose = pose.split("#", 1)[0].strip()
         cap = str(it.get("caption_ko") or it.get("caption") or "").strip().replace("\n", " ")
-        if len(cap) > SUMMARY_CAPTION_MAX_LEN:          # ★요약/에필로그 슬롯은 길게 허용(아래서 재클램프)
-            cap = cap[:SUMMARY_CAPTION_MAX_LEN - 1].rstrip() + "…"
+        cap = _clamp_caption(cap)                       # 절/문장 경계에서 자른다(토막 마감 방지)
         lns = _norm_lines(it.get("lines") or it.get("dialog") or it.get("lines_ko")
                           or it.get("speech") or it.get("balloons"))
         sfx = str(it.get("sfx") or it.get("oto") or "").strip().replace("\n", " ")
@@ -982,7 +1016,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         notes.append(f"컷 {len(panels)}개 → {max_panels}개으로 절단")
         panels = panels[:max_panels]
     if not spec:
-        _default_text_roles(panels, notes)          # 레거시 모드도 ★규칙은 적용한다
+        _default_text_roles(panels, notes, ep_num_1based)          # 레거시 모드도 ★규칙은 적용한다
 
     # [2026-09-07] 컷별 복장 연속성: 빈 clothes는 직전 컷 것을 승계(탈의 후 원복 금지).
     # 첫 컷이 비어 있으면 회차 기본 의상(config 태그) 폴백 그대로.
@@ -1129,6 +1163,24 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
     return panels, notes
 
 
+_CLAUSE_END_RE = re.compile(r".*(?:[.!?。…]|(?<=[가-힣])\s(?=[가-힣])|,|·)", re.S)
+
+
+def _clamp_caption(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
+    """지문을 길이로 자를 때 **절/문장 경계**에서 자른다 (중간 토막 '…호' 같은 마감이 보기 나쁘다)."""
+    s = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(s) <= limit:
+        return s
+    head = s[:max(8, limit - 1)]        # '…' 한 자리를 미리 비운다(총 길이가 limit을 넘지 않게)
+    m = None
+    for m in _CLAUSE_END_RE.finditer(head):
+        pass
+    cut = (m.group(0).strip() if m else head.strip()).rstrip(" ,·;:")
+    if len(cut) < 24:                                  # 경계가 너무 일찍 나오면 그냥 길이로 자른다
+        cut = head.rstrip()
+    return cut + "…"
+
+
 def _first_sentence(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
     """본문(또는 장면 조각)에서 첫 문장을 뽑는다 — ★요약/에필로그 지문이 비었을 때의 폴백.
 
@@ -1137,6 +1189,11 @@ def _first_sentence(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
     s = re.sub(r"\s+", " ", str(text or "")).strip()
     if not s:
         return ""
+    # 가이드/메타 형식("장소: … 상황: …")은 지문이 아니라 표 목록이다 → 라벨을 버리고 서술만 남긴다
+    if re.match(r"^(장소|상황|시간|복장|인물|배경)\s*[:：]", s):
+        parts = [p.strip() for p in re.split(r"(?<=\s)(?=(?:장소|상황|시간|복장|인물|배경)\s*[:：])", s) if p.strip()]
+        s = max(parts, key=len)
+        s = re.sub(r"^(장소|상황|시간|복장|인물|배경)\s*[:：]\s*", "", s).strip()
     m = None
     for pat in (r"[^.!?\n]\S*?(?:\.(?!\w)|\.{3}|!|\?)", r"[^\n]\S*?(?:다\.|요\.|라\.|해\.|게\.)"):
         m = re.search(pat, s)
@@ -1145,9 +1202,7 @@ def _first_sentence(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
     out = (m.group(0) if m else s).strip()
     if len(out) < 12:                                  # 지나치게 짧은 조각은 앞 문단을 쓴다
         out = s
-    if len(out) > limit:
-        out = out[:limit - 1].rstrip() + "…"
-    return out
+    return _clamp_caption(out, limit)
 
 
 def _fill_star_narration(panels, beats, quotas, notes):
@@ -1327,7 +1382,8 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
               + (f" (미응답 {quota - raw_got}컷 → 침묵 컷)" if raw_got < quota else ""))
 
     # ⑤ 전역 보정 (슬롯 메타/page·tier 부여, 어휘·복장·시선 정규화)
-    panels, notes2 = _repair_panels(raw_all, dollar, page_plans=page_plans, max_panels=maxp)
+    panels, notes2 = _repair_panels(raw_all, dollar, page_plans=page_plans, max_panels=maxp,
+                                    ep_num_1based=ep_num_1based)
     notes = notes + notes2
     # [2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 장면 본문의 첫 문장으로 채운다
     _fill_star_narration(panels, beats, quotas, notes)

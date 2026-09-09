@@ -247,20 +247,17 @@ manga_panel_templates:
   #     role: summary  = 인물 없이 **배경만** + 큰 설명(컷 면적의 ~70%)  ← 각 기승전결 첫 컷
   #     role: epilogue = 컷을 **반투명**으로처리하고 그 위에 큰 설명(에필로그 지문)
   #   코드는 cut.yaml에 role이 없는 템플릿도 "페이지의 첫 슬롯"을 자동으로 summary로 취급한다.
+  # [2026-09-09] 사용자 지시: 에필로그 페이지를 2칸으로 쪼개면 지문이 화면을 다 가린다 → **1칸(전폭)**
+  #   ★에필로그는 회차집의 **마지막 회차 끝**에만 붙는다 (plan_pages에서 회차 번호로 판정).
   - id: epilogue_aftermath
-    name: "에필로그 여운 2단"
+    name: "에필로그 여운 1칸"
     epilogue: true
     situations: ["결"]
     total_size: "1 Page"
-    total_tiers: 2
+    total_tiers: 1
     tier_details:
       - tier: 1
         shares: [1.0]
-        height: 0.5
+        height: 1.0
         role: "epilogue"
-        description: "전폭 1컷 (페이지 높이 50%) - 결의 마지막 이벤트 신. 컷은 반투명하게처리하고 큰 에필로그 지문이 컷의 70%를 채운다"
-      - tier: 2
-        shares: [1.0]
-        height: 0.5
-        role: "epilogue"
-        description: "전폭 1컷 (페이지 높이 50%) - 그 뒤의 여운(일상 복귀, 서로를 의식하는 거리). 대사 없이 큰 지문으로만 끝맺음"
+        description: "전폭 1컷 (페이지 가득) - 결 뒤의 여운 이벤트 신. 컷은 반투명하게 처리하고 그 위에 여운의 큰 지문 하나(대사 없음). 본문의 마지막 장면을 그대로 옮겨 적지 않는다"

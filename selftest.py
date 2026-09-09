@@ -576,6 +576,34 @@ def main() -> int:
           and "서로 다른 감정" in str(open("anima_gen.py", encoding="utf-8").read()))
     config.face_tag, config.expression_arr = _keep_face
 
+    # ── [2026-09-09] 복장 누드화 — 컷 clothes가 회차 의상을 덮어쓰던 문제 (p02 실측)
+    _keep_clo = (config.clothes, config.p_exposure_tag, config.exposure_tag, config.bodystyle_tag)
+    config.clothes = "bimbo school uniform, tight clothes, short skirt"
+    config.p_exposure_tag = ["cleavage, navel, midriff, thighs"] * 12
+    config.exposure_tag = ["bimbo school uniform, tight clothes, short skirt"] * 12
+    config.bodystyle_tag = ["standing, holding hands, looking at viewer"] * 12
+    _p_dirty = dict(panel_t, no=41, type="action", camera="side_view", pose="She is pushed by hands.",
+                    clothes="tattered school uniform, dirty clothes", lines=[], caption_ko="", sfx="")
+    _p_bikini = dict(panel_t, no=42, type="action", camera="side_view", pose="She swims.",
+                     clothes="bikini", lines=[], caption_ko="", sfx="")
+    _p_nude = dict(panel_t, no=43, type="action", camera="side_view", pose="She stands.",
+                   clothes="nude, tattered clothes", lines=[], caption_ko="", sfx="")
+    _f_dirty = CG.build_panel_prompt(0, _p_dirty, "sensitive", gloss={})
+    _f_bikini = CG.build_panel_prompt(0, _p_bikini, "sensitive", gloss={})
+    _f_nude = CG.build_panel_prompt(0, _p_nude, "sensitive", gloss={})
+    check("컷의 복장 변화는 회차 의상을 **덮어쓰지 않는다**(의류가 사라지면 모델이 벌거벗긴다)",
+          "short skirt" in _f_dirty and "tattered school uniform" in _f_dirty, _f_dirty.split("\n")[-1][:150])
+    check("정말 갈아입은 컷(다른 품목)은 override가 이긴다", "bikini" in _f_bikini
+          and "school uniform" not in _f_bikini, _f_bikini.split("\n")[-1][:150])
+    check("본문 근거 없는 전라 어구는 상한 안에서 걷는다(explicit일 때만 통과)",
+          "nude" not in _f_nude and anima_gen._undress_guard("nude, bikini") == "bikini")
+    check("_merge_clothes: 품목 없는 변화어구는 회차 의상에 덧붙는다",
+          anima_gen._merge_clothes("police uniform, jacket", "wet, dirty") .startswith("police uniform"))
+    _cp_prompt = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("컷 스크립트 프롬프트가 근거 없는 옷 훼손(tattered/nude)을 말린다",
+          "먼저 제안하지 않는다" in _cp_prompt and "tattered" in _cp_prompt)
+    config.clothes, config.p_exposure_tag, config.exposure_tag, config.bodystyle_tag = _keep_clo
+
     # [2026-09-07] 1인 화면: 헤더는 무조건 solo (side_view는 구도일 뿐 '2명'이 아니다)
     ps = CG.build_panel_prompt(0, dict(panel_t, no=11), "nsfw", gloss={})
     pp = CG.build_panel_prompt(0, dict(p_pov_det, no=12), "nsfw", gloss={})

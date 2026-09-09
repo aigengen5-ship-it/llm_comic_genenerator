@@ -512,6 +512,26 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 | sparkle | 반짝 | `happy, excited, sparkling eyes, open mouth` |
 | question | ? | `confused, tilted head, open mouth` |
 
+### 3-8c) 복장은 회차 기준도를 유지 — 컷 1컷의 누드화 방지
+
+[2026-09-09] 실측: 클라이맥스도 아닌 p02 컷이 누드로 찍혔습니다. 그 컷에 보낸 프롬프트 끝이 이랬습니다.
+
+```
+… tattered school uniform, dirty clothes, cleavage, navel, midriff, thighs, … sensitive
+```
+
+컷 스크립트가 만든 `clothes`("tattered school uniform, dirty clothes")가 **회차 의상을 완전히 덮어써서**
+의류 품목이 사라졌고, 남은 건 `cleavage/navel/midriff/thighs` 같은 부분 노출 태그뿐 → 모델은 벌거벗겼습니다.
+
+| 장치 | 동작 |
+|---|---|
+| 회차 의상 기준도 병합 | 컷이 옷을 바꿀 때만 `config.clothes`(의상 기준도)를 컷 프롬프트에 함께 보냅니다 — `anima_gen._merge_clothes` |
+| 덮어쓰기 vs 덧쓰기 | 컷 `clothes`가 회차와 **같은 품목**(교복+더러움)이면 합치고, **다른 품목**(비키니)이면 갈아입은 컷으로 보고 override만 씁니다 |
+| 근거 없는 훼손·전라 차단 | `explicit` 상한이 아니면 `nude/topless/shirtless/…`를 걷고, 품목이 전부 사라지면 `tattered/ripped/torn/dirty/wet`도 버립니다 — `anima_gen._undress_guard` |
+| 컷 스크립트 프롬프트 | "본문에 옷이 바뀌는 장면이 없으면 tattered/nude를 **먼저 제안하지 않는다**" — 근거 없이 넣으면 그 컷이 누드로 그려집니다 |
+
+실측(같은 컷 재조립): `bimbo school uniform, tight clothes, short skirt, tattered school uniform, dirty clothes` — 품목이 살아 있어 교복이 유지됩니다.
+
 ### 3-9) 로컬 전용 입력 — 단편 생성기 `progress/` 포맷 (`--special`)
 
 `llm_shortnovel_generator_gui`가 `progress/`에 떨어뜨리는 산출물을 **변환 없이** 바로 받으실 수 있습니다.
@@ -607,6 +627,7 @@ log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기�
 | 대사가 길어 풍선이 세로로 길다 | 풍선 폭이 컷의 20%라 접히는 줄 수가 많습니다 — 대사를 짧게 쓰시거나 컷을 크게(페이지 수 ↑) 써 주세요. `…`로 잘리지는 않습니다 |(풍선은 최대 2개) |
 | 에필로그가 안 붙는다 | `--no-epilogue`가 켜져 있거나, 이 회차가 회차집의 마지막 회차가 아니거나, 페이지 상한(`--max-pages`)에 닿았습니다 |
 | 컷이 모든 막에서 균등(2컷씩)으로 납작하다 | 컷 예산이 '막당 최소 2컷'에 다 쓰인 경우입니다. 로그의 `EP1 사건 N개(강한 사건 M개) → 컷 예산 K` 줄을 보세요 — K가 작으면 사건 자체가 적은 회차이니 `--strong-cut-weight 3`을 쓰거나 원문의 사건을 늘려 주세요 |
+| 클라이맥스도 아닌 컷이 누드로 나온다 | 컷 `clothes`가 회차 의상을 덮어쓴 경우입니다 — 같은 품목이면 자동으로 합쳐집니다(`anima_gen._merge_clothes`). 원문에 옷이 망가지는 서사가 있는데도 옷이 유지되면, 그 서사를 컷 본문에 또렷이 써 주세요 |
 | 표정이 전부 아헤가오(혹은 한 표정 고정) | 회차 태그셋의 `face`가 모든 컷에 붙던 문제입니다 — 컷에 감정이 있으면 그 표정이 이깁니다(`--no-emo-marks`는 감정 **표시만** 끄고 표정 태그는 유지합니다). 원문이 특정 표정을 강하게 요구하면 그 표명을 컷 본문에 써 주세요 |
 | 감정 표시가 안 나온다 | `--no-emo-marks`가 켜져 있거나, 그 대사에 감정이 없습니다 — 컷 스크립트의 `lines[].emo`를 직접 적어 주세요(7가지 어휘) |
 | 풍선이 한쪽에만 몰린다 | `lines[].who`가 주인공 이름과 일치해야 왼쪽 자리가 잡힙니다 — 이름을 비우면 주인공(왼쪽)으로 봅니다 |

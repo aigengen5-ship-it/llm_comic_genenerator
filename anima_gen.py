@@ -1863,6 +1863,54 @@ def _calm_face(tags: str) -> str:
     return out or "soft smile"
 
 
+# 옷을 '입고 있다'고 말해주는 품목 어휘 — 이게 없으면 모델은 노출 부분 태그만 보고 벌거벗긴다.
+_GARMENTS = ("uniform", "skirt", "dress", "gown", "shirt", "blouse", "bodysuit", "pants", "trouser",
+             "jean", "shorts", "bikini", "swimsuit", "swim", "lingerie", "bra", "panties", "kimono",
+             "suit", "jacket", "coat", "hoodie", "sweater", "cardigan", "overall", "veil", "armor",
+             "cheongsam", "sailor", "scrub", "apron", "uniforms")
+# 본문 근거 없이 들어오면 'nudity'로 읽히는 어구 — 컷이 스스로 옷을 해치지 못하게 막는다.
+_TATTER = ("tattered", "torn", "ripped", "shredded", "destroyed clothes", "broken clothes",
+           "dirty clothes", "wet clothes", "transparent")
+_NUDE_WORDS = ("nude", "naked", "topless", "shirtless", "bare chest", "no clothes", "undressed",
+               "completely naked", "stripped")
+
+
+def _merge_clothes(base: str, override: str) -> str:
+    """컷 복장은 회차 의상을 **덮어쓰지 않는다**(실측: 'tattered school uniform, dirty clothes' 만
+    남고 회차 의류가 사라져 클라이맥스도 아닌 컷이 누드로 찍혔다).
+
+      · override에 품목이 없거나 회차와 같은 품목 → 회차 의류를 유지한 채 변화만 더한다(교복이 더러워짐)
+      · override에 다른 품목이 있다 → 정말 갈아입은 컷이므로 override만 쓴다(수영복으로 changed)
+    """
+    base = re.sub(r"\s+", " ", str(base or "")).strip()
+    override = re.sub(r"\s+", " ", str(override or "")).strip()
+    if not override:
+        return base
+    bg = [g for g in _GARMENTS if g in base.lower()]
+    og = [g for g in _GARMENTS if g in override.lower()]
+    if not (og and not bg and set(og) & set(bg) == set() and og != bg):
+        # 품목이 없거나 겹치면 합친다 (같은 옷의 상태 변화)
+        if not og or set(og) & set(bg) or not bg:
+            kept = [p.strip() for p in override.split(",") if p.strip()]
+            out = [p.strip() for p in base.split(",") if p.strip()]
+            out += [k for k in kept if k.lower() not in {o.lower() for o in out}]
+            return ", ".join(out)
+    return override
+
+
+def _undress_guard(clothes: str) -> str:
+    """본문 근거 없는 옷 훼손/전라 어구를 걷는다 — explicit 상한이 열려 있을 때만 통과시킨다."""
+    s = re.sub(r"\s+", " ", str(clothes or "")).strip()
+    if not s or explicit_allowed():
+        return s
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    kept = [p for p in parts if not any(w in p.lower() for w in _NUDE_WORDS)]
+    if not any(any(g in p.lower() for g in _GARMENTS) for p in kept):
+        # 품목이 전부 사라졌다 → 훼손 어구까지 버린다(그래도 없으면 원문을 그냥 둔다)
+        kept = [p for p in parts if not any(w in p.lower() for w in _TATTER + _NUDE_WORDS)]
+    return ", ".join(kept or parts)
+
+
 def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_ratio: str,
                      position_sentence: str, step_expression: str, is_side: bool,
                      name_a: str = None, name_b: str = None, observer_text: str = None,
@@ -1898,10 +1946,13 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     name_b = name_b or getattr(config, 'name2', 'BBB')
 
     clothes_tokens, style_tokens = _split_bodystyle_clothes(config.bodystyle_tag[episode])
-    # [2026-09-07] 컷별 복장 변화: panel.clothes가 있으면 이 컷의 의상 기준도를 대체한다
-    #   (회차 고정 CLOTHES/exposure 대신 컷 스크립트가 서사대로 입힌다. parts_exposure/marks는 유지)
-    if clothes_override:
-        clothes_tokens = clothes_override
+    # [2026-09-09] 회차 의상 기준도(config.clothes)를 컷 프롬프트에도 넣는다 — 예전은 태그셋이 만든
+    #   exposure 조각만 쓰여, 컷이 "tattered school uniform" 같은 어구로 갈음하면 의류가 통째로
+    #   사라지고 노출 부분 태그(cleavage/navel/midriff/thighs)만 이겨 누드가 됐다.
+    # 회차 의상 기준도는 **컷이 옷을 바꿀 때만** 받는다(없을 때는 [AAA EXPOSURE]가 이미 그 의상을 쓴다)
+    base_clothes = ", ".join([p for p in [config.clothes, clothes_tokens] if p]) if clothes_override else clothes_tokens
+    # 컷별 복장 변화는 '덮어쓰기'가 아니라 '덧쓰기'(정말 갈아입은 컷만 덮어쓴다)
+    clothes_tokens = _undress_guard(_merge_clothes(base_clothes, str(clothes_override or "")))
 
     # expression(주인공): face_tag + step_expression + expression_arr에서 랜덤 1개
     expr_pick = ""

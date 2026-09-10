@@ -138,17 +138,18 @@
 1. 회차 정보(EP/총 화수/화자 이름/시트 3종) + 본문 원문(이 장면 것만)
 2. `[페이지 레이아웃(cut.yaml)]` — 슬롯마다 폭%/행 높이%/종류(`_layout_block`, 321) + **"소품·장소는 예시, 지킬 것은 분할 비율·크기·순서"** 지침
 3. 컷 화면 텍스트 3택 규칙: ① 설명만 ② 대사·속마음만 ③ 설명+대사(큰 이벤트 컷, 회당 2~4)
-4. **컷 연속 상태 시트**(`state`) — 표정/메이크업/몸/복장/악세사리 + 머리·흔적·소지품·지속 자세 + 장소·시간대·배경(12종, `STATE_KEYS`). **변한 항목만** 채우는 델타이고, 누적은 코드가 한다(`fold_cut_state`, `STATE_KEYS`). 시작 값은 `base_cut_state`(회차 시작 상태)이며 회차 요약이 순서를 틀리면 컷 초반 다수값이 이긴다(`_head_majority`).
-4. **화면 장치 지침**(`device_hints`) — 코드가 본문에서 판정한 행동/대사/속마음 (`classify_device` 311, `split_for_cuts` 334). ★슬롯은 제외(자기 규칙이 있음).
-5. 수다장이 규칙(`--chatty`일 때: 모든 컷에 지문, 사건 진전이 없으면 행동·표정 묘사)
-6. 직전 컷 맥락(연속성) + `$행동 키워드` 의무 등장 + 클라이맥스 슬롯(기본 청년향이라 전부 비움)
+4. **컷 연속 상태 시트**(`state`, 12종) — 표정/메이크업/몸/복장/악세사리 + 머리·흔적·소지품·지속 자세 + 장소·시간대·배경(12종, `STATE_KEYS`). **변한 항목만** 채우는 델타이고, 누적은 코드가 한다(`fold_cut_state`, `STATE_KEYS`). 시작 값은 `base_cut_state`(회차 시작 상태)이며 회차 요약이 순서를 틀리면 컷 초반 다수값이 이긴다(`_head_majority`).
+5. **화면 장치 지침**(`device_hints`) — 코드가 본문에서 판정한 행동/대사/속마음 (`classify_device` 311, `split_for_cuts` 334). ★슬롯은 제외(자기 규칙이 있음).
+6. 수다장이 규칙(`--chatty`일 때: 모든 컷에 지문, 사건 진전이 없으면 행동·표정 묘사)
+7. 직전 컷 맥락(연속성) + `$행동 키워드` 의무 등장 + 클라이맥스 슬롯(기본 청년향이라 전부 비움)
 
 코드 쪽 보정(호출 후):
 - 미달 재시도 → 실패분은 침묵 컷
 - `_fill_star_narration` (1431): ★ 슬롯 지문이 비면 그 장면 본문의 첫 문장으로 채움
 - `_fill_chatty_narration` (1380): 지문 없는 컷은 **LLM#(보너스)** 작문 → 본문 문장 → 기본 문장
 - 전역 보정(1657 부근): 슬롯 메타(page/tier) 부여, 어휘·복장·시선 통일, face/action 분류 재확인
-- 정제 통계는 컷마다 찍지 않고 **회차 끝 한 줄** (`_prompt_san_flush`)
+- 정제 통계는 컷마다 찍지 않고 **회차 끝 한 줄**
+- **엄격 검사 게이트**(`validate_panel_script` → `fill_missing_state` → `fill_first_cut`): pose 누락, 인물이 나오는 첫 컷의 `face`/`clothes` 누락, state를 한 컷도 안 쓴 경우 → ① 빈 항목만 작은 호출 1회 → ② 첫 컷만 따로 재확인(단일 객체 응답·한글 값 배제) → ③ `PanelScriptError`. `run_comic`이 받아 안내 후 rc 2로 종료(렌더 미시작), `--no-strict-state`로 경고만 가능 (`_prompt_san_flush`)
 
 ### 3.5 [H] 컷 → 이미지 프롬프트 — `build_panel_prompt` (2110)
 - 결정론 경로: 태그 블록(`[AAA FACE]/[AAA CLOTHES]/[BACKGROUND]/[SAFETY]`…) + 정석 뷰 토큰(`ANGLE` 프리셋) + 시선 정책(말풍선이 오른쪽이면 인물은 왼쪽).
@@ -217,6 +218,9 @@
 |---|---|---|
 | 규칙 블록 잘림(응답만 옴) | 문자 예산 산식, 장면 1800자 상한 | `episode_char_budget` |
 | LLM이 JSON을 깨뜨림 | 느슨한 파서 + 재시도 + 침묵 컷 | `comic_input.py:629`, 장면 retry |
+| 키 앞에 홀 글자(러 / U+2024)가 섞여 배열째 파싱 실패(실측) | `json_soft_fix`가 잡문자·이상 따옴표 정리 → 실패 시 `_salvage_objects`가 짝 맞는 `{}`만 주워拾음(부분 손실 < 전량 손실) | `comic_input.json_soft_fix`, `comic_gen._salvage_objects` |
+| 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |
+| 규칙이 잘려 LLM이 규칙 일부를 못 봄(실측: `{pose_policy}`가 3-c 아래로 밀림) | 규칙 3 → 그 뒷줄 → 3-b/3-c 순으로 배치 고정 | `comic_gen.build_panel_script_prompt` |
 | 키 앞 `"`가 U+2024 같은 유니코드로 디코딩됨(실측) | `json_soft_fix`(따옴표류 정규화·잡문자 제거·키 감싸기) — **정상 응답은 이 복구기를 거치지 않음**, 실패 시 오류 위치를 로그에 남김 | `comic_input.json_soft_fix`, `extract_json_obj_checked` |
 | 사건 병합으로 스토리 압축 | 병합 시 컷 수 **합**, 레이아웃 목표 컷 수 재추첨 | `split_acts_by_units`, `plan_pages_layout` |
 | 막 앵커가 안 보여 막이 1개가 된다 → 항목 20개가 6컷으로 압축 | 항목 저울을 막 분할 게이트 밖으로 분리 + 항목 모드 병합 금지(개수로만 묶기) | `comic_gen.request_panel_script` else 분기, `comic_input.split_acts_by_units` |

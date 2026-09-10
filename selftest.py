@@ -615,21 +615,42 @@ def main() -> int:
 
     # ── [2026-09-09] 복장 누드화 — 컷 clothes가 회차 의상을 덮어쓰던 문제 (p02 실측)
     _keep_clo = (config.clothes, config.p_exposure_tag, config.exposure_tag, config.bodystyle_tag)
-    config.clothes = "bimbo school uniform, tight clothes, short skirt"
+    _keep_clo2 = (getattr(config, "clothes_late", ""),)
+    config.clothes = "school uniform"                      # 회차가 **시작하는** 복장
+    config.clothes_late = "gold bra, gold miniskirt"       # 중반 이후에 갈아입는 복장
+    config.face_style, config.face_style_late = "crying, blushing", "ahegao, wide eyes"
     config.p_exposure_tag = ["cleavage, navel, midriff, thighs"] * 12
-    config.exposure_tag = ["bimbo school uniform, tight clothes, short skirt"] * 12
+    config.exposure_tag = ["tight clothes, short skirt"] * 12
     config.bodystyle_tag = ["standing, holding hands, looking at viewer"] * 12
-    _p_dirty = dict(panel_t, no=41, type="action", camera="side_view", pose="She is pushed by hands.",
+    _p_dirty = dict(panel_t, no=41, type="action", camera="side_view",
+                    pose="She is pushed by hands.",
                     clothes="tattered school uniform, dirty clothes", lines=[], caption_ko="", sfx="")
     _p_bikini = dict(panel_t, no=42, type="action", camera="side_view", pose="She swims.",
                      clothes="bikini", lines=[], caption_ko="", sfx="")
     _p_nude = dict(panel_t, no=43, type="action", camera="side_view", pose="She stands.",
                    clothes="nude, tattered clothes", lines=[], caption_ko="", sfx="")
+    _p_silent = dict(panel_t, no=44, type="face", camera="close_up", pose="She smiles.",
+                     clothes="", lines=[], caption_ko="", sfx="")
     _f_dirty = CG.build_panel_prompt(0, _p_dirty, "sensitive", gloss={})
     _f_bikini = CG.build_panel_prompt(0, _p_bikini, "sensitive", gloss={})
     _f_nude = CG.build_panel_prompt(0, _p_nude, "sensitive", gloss={})
-    check("컷의 복장 변화는 회차 의상을 **덮어쓰지 않는다**(의류가 사라지면 모델이 벌거벗긴다)",
-          "short skirt" in _f_dirty and "tattered school uniform" in _f_dirty, _f_dirty.split("\n")[-1][:150])
+    _f_silent = CG.build_panel_prompt(0, _p_silent, "sensitive", gloss={})
+    check("컷이 복장을 명시하면 **컷 것만** 쓴다(회차 후반 의상이 초반 컷에 새지 않는다)",
+          "tattered school uniform" in _f_dirty and "gold miniskirt" not in _f_dirty,
+          _f_dirty.split("\n")[-1][:150])
+    check("컷이 복장을 침묵해도 회차 **시작** 복장만 쓴다(중반 옷은 아직 안 입었다)",
+          "school uniform" in _f_silent and "gold miniskirt" not in _f_silent,
+          _f_silent.split("\n")[-1][:150])
+    _bk_climax = anima_gen._build_tag_block(0, "she gasps", "front_view", "wide", "", "", False,
+                                            climax_tag="creampie", clothes_override="")
+    check("회차 후반 의상/표정은 클라이맥스 컷에서만 돌아온다",
+          "gold miniskirt" in _bk_climax and "ahegao" in _bk_climax,
+          " ".join(l for l in _bk_climax.split("\n") if "CLOTHES" in l or "FACE" in l)[:150])
+    _bk_calm = anima_gen._build_tag_block(0, "she stands", "front_view", "wide", "", "", False,
+                                          climax_tag="", clothes_override="")
+    check("회차 표정 목록의 극단 표정은 일상 컷에서 걸린다(비클라이맥스 정제 — 조건 반전 회귀)",
+          "ahegao" not in _bk_calm and "blushing" in _bk_calm,
+          " ".join(l for l in _bk_calm.split("\n") if "AAA FACE" in l)[:120])
     check("정말 갈아입은 컷(다른 품목)은 override가 이긴다", "bikini" in _f_bikini
           and "school uniform" not in _f_bikini, _f_bikini.split("\n")[-1][:150])
     check("본문 근거 없는 전라 어구는 상한 안에서 걷는다(explicit일 때만 통과)",
@@ -640,6 +661,7 @@ def main() -> int:
     check("컷 스크립트 프롬프트가 근거 없는 옷 훼손(tattered/nude)을 말린다",
           "먼저 제안하지 않는다" in _cp_prompt and "tattered" in _cp_prompt)
     config.clothes, config.p_exposure_tag, config.exposure_tag, config.bodystyle_tag = _keep_clo
+    config.clothes_late, config.face_style_late = _keep_clo2, ""
 
     # [2026-09-07] 1인 화면: 헤더는 무조건 solo (side_view는 구도일 뿐 '2명'이 아니다)
     ps = CG.build_panel_prompt(0, dict(panel_t, no=11), "nsfw", gloss={})
@@ -1477,8 +1499,10 @@ def main() -> int:
           config.name == "호시노 아야" and config.hair_color == "black hair"
           and config.body_shape == "slim, medium_breasts, narrow_hips",
           f"{config.name}/{config.hair_color}/{config.body_shape}")
-    check("--special: clothes는 LLM 번역값을 그대로 쓴다",
-          config.clothes == CANNED["protagonist"]["clothes"], config.clothes)
+    check("--special: clothes는 시간 순으로 갈라 회차 시작 값이 된다(후반은 *_late)",
+          config.clothes == CANNED["protagonist"]["clothes"].split(",")[0].strip()
+          and "utility belt" in getattr(config, "clothes_late", ""),
+          f"{config.clothes} / {getattr(config, 'clothes_late', '')}")
     check("--special: --safety 가 수위를 강제(safe 정책)", config.review_safety[89] == "safe",
           config.review_safety[89])
     check("--special: 막 앵커가 config.ep_beat_segments로 간다(comic_gen 장면 골격)",

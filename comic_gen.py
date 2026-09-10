@@ -656,7 +656,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
               "emo": "anger|surprise|sweat|heart|gloom|sparkle|question 중 하나 (없으면 \"\")"}},
              {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
-   "wide": false, "facing": "front", "clothes": "police uniform",
+   "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
   ...
 ]
@@ -665,6 +665,10 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {rule1}
 {rule2}
 3. pose는 반드시 영어 한 문장(두 문장 가능): "She ..." 또는 "She is ..."로 시작, 주인공은 여성(She), 상대방은 him/her 대명사 사용.
+   3-b. **emotion(모든 컷 필수)**: 이 컷에서 주인공이 짓는 감정 하나를 영문 태그로 쓴다
+       (예: "sad", "envious", "joyful", "embarrassed", "crying", "smiling"). 지문·대사가 없는
+       행동 컷도 감정은 있다 — pose와 같은 컷의 감정이다. 회차 후반에 표정이 바뀌는 회차는
+       그 이후 컷부터 바뀐 감정(예: "ahegao")을 쓴다. 빈 값은 회차 기본 표정을 쓴다는 뜻.
    danbooru 태그를 문장 안에 섞어 쓸 수 있다 (예: ", her bikini bottom pulled aside, cameltoe, trembling").
 {pose_policy}
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
@@ -716,7 +720,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {rule15}"""
 
 
-_PANEL_KEYS = ("caption_ko", "position", "clothes", "camera", "climax", "dialog", "facing",
+_PANEL_KEYS = ("caption_ko", "position", "clothes", "emotion", "camera", "climax", "dialog", "facing",
                "center", "multi", "pose", "type", "tier", "wide", "page", "no",
                "lines", "sfx")     # [2026-09-09] 화면 문법(풍선/의성어) 필드 추가
 
@@ -915,8 +919,19 @@ _EMO_FACE_TAGS = {
 }
 
 
+def _is_tag_word(s) -> bool:
+    """짧은 영문 태그(1~6단어, 쉼표 없는)인지 — 컷 emotion을 표정 태그로 써도 되는지"""
+    s = str(s or "").strip()
+    return bool(s) and "," not in s and len(s.split()) <= 6 and re.fullmatch(r"[a-z0-9_ \-]+", s.lower()) is not None
+
+
 def _panel_face_emotion(panel) -> str:
     """이 컷의 표정 key — 주인공 풍선의 감정이 우선, 없으면 화면 텍스트에서 추정한다."""
+    # [2026-09-09] 컷 스크립트가 직접 준 감정(`emotion`)이 최우선이다 — 실측으로 지문 없는
+    #   행동 컷 22개 중 표정 0개였던 문제(회차 표정이 전부 대체)의 정면 해결책.
+    _em = str((panel or {}).get("emotion") or "").strip()
+    if _em:
+        return _em
     lines = (panel or {}).get("lines") or []
     me = str(getattr(config, "name", "") or "").strip()
     for b in lines:
@@ -2180,7 +2195,9 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     is_pov = camera_view == "pov"
     # [2026-09-09] 컷의 감정을 표정 태그로 넘긴다 — 예전은 ""(빈 값)를 줘서 회차 고정 표정에 100% 밀렸다
     emo_key = _panel_face_emotion(panel)
-    step_expression = _EMO_FACE_TAGS.get(emo_key, "")
+    # [2026-09-09] 컷 스크립트가 준 컷 감정(emotion, 영문 태그)도 그대로 쓴다 — 7종 이모티표에
+    #   없는 감정이 대부분이라 예전은 ""로 버렸다(그 사이 회차 표정이 컷을 덮었다).
+    step_expression = _EMO_FACE_TAGS.get(emo_key, "") or (emo_key if _is_tag_word(emo_key) else "")
     if emo_key:
         pose_text = re.sub(r",?\s*\((?:ahegao|heart-shaped pupils|rolling eyes)\)(?::[\d.]+\)?)?", "", pose_text)
     tag_block = anima_gen._build_tag_block(ep_idx, pose_text, camera_view, aspect_ratio,

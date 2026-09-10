@@ -679,6 +679,18 @@ def extract_json_obj_checked(text: str):
     return {}, f"{last}{p}"
 
 
+def _split_start_late(raw, default: str = ""):
+    """쉼표 목록을 '회차 시작 상태 / 후반 상태'로 가른다(추출이 시간 순으로 쓴다는 전제).
+
+    추출 프롬프트에 "먼저 입은 옷·먼저 짓는 표정 순으로" 적히도록 규칙이 있다. 순서를
+    못 지킨 경우에도 *late는 클라이맥스 컷에만 쓰이므로(anima_gen) 초반 컷이 오염되지 않는다.
+    """
+    parts = [p.strip() for p in re.split(r"[,;]", str(raw or "")) if p.strip()]
+    if not parts:
+        return (default or ""), ""
+    return parts[0], ", ".join(parts[1:])
+
+
 def _norm_char_tag(raw) -> str:
     """#…# 알맹이 정규화: 줄바꿈/연속 공백 정리, anima가 읽지 못하는 '_'는 공백으로(대소문자 원문 유지)"""
     s = re.sub(r"\s+", " ", str(raw or "").replace("_", " ")).strip()
@@ -958,8 +970,13 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     config.hair_style = proto.get("hair_style") or "long hair"
     config.eye_color = proto.get("eye_color") or "brown eyes"
     config.skin_color = proto.get("skin_color") or "fair skin"
-    config.face_style = proto.get("face_style") or "blushing"
-    config.clothes = proto.get("clothes") or "school uniform"
+    # [2026-09-09] 회차 시작 상태와 후반 상태를 가른다(실측: face_style "crying, blushing, ahegao",
+    #   clothes "school uniform, gold bra, gold miniskirt"가 그대로 회차 기준이 돼 컷 1부터
+    #   아헤가오·빔보 복장이 çıktı). 첫 항목 = 회차가 시작하는 상태, 나머지는 후반 전용.
+    _fs, _fs_late = _split_start_late(proto.get("face_style"), "blushing")
+    _cl, _cl_late = _split_start_late(proto.get("clothes"), "school uniform")
+    config.face_style, config.face_style_late = _fs, _fs_late
+    config.clothes, config.clothes_late = _cl, _cl_late
     config.body_shape = proto.get("body_shape") or "realistic"
     config.job = proto.get("job") or ""
     config.breasts_size = proto.get("breasts_size", -1)

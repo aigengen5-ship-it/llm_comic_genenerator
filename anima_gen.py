@@ -1858,6 +1858,16 @@ def _extreme_face():
                                       (getattr(config, 'extreme_face', []) or []) if str(x).strip())
 
 
+def _dedupe_csv(s: str) -> str:
+    """쉼표 태그 목록을 순서 유지로 중복 제거(회차 시작/후반 태그를 합칠 때 중복이 생긴다)."""
+    out = []
+    for p in str(s or "").split(","):
+        p = p.strip()
+        if p and p.lower() not in {o.lower() for o in out}:
+            out.append(p)
+    return ", ".join(out)
+
+
 def _calm_face(tags: str) -> str:
     """극단 표정 태그를 거른다 — 회차 톤이 일상 컷까지 물들면 모든 표정이 아헤가오가 된다."""
     s = str(tags or "")
@@ -1967,9 +1977,21 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     #   exposure 조각만 쓰여, 컷이 "tattered school uniform" 같은 어구로 갈음하면 의류가 통째로
     #   사라지고 노출 부분 태그(cleavage/navel/midriff/thighs)만 이겨 누드가 됐다.
     # 회차 의상 기준도는 **컷이 옷을 바꿀 때만** 받는다(없을 때는 [AAA EXPOSURE]가 이미 그 의상을 쓴다)
-    base_clothes = ", ".join([p for p in [config.clothes, clothes_tokens] if p]) if clothes_override else clothes_tokens
+    # [2026-09-09] 시간 분리 — 회차 의상 목록은 '시작 + 후반'이 한 줄로 섞여 있다(태그셋 LLM은
+    #   회차 전체를 본다). 그래서 컷이 옷을 명시하면 **컷 것만** 쓰고, 컷이 침묵하면 회차
+    #   시작 상태(config.clothes)를 기준으로 삼는다. 후반 옷/회차 의상 목록은 클라이맥스 컷에서만 더한다.
+    _ovr = str(clothes_override or "").strip()
+    _start = str(getattr(config, "clothes", "") or "").strip()
+    _late_c = str(getattr(config, "clothes_late", "") or "").strip()
+    if _ovr:
+        base_clothes = _ovr
+    else:
+        bits = [_start or clothes_tokens]
+        if climax_tag:
+            bits += [clothes_tokens if _start else "", _late_c]
+        base_clothes = _dedupe_csv(", ".join([p for p in bits if p]))
     # 컷별 복장 변화는 '덮어쓰기'가 아니라 '덧쓰기'(정말 갈아입은 컷만 덮어쓴다)
-    clothes_tokens = _undress_guard(_merge_clothes(base_clothes, str(clothes_override or "")), base_clothes)
+    clothes_tokens = _undress_guard(_merge_clothes(base_clothes, _ovr), _start or base_clothes)
 
     # expression(주인공): face_tag + step_expression + expression_arr에서 랜덤 1개
     expr_pick = ""
@@ -1993,7 +2015,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         face_line = ep_face
     else:
         expression_parts = [p for p in [expr_pick] if p]
-        face_line = str(getattr(config, 'face_style', '') or '')
+        face_line = str(getattr(config, 'face_style', '') or '')       # 회차 시작 표정만基準
 
     lines_block = [
         f"[ACTION] {pose_text}",
@@ -2017,8 +2039,15 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if is_side and (getattr(config, 'glasses2', '') or '').strip() == '안경' and not _protagonist_has_glasses():
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
+    # [2026-09-09] 조건이 거꾸로였다(calm을 클라이맥스에만 적용) — 일상 컷에 극단 표정(실측
+    #   [AAA FACE] crying, blushing, ahegao)이 그대로 들어가 모든 컷이 같은 표정으로 찍혔다.
+    #   회차 후반 표정(*_late)은 **클라이맥스 컷에만** 붙인다(회차가 시작하는 표정은 face_style).
+    if climax_tag:
+        _late_f = str(getattr(config, "face_style_late", "") or "").strip()
+        if _late_f:
+            face_line = _dedupe_csv((face_line + ", " + _late_f) if face_line else _late_f)
     if face_line:
-        _fl = _calm_face(face_line) if climax_tag else face_line
+        _fl = face_line if climax_tag else _calm_face(face_line)
         if _fl:
             lines_block.append(f"[AAA FACE] {_fl}")
     if config.makeup_tag[episode]:

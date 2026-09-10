@@ -131,6 +131,11 @@ comic_templates_pin = []
 comic_layout_rolls = 10         # 페이지 수마다 레이아웃을 몇 번 다시 추첨해 목표 컷 수에 가까운 것을 고르는가
 comic_wide_share_max = 0.5
 comic_variation = 0
+# [2026-09-09] 추출은 회차 '전체'를 요약한다 — 중반에 옷·표정이 바뀌면 그 목록이
+#   모든 컷의 기준이 돼 첫 컷부터 후반 상태(예: 아헤가오/드레스)가 나왔다.
+#   그래서 *_late로分开한다: *_start(=config.clothes/face_style)는 회차 시작 상태, *_late는 후반 전용.
+clothes_late = ""
+face_style_late = ""
 comic_action_cuts = True            # False = 예전처럼 본문 길이(600자 = 컷 1)로만 배분
 comic_cut_strong_weight = 2         # LLM이 컷 수를 안 준 유닛을 강한 사건으로 볼 때의 컷 수
 # [2026-09-09] 이름 고정 — 추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오지 못하게 못 박는다.

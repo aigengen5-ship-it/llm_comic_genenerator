@@ -2080,6 +2080,34 @@ def main() -> int:
     check("컷 스크립트 배열 파서도 같은 디코딩 사고를 복구한다",
           len(_arr) == 1 and _arr[0].get("emotion") == "happy", str(_arr)[:70])
 
+    # ── ⑬h0 [2026-09-09] 항목 20개가 장면 1개로 눌려 컷 6개가 되면 안 된다 (실측)
+    _it = ["그녀는 %d번째로 행동한다. 짧은 문장" % k for k in range(20)]
+    _txt = "\n".join(_it)
+    _item_keep = getattr(config, "comic_item_cuts", True)
+    config.comic_item_cuts = True            # 항목 모드임을 명시(이 값은 다른 검사들이 흔든다)
+    _u20 = CI.normalize_units([{"at": p, "kind": "행동", "cuts": 1} for p in _it])
+    _b20, _ba20, _w20 = CI.split_acts_by_units([_txt], _u20)
+    check("항목 모드: 짧은 항목도 붙이지 않고 개수로만 묶는다(장면 1개 = 항목 6개까지)",
+          len(_b20) == 4 and _w20 == [6, 6, 6, 2], f"{len(_b20)}개 {_w20}")
+    check("항목 모드: 컷 예산 합 = 항목 수 (장면이 몇 개든 잃지 않는다)",
+          sum(_w20) == 20 and CI.target_panels_from_weights(_w20, acts=1) >= 20, str(sum(_w20)))
+    check("장면 1호가 항목 6개를 넘지 않는다(1호출 = 컷 6 이하의 JSON 보호선)",
+          max(_w20) <= CI.PANELS_PER_BEAT_MAX, str(max(_w20)))
+    _cg_src = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("막이 1개(시그먼트 앵커 실패)여도 항목 유닛을 쓴다 — 게이트 밖으로 나왔다",
+          "and units and body:" in _cg_src and _cg_src.count("ep_action_units") >= 2,
+          "units 분기가 막 분할 안쪽에 갇혀 있다")
+    _rc_src = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("실행 화면의 '컷 예산' 안내가 글자 수가 아니라 항목 수를 본다",
+          "ep_action_units" in _rc_src and "항목 1 = 컷 1" in _rc_src, "안내가 여전히 1컷=600자")
+    # 항목이 없으면 예전처럼 글자 수 저울을 쓴다(회귀)
+    config.comic_item_cuts = False           # 사건 모드(회귀) — 짧은 조각 병합이 살아 있어야 한다
+    _u20_old = CI.normalize_units([{"at": p, "cuts": 2} for p in _it[:6]])
+    _bo, _bao, _wo = CI.split_acts_by_units([_txt], _u20_old)
+    check("--no-item-cuts(사건 모드)에서는 짧은 조각 병합이 그대로 돈다(회귀 확인)",
+          len(_bo) <= CI.PANELS_PER_BEAT_MAX and sum(_wo) >= 10, f"{len(_bo)}개 {_wo}")
+    config.comic_item_cuts = _item_keep
+
     # ── ⑬h [2026-09-09] 페이지 템플릿 고정 (--template)
     _tm_all = CG.load_cut_templates()
     _one = sorted(k for k in _tm_all if not _tm_all[k].get("epilogue"))[3]

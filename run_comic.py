@@ -504,7 +504,11 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
                            config.comic_max_panels)
     page_mode = (f"auto≤{config.comic_max_pages}" if config.comic_pages == 0
                  else ("cut.yaml OFF" if config.comic_pages < 0 else str(config.comic_pages)))
-    p(f"\n본문 {len(ep_text)}자 → 컷 예산 {tgt}컷 (1컷={config.comic_chars_per_panel}자, "
+    _u0 = ((getattr(config, "ep_action_units", {}) or {}).get(ep_num)
+           or (getattr(config, "ep_action_units", {}) or {}).get(str(ep_num)) or [])
+    if _u0:                                   # 저울은 항목 수 — 글자 수 예산을 여기서 고친다
+        tgt = max(tgt, sum(int(u.get("cuts") or 1) for u in _u0))
+    p(f"\n본문 {len(ep_text)}자 → 컷 예산 {tgt}컷 ({('화면 항목 ' + str(len(_u0)) + '개(항목 1 = 컷 1)') if _u0 else ('1컷=' + str(config.comic_chars_per_panel) + '자')}, "
       f"상한 {config.comic_max_panels or '무제한'}, 페이지 {page_mode})")
 
     idx = max(0, ep_num - 1)

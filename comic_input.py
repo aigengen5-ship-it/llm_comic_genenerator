@@ -416,6 +416,19 @@ def split_acts_by_units(acts, units, strong_weight: int = 2,
                     pw.append(int(cut_w.get(cuts[k + 1], 0) or action_weight(seg, strong_weight)))
         if not parts:
             parts, pw = [act], [action_weight(act, strong_weight)]
+        if _item_mode():
+            # [2026-09-09] 항목 1:1 모드에서는 짧은 항목도 컷 하나다. 짧은 것끼리 붙이면
+            #   항목 20개가 장면 1개로 눌려 컷 6개로 압축됐다(실측 727자 원고). 그래서
+            #   개수로만 묶는다 — 장면 1개(LLM 호출 1개)에 항목 max_units_per_beat개까지.
+            merged, mw = [], []
+            _g = max(1, int(max_units_per_beat))
+            for k in range(0, len(parts), _g):
+                merged.append("\n\n".join(parts[k:k + _g]).strip())
+                mw.append(sum(pw[k:k + _g]))
+            beats += merged
+            beat_acts += [ai] * len(merged)
+            weights += mw
+            continue
         # 짧은 조각은 앞 조각에 합친다 (풍선 하나만 들어갈 컷이 넘치면 화면이 산으로 간다)
         merged, mw = [parts[0]], list(pw[:1])
         for p, w in zip(parts[1:], pw[1:]):

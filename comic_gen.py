@@ -1581,7 +1581,25 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         elif unit_w is None:
             beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
     else:
-        beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
+        # [2026-09-09] 막 분할이 1개(시그먼트 앵커 실패·원고가 단막)라도 항목 유닛은 쓴다.
+        #   실측: 본문 727자 · 화면 항목 20개를 "막이 1개"라는 이유로 글자 수 6컷에 가뒀다.
+        #   항목 저울은 막 분할과 독립적이어야 한다(사용자: "컷 20개를 6개로 확 줄인 이유가 뭐지?").
+        _umap = getattr(config, "ep_action_units", {}) or {}
+        units = _umap.get(ep_num_1based) or _umap.get(str(ep_num_1based)) or []
+        if bool(getattr(config, "comic_action_cuts", True)) and units and body:
+            ub, ua, uw = CI.split_acts_by_units([body], units, strong_weight=int(
+                getattr(config, "comic_cut_strong_weight", 2) or 2))
+            if len(ub) >= 2:
+                beats, beat_acts = ub, ua
+                target = CI.target_panels_from_weights(uw, min_panels=MIN_PANELS, max_panels=maxp, acts=1)
+                if target != n_cut:
+                    page_plans, n_pages = (plan_pages_layout(ep_num_1based, target, pages)
+                                           if pages >= 0 else (page_plans, n_pages))
+                    slots = spec_slots(page_plans)
+                    n_cut = len(slots) if slots else target
+                unit_w = uw
+        if unit_w is None:
+            beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
     _var = int(getattr(config, "comic_variation", 0) or 0)
     quotas = CI.allocate(n_cut, (unit_w if unit_w else [max(1, len(b)) for b in beats]),
                          minimum=(2 if (beat_acts is not None and unit_w is None and n_cut >= 2 * len(beats))

@@ -118,7 +118,7 @@
 - 결과는 `config.ep_action_units[EP] = units`로 보관 (`comic_input.py:891`). 디스크 캐시는 없습니다(재실행 시 재호출).
 
 ### 3.2 [E] 컷 예산과 페이지 레이아웃 — `plan_pages_layout` (283)
-1. 컷 예산 순서: 항목/사건 가중치 합(`target_panels_from_weights`, 440) → 없으면 글자 수(`target_panels`, 455). 하한은 `MIN_PANELS_AUTO=6`과 `막당 2컷`.
+1. 컷 예산 순서: 항목/사건 가중치 합(`target_panels_from_weights`, 440) → 없으면 글자 수(`target_panels`, 455). **항목 저울은 막 분할과 독립**이다 — `ep_beat_segments` 앵커가 깨져 막이 1개라도 `split_acts_by_units([body], units)`로 항목 수를 지킨다(`request_panel_script`의 `else` 분기, `comic_gen.py:1597` 부근). 하한은 `MIN_PANELS_AUTO=6`과 `막당 2컷`.
 2. 페이지 수 어림 = 목표 컷 수 ÷ 템플릿 평균 슬롯(4.82) ± 범위(−2 ~ +3).
 3. **페이지 수 × 레이아웃 재추첨**(`comic_layout_rolls=10`, `plan_pages(…, salt)`): 목표 컷 수에 가장 가까운 구성을 고르고, **모자란 쪽은 2.2배 벌점**(장면 압축이 컷 여유보다 나쁘다는 판단).
 4. 템플릿 34종(`data/cut.yaml`)에서 **회차 안 재사용 추첨**(같은 회차에서 같은 템플릿 중복 금지) + **첫 페이지는 "첫 행만 전폭"인 믹스 템플릿 우대** + 전폭 비중 상한 `comic_wide_share_max=0.5`.
@@ -129,7 +129,8 @@
 
 ### 3.3 [F] 장면 분할 — `split_acts_by_units` (393)
 - `at` 문자열을 본문에서 **정확한 복사 일치**로 찾아 자릅니다(모델은 숫자 오프셋을 못 맞춥니다).
-- 짧은 조각(`< MIN_UNIT_CHARS=90`)은 앞 조각에 합치고, 막당 조각이 6개를 넘으면 같은 막 인접 조각부터 합칩니다.
+- **항목 모드에서는 짧은 조각을 합치지 않는다** — 항목 20개를 붙이면 장면 1개에 눌려 컷 6개가 됐다(실측 727자 원고). 대신 **개수로만 묶는다**: 장면 1개(LLM 호출 1개) = 항목 ≤6, 그래서 20항목 → 장면 4개 `[6,6,6,2]` → 컷 20.
+- 사건 모드(`--no-item-cuts`)에서는 기존처럼 짧은 조각(`< MIN_UNIT_CHARS=90`)을 앞 조각에 합치고, 막당 조각이 6개를 넘으면 같은 막 인접 조각부터 합칩니다.
 - **합칠 때 컷 수는 합(sum)** — 예전엔 max를 써서 두 사건이 한 컷으로 눌렸습니다(짤림의 원인 중 하나).
 
 ### 3.4 [G] 컷 스크립트 — `request_panel_script` (1457), 컷 규칙은 `build_panel_script_prompt` (532)
@@ -217,6 +218,7 @@
 | LLM이 JSON을 깨뜨림 | 느슨한 파서 + 재시도 + 침묵 컷 | `comic_input.py:629`, 장면 retry |
 | 키 앞 `"`가 U+2024 같은 유니코드로 디코딩됨(실측) | `json_soft_fix`(따옴표류 정규화·잡문자 제거·키 감싸기) — **정상 응답은 이 복구기를 거치지 않음**, 실패 시 오류 위치를 로그에 남김 | `comic_input.json_soft_fix`, `extract_json_obj_checked` |
 | 사건 병합으로 스토리 압축 | 병합 시 컷 수 **합**, 레이아웃 목표 컷 수 재추첨 | `split_acts_by_units`, `plan_pages_layout` |
+| 막 앵커가 안 보여 막이 1개가 된다 → 항목 20개가 6컷으로 압축 | 항목 저울을 막 분할 게이트 밖으로 분리 + 항목 모드 병합 금지(개수로만 묶기) | `comic_gen.request_panel_script` else 분기, `comic_input.split_acts_by_units` |
 | ★ 박스가 화면을 덮음 | 면적 70% 상한 + 글자 1.25배(크기는 폰트로) + 위치 규칙 | `comic_page_merge` NARR_* |
 | 지문이 잘림 | 줄 제한 제거 → 폭 성장 → 폰트 11px까지 | `comic_page_merge.py:136~144` |
 | 한 표정으로 고정 | 컷 감정 우선 + 회차 표정은 클라이맥스만 | `anima_gen._calm_face` |

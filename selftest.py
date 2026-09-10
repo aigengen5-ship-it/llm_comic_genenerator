@@ -1182,7 +1182,7 @@ def main() -> int:
         (config.comic_pages, config.comic_chars_per_panel, config.comic_beat_chars,
          config.comic_max_panels, config.comic_max_pages) = cfg_save
     check("request_panel_script: 본문이 컷 수를 정하고 장면별로 LLM을 부른다",
-          sc["beats"] > 1 and calls2["n"] == sc["beats"]
+          sc["beats"] > 1 and calls2["n"] >= sc["beats"]   # 장면당 1회 이상(재시도는 허용)
           and sc["target_panels"] == -(-len(body) // 100) and len(sc["panels"]) >= sc["target_panels"] * 0.8,
           f"beats={sc['beats']} calls={calls2['n']} target={sc['target_panels']} panels={len(sc['panels'])}")
     check("컷에 page/tier 슬롯 메타가 전부 붙는다(페이지 합성 입력)",
@@ -2203,6 +2203,49 @@ def main() -> int:
     check("보충 값이 한글이면 표정/복장 태그로 쓰지 않는다(한글은 최종 프롬프트에서 파기된다)",
           not _fc2[0]["state"].get("clothes"), str(_fc2[0]["state"])[:60])
     config.comic_strict_state = _strict_keep
+    # ── ⑬l [2026-09-09] JSON 파싱 실패 재시도 (추출 / 태그 생성 / 컷 스크립트)
+    _keep_ci, _keep_ag = CI.call_openai_for_text, anima_gen.openAI_response
+    _hits = {"n": 0}
+
+    def _flaky(prompt, messages=None, **kw):
+        _hits["n"] += 1
+        if _hits["n"] == 1:
+            return ('모델이 JSON 대신 설명 문장을 써 버렸다', "")
+        return ('{"protagonist": {"name": "A", "sex": "female", "clothes": "school uniform"}, "units": []}', "")
+
+    CI.call_openai_for_text = _flaky
+    try:
+        _ex = CI._extract_once("본문입니다." * 40, "시트", 1)
+    finally:
+        CI.call_openai_for_text = _keep_ci
+    check("추출은 JSON 파싱 실패 시 재시도한다(1회 실패 → 2회 성공)",
+          bool(_ex) and _hits["n"] == 2, f"{_hits}회 / {bool(_ex)}")
+
+    _hits2 = {"n": 0}
+    _GOODTAG = ('{"face": "shy smile", "exposure": "school uniform", "background": "busy street",'
+                ' "stats": {"M":3,"L":1,"A":2,"O":1,"I":3,"S":3,"D":1}}')
+
+    def _flaky_tags(*a, **k):
+        _hits2["n"] += 1
+        return ("", 'JSON 대신 설명만: {"face": }') if _hits2["n"] == 1 else ("", _GOODTAG)
+
+    anima_gen.openAI_response = _flaky_tags
+    try:
+        _tg = anima_gen._generate_tags_via_llm(0, client=object())
+    finally:
+        anima_gen.openAI_response = _keep_ag
+    check("렌더 태그 생성도 파싱 실패 시 재시도한다(결정론 fallback보다 재시도가 싸다)",
+          _hits2["n"] == 2 and _tg["face"] == "shy smile" and _tg["exposure"] == "school uniform",
+          f"{_hits2}회 / {_tg['face']}")
+    import inspect as _ins
+    check("컷 스크립트 기본 재시도는 2회(장면당) — 예전 기본값 1은 실질 재시도가 없었다",
+          _ins.signature(CG.request_panel_script).parameters["retry"].default == 2)
+    _sf1 = CI.extract_json_obj_checked('{"face": "blushing․ "makeup": "natural"}')[0]
+    _sf2 = CI.extract_json_obj_checked('{"a": "x"․ "b": "y"}')[0]
+    check("관대한 파서가 이상 문자의 두 자리를 안다(닫는 따옴표 자리 / 쉼표 자리)",
+          _sf1 == {"face": "blushing", "makeup": "natural"} and _sf2 == {"a": "x", "b": "y"},
+          f"{_sf1} / {_sf2}")
+
 
     # ── ⑬i [2026-09-09] 컷별 연속 상태 시트 (언급 없으면 직전 컷 유지)
     _keep_state = (config.clothes, config.clothes_late, config.face_style, config.face_style_late,

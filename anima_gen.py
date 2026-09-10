@@ -11,6 +11,7 @@ import time as time_mod
 import zlib
 import shutil
 import config
+import comic_input as CI
 import urllib.request as request
 
 from openai import OpenAI
@@ -307,7 +308,15 @@ def _extract_json(text: str) -> dict:
     end = text.rfind("}") + 1
     if start >= 0 and end > start:
         json_str = text[start:end]
-        return json.loads(json_str)
+        try:
+            return json.loads(json_str)
+        except Exception:
+            # [2026-09-09] 추출/컷 스크립트와 같은 관대한 파서를 쓴다(Q4는 키 앞 따옴표를 이상한
+            #   유니코드로 디코딩한다) — 태그 생성이 잡문자 하나로 fallback에 떨어지면 태그가 빈다.
+            obj, err = CI.extract_json_obj_checked(json_str)
+            if obj:
+                return obj
+            raise ValueError(f"JSON parse failed: {err} :: {json_str[:120]}")
     raise ValueError(f"No JSON found in: {text[:100]}")
 
 
@@ -1124,14 +1133,25 @@ JSON 하나만 출력 (설명·코드펜스 금지):
         messages = [{"role": "system", "content": config.system_prompt_anima +
                                 " Your only job: output danbooru image tags as strict JSON."},
                     {"role": "user", "content": prompt}]
-        _, result = openAI_response(config.get_json_value(), client, messages, "", 1, False,
-                                    call_label=f"TAGS_LLM_EP{ep_num}")
-        data = _extract_json(result)
+        data = None
+        for _try in (1, 2):
+            try:
+                _, result = openAI_response(config.get_json_value(), client, messages, "", 1, False,
+                                            call_label=f"TAGS_LLM_EP{ep_num}" + ("" if _try == 1 else "_retry"))
+                data = _extract_json(result)
+            except Exception as ex:
+                log(f"[TAGS_LLM] EP{ep_num} {_try}회 호출 실패: {ex}")
+                data = None
+            if isinstance(data, dict) and data:
+                break
+            if _try == 1:
+                log(f"[TAGS_LLM] EP{ep_num} 1회 응답을 읽지 못해 재시도합니다(결정론 fallback보다 싸다)")
+                data = None
     except Exception as e:
         log(f"[TAGS_LLM] EP{ep_num} LLM 호출 실패 → fallback 태그: {e}")
         return fb
     if not isinstance(data, dict) or not data:
-        log(f"[TAGS_LLM] EP{ep_num} JSON 파싱 실패 → fallback 태그")
+        log(f"[TAGS_LLM] EP{ep_num} JSON 파싱 실패(2회 시도) → fallback 태그")
         return fb
 
     out = dict(fb)

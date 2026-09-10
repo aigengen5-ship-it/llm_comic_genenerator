@@ -642,6 +642,12 @@ def json_soft_fix(text: str) -> str:
     for _q in _QUOTE_LIKE:
         t = t.replace(_q, '"')
     t = re.sub(r"([{\[,])\s*[" + ODD_TOKEN_CHARS + r"]+", r"\1", t)                 # 키 앞 이상 문자 제거
+    # 이상 문자가 '쉼표 자리'에 들어온 경우(실측: "blushing"․ "makeup": )도 쉼표로 되돌린다
+    # 이상 문자가 ',' 자리에 온 경우(실측 두 갈래) — 따옴표가 열려 있으면 문자열을 닫고 쉼표를,',
+    #   닫혀 있으면 쉼표만','补는다.
+    for _m in reversed(list(re.finditer(r'[\u2024\u2025\u2026\u00b7\u30fb]+', t))):
+        _open = t[:_m.start()].count('"') % 2
+        t = t[:_m.start()] + ('",' if _open else ',') + t[_m.end():].lstrip()
     t = re.sub(r'([{\[,]\s*)([A-Za-z_\u00c0-\u318f][^"\n:]*?)(\s*":)', r'\1"\2\3', t)  # 따옴표 없는 키 감싸기
     # 키 앞에 섞여 들어온 홀 글자(실측: ...,\n\ub7ec  "background": "shopping mall") — Q4 디코딩 사고
     t = re.sub(r'(?m)^(\s*)[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3040-\u30ff]{1,3}\s+(?=")', r"\1", t)
@@ -844,20 +850,32 @@ def _merge_extracts(parts: list) -> dict:
 
 
 def _extract_once(episode_text: str, sheet_text: str, ep_num: int, log_fn=None,
-                  need_segments: bool = True) -> dict:
-    """본문 1창 → LLM 1회 → 정규화 dict (실패 시 {})"""
+                  need_segments: bool = True, attempts: int = 2) -> dict:
+    """본문 1창 → LLM → 정규화 dict. **JSON 파싱 실패/예외는 재시도**(2회는 temp 0.0으로).
+
+    Q4 디코딩 사고(키 앞 이상 문자)는 재시도로 피하는 것이 가장 싸다 — 관대한 파서(`json_soft_fix`)를
+    통과하지 못한 응답만 다시 묻는다.
+    """
     prompt = build_extract_prompt(episode_text, sheet_text, ep_num, need_segments=need_segments)
-    try:
-        raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or clog,
-                                      temperature=0.2, repeat_penalty=1.05)
-    except Exception as e:
-        clog(f"추출 API 예외: {e}")
-        return {}
-    data, _perr = extract_json_obj_checked(raw or "")
-    if not isinstance(data, dict) or not data:
-        clog(f"추출 JSON 파싱 실패: {_perr} (응답 앞 120자): {str(raw)[:120]}")
-        return {}
-    return _normalize_extract(data)
+    last, raw = "", ""
+    for k in range(1, max(1, int(attempts)) + 1):
+        try:
+            raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or clog,
+                                          temperature=0.2 if k == 1 else 0.0, repeat_penalty=1.05)
+        except Exception as e:
+            last = f"API 예외: {e}"
+            clog(f"추출 {k}회 실패: {e}" + (" → 재시도" if k < attempts else ""))
+            continue
+        data, _perr = extract_json_obj_checked(raw or "")
+        if isinstance(data, dict) and data:
+            if k > 1:
+                clog(f"추출 {k}회 시도에서 성공")
+            return _normalize_extract(data)
+        last = _perr
+        if k < int(attempts):
+            clog(f"추출 JSON 파싱 실패({k}회): {_perr[:110]} → 재시도합니다")
+    clog(f"추출 실패({max(1, int(attempts))}회 시도): {last[:150]} (응답 앞 120자): {str(raw)[:120]}")
+    return {}
 
 
 def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,

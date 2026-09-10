@@ -1821,7 +1821,7 @@ def _fill_star_narration(panels, beats, quotas, notes):
             notes.append(f"컷 {p['no']}: ★{p['text_role']} 지문 미작성 → 본문 첫 문장으로 채움")
 
 
-def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry: int = 1,
+def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry: int = 2,
                          pages: int = None, episode_text: str = None,
                          chars_per_panel: int = None, max_panels: int = None,
                          beat_chars: int = None) -> dict:

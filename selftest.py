@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import random
 import sys
 
 from PIL import Image, ImageDraw
@@ -1968,6 +1969,73 @@ def main() -> int:
           "--no-action-cuts" in _hp and "--strong-cut-weight" in _hp)
     check("config.comic_action_cuts 기본은 켜두기 (끄면 본문 길이 배분으로 복귀)",
           config.comic_action_cuts is True and config.comic_cut_strong_weight == 2)
+
+    # ── ⑬ [2026-09-09] 컷 배분 변동(--variation/--vary) + 수다장이 모드(--chatty)
+    check("变动 헬퍼는 같은 입력 → 같은 값(재현성)이고 값마다 다른 값을 준다",
+          CI._vary("budget|1", 7) == CI._vary("budget|1", 7)
+          and len({CI._vary("budget|1", v) for v in range(9)}) > 3,
+          str([CI._vary("budget|1", v) for v in range(5)]))
+    _a0 = CI.allocate(11, [1, 2, 1, 3], minimum=1, variation=0)
+    _a1 = CI.allocate(11, [1, 2, 1, 3], minimum=1, variation=4242)
+    check("배분 변동은 '나머지 동점'의 순서만 바꾼다(합·최솟값은 보존)",
+          sum(_a0) == sum(_a1) == 11 and min(_a1) >= 1, f"{_a0} vs {_a1}")
+    _seed0 = random.Random(f"cut:{3}:{2}:0").random()
+    _seedv = random.Random(f"cut:{3}:{2}:5").random()
+    check("레이아웃 시드에 변동이 섞인다(같은 회차でも 값마다 다른 템플릿 추첨)",
+          _seed0 != _seedv)
+    _hp3 = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--help"],
+                          capture_output=True, text=True).stdout
+    _rs = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("플래그가 장식품이 아니다 — CLI 값을 config에 실제 배선하는 줄이 있다 "
+          "(예전 --no-action-cuts/--name 이 도움말에만 있던 회귀)",
+          all(x in _rs for x in ("config.comic_action_cuts = False", "config.comic_chatty = True",
+                                 "config.comic_variation = int(args.variation)",
+                                 "config.pin_name = str(args.name).strip()",
+                                 "config.pin_name2 = str(args.name2).strip()")),
+          "run_comic 배선 줄 검색")
+    check("--variation / --vary / --chatty 플래그가 도움말에 있다",
+          "--variation" in _hp3 and "--vary" in _hp3 and "--chatty" in _hp3)
+
+    _ch_panels = [{"no": 1, "type": "action", "pose": "She stands by the window.", "caption_ko": "기존 지문.",
+                   "lines": [], "camera": "side_view", "position": "NONE", "facing": "right", "clothes": ""},
+                  {"no": 2, "type": "face", "pose": "She looks at viewer.", "caption_ko": "",
+                   "lines": [{"kind": "speech", "who": "렌", "text": "여기 있어요.", "emo": "heart"}],
+                   "camera": "close_up", "position": "NONE", "facing": "front", "clothes": ""},
+                  {"no": 3, "type": "action", "pose": "She walks away.", "caption_ko": "",
+                   "lines": [], "camera": "side_view", "position": "NONE", "facing": "right", "clothes": ""}]
+    _ch_beats = ["창가에서 그녀는 오래 망설였다. 결국 편지를 책상에 남겼다. 그녀가 돌아선다."]
+    _orig_cgt = CG.call_openai_for_text
+    CG.call_openai_for_text = lambda prompt, **kw: (json.dumps(
+        ["그녀는 창가에 서서 밖을 내다본다.", "볼이 붉어진 채로 그녀는 정면을 본다."], ensure_ascii=False), None)
+    try:
+        _cn = []
+        CG._fill_chatty_narration([dict(p) for p in _ch_panels], _ch_beats, [3], _cn)
+        _cp = [dict(p) for p in _ch_panels]
+        CG._fill_chatty_narration(_cp, _ch_beats, [3], _cn)
+        check("수다장이 모드: 지문 없는 컷의 설명은 **LLM이 만든다**(기존 지문은 안 건드린다)",
+              _cp[0]["caption_ko"] == "기존 지문." and _cp[1]["caption_ko"].startswith("그녀는 창가에")
+              and _cp[2]["caption_ko"].startswith("볼이 붉어진")
+              and any("LLM 작문" in n for n in _cn), str([p["caption_ko"] for p in _cp]) + str(_cn))
+    finally:
+        CG.call_openai_for_text = _orig_cgt
+    CG.call_openai_for_text = lambda prompt, **kw: ("[]", None)
+    try:
+        _cp2 = [dict(p) for p in _ch_panels[1:]]
+        _cn2 = []
+        CG._fill_chatty_narration(_cp2, _ch_beats, [2], _cn2)
+        check("LLM이 빈 응답을 주면 장면 본문의 남은 문장으로 메우고 순서대로 소비한다",
+              _cp2[0]["caption_ko"].startswith("창가에서") and _cp2[1]["caption_ko"].startswith("결국")
+              and _cp2[0]["caption_ko"] != _cp2[1]["caption_ko"], str([p["caption_ko"] for p in _cp2]))
+        _cp3 = [dict(p) for p in _ch_panels[1:]]
+        CG._fill_chatty_narration(_cp3, [], [], [])
+        check("장면 본문도 없으면 짧은 기본 문장으로 화면을 조용히 두지 않는다",
+              all(p["caption_ko"] for p in _cp3), str([p["caption_ko"] for p in _cp3]))
+    finally:
+        CG.call_openai_for_text = _orig_cgt
+    _cp4 = [dict(p) for p in _ch_panels]
+    CG._fill_chatty_narration([], _ch_beats, [3], [])
+    check("수다장이 함수는 빈 패널 목록에서 아무것도 하지 않는다", True)
+    config.comic_chatty = False
 
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).

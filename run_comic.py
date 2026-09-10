@@ -648,6 +648,12 @@ def main() -> int:
                     help="★에필로그(마지막 회차 끝의 반투명 이벤트신 1칸 + 큰 여운 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
+    ap.add_argument("--variation", type=int, default=0,
+                    help="컷 배분에 변동을 섞는다 (0=완전 재현, N>0=그 값마다 다른 레이아웃·장면당 컷 수)")
+    ap.add_argument("--vary", action="store_true",
+                    help="변동 값을 이번 실행에서 뽑고 로그에 남긴다(마음에 들면 그 값으로 재실행)")
+    ap.add_argument("--chatty", action="store_true",
+                    help="수다장이 모드: **모든 컷** 아래에 설명(지문)을 붙인다 — 서술할 내용이 없으면 그녀의 행동·표정을 짧게 묘사한다")
     ap.add_argument("--name", default="", help="주인공 이름을 고정한다 (추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오는 것을 막는다)")
     ap.add_argument("--name2", default="", help="상대방 이름을 고정한다")
     ap.add_argument("--no-action-cuts", action="store_true",
@@ -754,6 +760,27 @@ def main() -> int:
         config.comic_emo_marks = False
     if args.no_prologue:
         config.comic_prologue_cut = False
+    # [2026-09-09] 아래 스위치들도 이 자리에서 배선한다 — 예전에 이 위치에 붙이지 않아
+    #   --no-action-cuts / --name 이 장식품이었던 적(플래그만 있고 안 씀)이 있다.
+    if args.no_action_cuts:
+        config.comic_action_cuts = False
+    if int(getattr(args, "strong_cut_weight", 2) or 2) >= 1:
+        config.comic_cut_strong_weight = max(1, int(args.strong_cut_weight))
+    if getattr(args, "vary", False):
+        import time as _t
+        config.comic_variation = (int(_t.time()) % 99999) + 1
+    if int(getattr(args, "variation", 0) or 0) > 0:
+        config.comic_variation = int(args.variation)        # --variation은 --vary보다 뒤에 적용(강함)
+    if getattr(args, "chatty", False):
+        config.comic_chatty = True
+    if str(getattr(args, "name", "") or "").strip():
+        config.pin_name = str(args.name).strip()
+    if str(getattr(args, "name2", "") or "").strip():
+        config.pin_name2 = str(args.name2).strip()
+    _var = int(getattr(config, "comic_variation", 0) or 0)
+    p(f"  컷 배분 변동   : {_var if _var else '0 (같은 입력 → 같은 배분)'}"
+      + (f" — 같은 배분을 고정이면 --variation {_var}" if _var else " — 매번 다르게 원하면 --vary"))
+    p(f"  수다장이 모드  : {'ON (모든 컷 하단에 설명)' if config.comic_chatty else 'off (지문이 있는 컷만 설명)'}")
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.
     #   우선순위: CLI 인자 > env(COMIC_ALLOW_EXPLICIT) > local_settings.yaml > 기본 — CLI 주입은 아래에서 된다.
     if config.local_settings:

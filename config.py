@@ -112,12 +112,20 @@ comic_font_thought = ""           # 속마음(풍선)
 comic_font_sfx = ""               # 의성어/의태어
 comic_summary_cuts = True         # ★회차 도입 요약: **각 회차의 첫 컷**만 배경만 + 큰 지문 (기승전결 페이지마다 아님)
 comic_epilogue = True               # ★에필로그: **마지막 회차 끝**에만 반투명 이벤트신 1칸 + 큰 여운 지문
+comic_chatty = False              # 수다장이 모드: 모든 컷 하단에 설명(지문) — 없으면 행동·표정 묘사로 채운다
 comic_emo_marks = True              # 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) → --no-emo-marks
 comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차** 맨 앞에 도입 1컷(배경만+큰 지문)
 # [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
+# [2026-09-09] 컷 배분 변동(랜덤성) — 같은 본문でも 레이아웃/장면당 컷 수가 매번 같아 지루했다.
+#   0 = 예전과 같은 완전 재현, N>0 = 그 값마다 다른 배분 (--vary 는 시계값을 뽑고 로그에 남긴다)
+comic_variation = 0
 comic_action_cuts = True            # False = 예전처럼 본문 길이(600자 = 컷 1)로만 배분
 comic_cut_strong_weight = 2         # LLM이 컷 수를 안 준 유닛을 강한 사건으로 볼 때의 컷 수
 # [2026-09-09] 이름 고정 — 추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오지 못하게 못 박는다.
+# [2026-09-09] (A) 공개/로컬 어휘 분리 — 화면에서 걷어낼 '극단 표정·과노출 복장' 어휘
+#   공개 코드는 순한 것만 들고 있고, 이름이 민감한 태그는 여기에 심습니다(anima_gen이 합쳐서 씁니다).
+extreme_face = []              # 표정에서 걷을 영문 태그 (예: 극단 표정)
+nude_words = []                # 복장에서 걷을 영문 태그 (예: 옷 없음 계열)
 pin_name = ""                    # 주인공 이름 (비우면 추출/시트가 정한 이름 사용)
 pin_name2 = ""                   # 상대방 이름
 comic_book_num = 0                # 0 = comic/bookNNN 자동
@@ -238,6 +246,12 @@ def apply_local_settings(data: dict = None) -> dict:
         ev = str(os.environ.get(env_key, "") or "").strip()
         if ev:
             globals()[attr] = ev
+    for key, attr in (("extreme_face", "extreme_face"), ("nude_words", "nude_words")):
+        v = d.get(key)
+        if isinstance(v, (list, tuple)):
+            globals()[attr] = [str(x).strip().lower() for x in v if str(x).strip()]
+        elif isinstance(v, str) and v.strip():
+            globals()[attr] = [x.strip().lower() for x in v.split(",") if x.strip()]
     cv = d.get("climax_vocab")
     climax_vocab_local = [str(x).strip().lower() for x in cv if str(x).strip()] \
         if isinstance(cv, (list, tuple)) else []

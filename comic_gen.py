@@ -147,7 +147,8 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
                            and bool(getattr(config, "comic_prologue_cut", True))) else 0
     cap = max(1, int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO))
     pages = max(1, min(cap, int(pages)))                 # 기승전결 비례 대응, 1~cap 페이지
-    rng = random.Random(f"cut:{ep_num_1based}:{pages}")
+    # [2026-09-09] variation이 시드에 섞인다 — 같은 회차でも 페이지/템플릿 구성이 값마다 달라진다
+    rng = random.Random(f"cut:{ep_num_1based}:{pages}:{int(getattr(config, 'comic_variation', 0) or 0)}")
 
     def _slots_of(t):
         """템플릿 → 납작한 슬롯 목록 (행의 첫 슬롯이 화면에서 가장 위/가장 왼쪽)"""
@@ -466,6 +467,12 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
       panels_expected : 이 호출이 낼 컷 수(본문 길이에서 역산). 미지정이면 레이아웃 슬롯 수.
       prev_tail/beat_label : 장면 분할 호출에서 직전 컷·장면 번호(연속성)를 넘긴다.
     """
+    # [2026-09-09] 수다장이 모드(--chatty): 모든 컷에 지문을 요구한다 — 서술할 사건이 없는 컷은
+    #   그녀의 행동·표정 묘사를 시킨다(화면 아래가 조용한 컷이 없어진다).
+    chatty_rule = ("   [수다장이 모드] **모든 컷**에 caption_ko를 쓴다. 서술할 사건의 진전이 없는 컷이라도"
+                   " 그녀의 **행동\u00b7표정을 한 문장**으로 묘사한다 (예: '그녀는 정면을 바라본다. 볼이 붉어졌다.')"
+                   " 지문은 비어 있지 않게 쓴다."
+                   if bool(getattr(config, "comic_chatty", False)) else "")
     guides = "\n".join(f"  - {g}" for g in guide_lines) if guide_lines else "  (가이드 없음)"
     acts = ", ".join(dollar_actions) if dollar_actions else "(없음)"
     sub_block = f"\n[서브 캐릭터 시트]\n{sub}\n" if (getattr(config, 'chr_num3', 0) == 1 and sub) else ""
@@ -562,9 +569,10 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
    (2) **대사/속마음만** : lines만 채운다(1~2개). caption_ko는 ""로 둔다. — 인물 클로즈업·대화
    (3) **설명+대사** : 둘 다 채운다 = **큰 이벤트 컷** (회당 2~4컷만, 남발 금지)
    clothes는 **회차 의상을 그대로** 영문 태그로 쓴다. 본문에서 옷이 실제로 바뀌는 장면(갈아입기·옷을 벗는다·젖는다)이
-   없을 한 'tattered / ripped / dirty / nude / topless' 같은 훼손·전라 어구를 **먼저 제안하지 않는다**
-   — 근거 없이 넣으면 그 컷이 누드로 그려진다. 회차 의상 태그를 복사해 넣는 편이 안전하다.
+   없을 한 'tattered / ripped / dirty' 같은 **옷이 망가지거나 사라진다는 어구**를 먼저 제안하지 않는다
+   — 근거 없이 넣으면 그 컷이 옷 없이 그려진다. 회차 의상 태그를 복사해 넣는 편이 안전하다.
    caption_ko는 지문(해설)만 쓰고 대사 금지, 최장 {CAPTION_MAX_LEN}자(길어도 된다 — 잘리지 않는다).
+{chatty_rule}
    **반드시 완전한 서사 문장**(주어 + 서술어, '~한다/~었다/~고 있다' 종결).
    명사 나열·관형형 토막('네온사인이 빛나는 골목' 같은) 금지 — 소리 내어 읽으면 한 문장이어야 한다.
 9. lines는 **최대 {DIALOG_LINES}개의 풍선**: kind=speech(입으로 하는 말 → 말풍선) | thought(속마음·혼잣말 → 속마음 풍선).
@@ -1270,6 +1278,73 @@ def _first_sentence(text: str, limit: int = SUMMARY_CAPTION_MAX_LEN) -> str:
     return out if limit <= 0 else _clamp_caption(out, limit)   # 기본은 '첫 문장을 그대로'(중간 토막 금지)
 
 
+def _beat_of(i: int, quotas) -> int:
+    """컷 번호 → 그 컷이 속한 장면 인덱스 (★폴백과 수다장이 폴백이 같은 대응을 쓴다)."""
+    acc = 0
+    for k, n in enumerate([int(x) for x in (quotas or [])]):
+        if i < acc + n:
+            return k
+        acc += n
+    return 0
+
+
+def _split_sentences(text: str) -> list:
+    """본문을 문장 단위로 나눈다 (한 장면을 두 컷이 같은 문장으로 반복하지 않게 소비한다)."""
+    s = re.sub(r"\s+", " ", str(text or "")).strip()
+    return [p.strip() for p in re.split(r"(?<=[.!?])\s+", s) if p.strip()] if s else []
+
+
+def _fill_chatty_narration(panels, beats, quotas, notes):
+    """[2026-09-09] 수다장이 모드(--chatty): 지문 없는 컷의 하단 설명을 **LLM에게 작문을 시킨다**.
+
+    재료로 그 컷의 pose·감정·화면 대사와 장면 본문을 주고, 한 컷에 한 문장을 JSON 배열로 받는다.
+    LLM이 없거나 응답이 깨진 컷만 장면 본문의 남은 문장 → 짧은 기본 문장 순으로 조용히 메꾼다.
+    """
+    if not panels:
+        return
+    need = [(i, p) for i, p in enumerate(panels)
+            if not str(p.get("caption_ko") or "").strip() and not p.get("bg_only")]
+    if not need:
+        return
+    lines, ctx = [], {}
+    for n, (i, p) in enumerate(need):
+        bi = _beat_of(i, quotas)
+        src = _split_sentences(beats[bi] if beats and bi < len(beats) else "")
+        ctx[i] = src
+        bal = " / ".join(f"{b.get('who', '')}: {b.get('text', '')}" for b in (p.get("lines") or [])[:2])
+        lines.append(f"컷 {n + 1}(#{p.get('no')}): 행동={str(p.get('pose') or '')[:150]} | "
+                     f"감정={_panel_face_emotion(p) or '없음'} | 화면 대사={bal or '없음'} | "
+                     f"장면 본문={src[0][:160] if src else '없음'}")
+    prompt = ("만화 컷 아래 붙일 **설명(지문)**을 만들어 주세요. 한국어 한 문장, 25~55자, 대사 금지, "
+              "그 컷의 상황 또는 그녀의 행동\u00b7표정을 담습니다. 서술할 사건이 없는 컷은 행동\u00b7표정을 짧게 묘사합니다.\n"
+              "출력은 JSON 배열 하나 — 입력 컷 순서대로 문자열 정확히 "
+              + str(len(need)) + "개 (해설\u00b7코드블록 금지).\n\n" + "\n".join(lines) + "\n")
+    got = []
+    try:
+        raw, _ = call_openai_for_text(prompt, messages=None, log_fn=_clog, temperature=0.7)
+        arr = _extract_json_array(raw or "")
+        got = [str(x).strip() for x in (arr if isinstance(arr, list) else []) if str(x).strip()]
+    except Exception as e:
+        _clog(f"EP 수다장이 설명 생성 실패: {e}")
+    used = {}
+    for n, (i, p) in enumerate(need):
+        cap = got[n].strip('"\'') if n < len(got) else ""
+        how = "LLM 작문"
+        if not cap:
+            src = ctx.get(i) or []
+            bi = _beat_of(i, quotas)
+            k = used.get(bi, 0)
+            cap = src[k] if k < len(src) else ""
+            if cap:
+                used[bi] = k + 1
+                how = f"장면 본문 {k + 1}번째 문장"
+            else:
+                cap = "그녀는 그 자리에 서 있다."
+                how = "기본 문장(LLM 응답 없음)"
+        p["caption_ko"] = re.sub(r"\s+", " ", cap).strip()
+        notes.append(f"컷 {p['no']}: 수다장이 설명({how})")
+
+
 def _fill_star_narration(panels, beats, quotas, notes):
     """[2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 컷이 속한 **장면 본문의 첫 문장**으로 채운다.
 
@@ -1329,6 +1404,9 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
 
     # ① 본문 → 컷 수, ② 컷 수 → 페이지/슬롯 (pages<0 이면 cut.yaml 없이 자동 레이아웃)
     target = CI.target_panels(body, cpp, MIN_PANELS, maxp)
+    _v0 = int(getattr(config, "comic_variation", 0) or 0)
+    if _v0:                                  # 변동이 켜져 있으면 컷 예산을 -1/+1 흔든다(하한 MIN_PANELS 아래로 안 내려간다)
+        target = max(MIN_PANELS, target + (CI._vary(f"budget|{ep_num_1based}", _v0, 3) - 1))
     page_plans, n_pages = (plan_pages_layout(ep_num_1based, target, pages)
                            if pages >= 0 else (None, 0))
     slots = spec_slots(page_plans)
@@ -1392,9 +1470,11 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
             beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
     else:
         beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
+    _var = int(getattr(config, "comic_variation", 0) or 0)
     quotas = CI.allocate(n_cut, (unit_w if unit_w else [max(1, len(b)) for b in beats]),
                          minimum=(2 if (beat_acts is not None and unit_w is None and n_cut >= 2 * len(beats))
-                                  else (1 if n_cut >= len(beats) else 0)))
+                                  else (1 if n_cut >= len(beats) else 0)),
+                         variation=_var)
     if unit_w:
         _clog(f"EP{ep_num_1based} 사건 {len(unit_w)}개(강한 사건 {sum(1 for w in unit_w if w > 1)}개 = 컷 2) "
               f"→ 컷 예산 {sum(unit_w)} / 레이아웃 {n_cut}컷 — 배분 저울은 '글자 수'가 아니라 '일어난 사건'")
@@ -1477,6 +1557,8 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     notes = notes + notes2
     # [2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 장면 본문의 첫 문장으로 채운다
     _fill_star_narration(panels, beats, quotas, notes)
+    if bool(getattr(config, "comic_chatty", False)):
+        _fill_chatty_narration(panels, beats, quotas, notes)
     if n_cut < target:
         _cap = int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO)
         notes.append(f"본문 {len(body)}자 → 목표 {target}컷, 레이아웃 {n_cut}컷"

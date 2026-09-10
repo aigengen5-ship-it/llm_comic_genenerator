@@ -31,6 +31,7 @@
 """
 import json
 import os
+import zlib
 import re
 
 import config
@@ -401,8 +402,16 @@ def target_panels(text: str, chars_per_panel: int = CHARS_PER_PANEL,
     return min(n, int(max_panels)) if max_panels and max_panels > 0 else n
 
 
-def allocate(total: int, weights, minimum: int = 0) -> list:
-    """total을 weights에 비례 배분(큰 나머지 방식, 합은 반드시 total). 각 칸 ≥ minimum."""
+def _vary(key: str, salt: int = 0, mod: int = 1000) -> int:
+    """문자열 → 0..mod-1 (프로세스마다 달라지는 hash() 대신 crc32 — 재현성이 목적이다)."""
+    return zlib.crc32(f"{key}|{int(salt)}".encode("utf-8")) % max(1, int(mod))
+
+
+def allocate(total: int, weights, minimum: int = 0, variation: int = 0) -> list:
+    """total을 weights에 비례 배분(큰 나머지 방식, 합은 반드시 total). 각 칸 ≥ minimum.
+
+    variation>0 이면 '나머지가 같은 칸' 중 누가 먼저인지가 그 값마다 달라진다(합은 보존).
+    """
     w = [max(0.0, float(x or 0)) for x in (weights or [])]
     n = len(w)
     if not n:
@@ -412,7 +421,9 @@ def allocate(total: int, weights, minimum: int = 0) -> list:
         w = [1.0] * n
     raw = [total * x / sum(w) for x in w]
     base = [int(x) for x in raw]
-    order = sorted(range(n), key=lambda i: raw[i] - base[i], reverse=True)
+    order = sorted(range(n), key=lambda i: (raw[i] - base[i],
+                                            _vary(f"alloc|{i}", variation) / 1000.0 if variation else 0.0),
+                   reverse=True)
     for k in range(total - sum(base)):
         base[order[k % n]] += 1
     minimum = max(0, int(minimum))

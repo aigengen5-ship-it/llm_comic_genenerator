@@ -1097,7 +1097,7 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
 
 출력 필드 (모두 소문자 영문 danbooru 태그만, 쉼표 구분. 한국어/설명문/산문 금지):
 - face: 이 회차의 **기본** 표정·얼굴 상태 — 모든 컷에 그대로 붙는다. 그래서 평범하게 쓴다
-  (soft smile, thoughtful, calm 등). ahegao·heart-shaped pupils·rolling eyes 같은 극단 표정은 **쓰지 않는다**
+  (soft smile, thoughtful, calm 등). 눈이 뒤집히거나 혀가 나오는 **극단 표정은 쓰지 않는다**
   (그렇게 하면 일상 컷까지 그 표정으로 고정된다). 극단 표정은 expressions 풀에 최대 1개만
 - makeup: 화장 (없으면 natural makeup)
 - marks: 몸에 남은 자국·장신구 (예: choker, sweat, tear trail)
@@ -1847,19 +1847,26 @@ def _pick_observer_visible(pronoun: str = None, key: str = None) -> tuple:
     return f"{pronoun} bare hands, {pronoun} forearms", "forearms"
 
 
-_EXTREME_FACE = ("ahegao", "heart-shaped pupils", "heart pupils", "rolling eyes", "tongue out",
-                 "crossed eyes", "empty eyes", "drooling", "xylophone tongue", "boredom")
+# 공개 코드에는 순한 것만 남기고 나머지는 local_settings의 extreme_face로 옮겼다(이유: 어휘 노출).
+_EXTREME_FACE_BASE = ("heart-shaped pupils", "heart pupils", "rolling eyes", "tongue out",
+                      "crossed eyes", "empty eyes", "drooling", "boredom")
+
+
+def _extreme_face():
+    """걷을 극단 표정 태그 = 공개 기본 + 로컬(local_settings: extreme_face)."""
+    return _EXTREME_FACE_BASE + tuple(str(x).strip().lower() for x in
+                                      (getattr(config, 'extreme_face', []) or []) if str(x).strip())
 
 
 def _calm_face(tags: str) -> str:
     """극단 표정 태그를 거른다 — 회차 톤이 일상 컷까지 물들면 모든 표정이 아헤가오가 된다."""
     s = str(tags or "")
     low = s.lower()
-    hits = [t for t in _EXTREME_FACE if t in low]
+    hits = [t for t in _extreme_face() if t in low]
     if not hits:
         return s
     out = ", ".join(p.strip() for p in s.split(",")
-                    if p.strip() and not any(t in p.lower() for t in _EXTREME_FACE))
+                    if p.strip() and not any(t in p.lower() for t in _extreme_face()))
     return out or "soft smile"
 
 
@@ -1871,8 +1878,14 @@ _GARMENTS = ("uniform", "skirt", "dress", "gown", "shirt", "blouse", "bodysuit",
 # 본문 근거 없이 들어오면 'nudity'로 읽히는 어구 — 컷이 스스로 옷을 해치지 못하게 막는다.
 _TATTER = ("tattered", "torn", "ripped", "shredded", "destroyed clothes", "broken clothes",
            "dirty clothes", "wet clothes", "transparent")
-_NUDE_WORDS = ("nude", "naked", "topless", "shirtless", "bare chest", "no clothes", "undressed",
-               "completely naked", "stripped")
+# 같은 이유로 이름이 직관적인 어휘는 local_settings의 nude_words로 — 공개 코드에는 완곡한 것만 둔다.
+_NUDE_WORDS_BASE = ("no clothes", "undressed", "stripped", "bare chest")
+
+
+def _nude_words():
+    """걷을 과노출 복장 태그 = 공개 기본 + 로컬(local_settings: nude_words)."""
+    return _NUDE_WORDS_BASE + tuple(str(x).strip().lower() for x in
+                                    (getattr(config, 'nude_words', []) or []) if str(x).strip())
 
 
 def _merge_clothes(base: str, override: str) -> str:
@@ -1898,16 +1911,20 @@ def _merge_clothes(base: str, override: str) -> str:
     return override
 
 
-def _undress_guard(clothes: str) -> str:
+def _undress_guard(clothes: str, base: str = "") -> str:
     """본문 근거 없는 옷 훼손/전라 어구를 걷는다 — explicit 상한이 열려 있을 때만 통과시킨다."""
     s = re.sub(r"\s+", " ", str(clothes or "")).strip()
     if not s or explicit_allowed():
         return s
     parts = [p.strip() for p in s.split(",") if p.strip()]
-    kept = [p for p in parts if not any(w in p.lower() for w in _NUDE_WORDS)]
+    nw = _nude_words()
+    kept = [p for p in parts if not any(w in p.lower() for w in nw)]
     if not any(any(g in p.lower() for g in _GARMENTS) for p in kept):
-        # 품목이 전부 사라졌다 → 훼손 어구까지 버린다(그래도 없으면 원문을 그냥 둔다)
-        kept = [p for p in parts if not any(w in p.lower() for w in _TATTER + _NUDE_WORDS)]
+        # 어휘를 이름으로 세지 않는 **구조의 방어**: 입고 있다는 표시가 없으면 회차 의상을 그대로 쓴다.
+        #   (로컬 어휘가 없는 clone에서도 누드화가 안 벌어진다 — '품목 소실'이 실제 원인이었으므로)
+        kept = [p for p in parts if not any(w in p.lower() for w in _TATTER + nw)]
+        if not any(any(g in p.lower() for g in _GARMENTS) for p in kept):
+            return re.sub(r"\s+", " ", str(base or "")).strip()
     return ", ".join(kept or parts)
 
 
@@ -1952,7 +1969,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     # 회차 의상 기준도는 **컷이 옷을 바꿀 때만** 받는다(없을 때는 [AAA EXPOSURE]가 이미 그 의상을 쓴다)
     base_clothes = ", ".join([p for p in [config.clothes, clothes_tokens] if p]) if clothes_override else clothes_tokens
     # 컷별 복장 변화는 '덮어쓰기'가 아니라 '덧쓰기'(정말 갈아입은 컷만 덮어쓴다)
-    clothes_tokens = _undress_guard(_merge_clothes(base_clothes, str(clothes_override or "")))
+    clothes_tokens = _undress_guard(_merge_clothes(base_clothes, str(clothes_override or "")), base_clothes)
 
     # expression(주인공): face_tag + step_expression + expression_arr에서 랜덤 1개
     expr_pick = ""
@@ -1966,11 +1983,17 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     #   실측(face_tag = "ahegao, wide eyes, tongue out, rolling eyes, flushed face…") → 일상 컷까지 아헤가오.
     #   그래서 컷별 표정(step_expression = 컷의 화면 감정)이 있으면 회차 톤은 물러난다.
     cut_face = (step_expression or "").strip()
+    ep_face = config.face_tag[episode] or ""
     if cut_face:
-        expression_parts = [p for p in [cut_face] if p]
+        expression_parts = [cut_face]
+        face_line = ""
+    elif climax_tag:
+        # 클라이맥스 컷만 회차 표정을 쓴다 — 어휘를 들지 않고 '때에 맞는 자리'로 제한하는 구조 규칙이다.
+        expression_parts = [p for p in [ep_face, expr_pick] if p]
+        face_line = ep_face
     else:
-        expression_parts = [p for p in [step_expression, config.face_tag[episode], expr_pick] if p]
-    face_line = "" if cut_face else (config.face_tag[episode] or "")
+        expression_parts = [p for p in [expr_pick] if p]
+        face_line = str(getattr(config, 'face_style', '') or '')
 
     lines_block = [
         f"[ACTION] {pose_text}",
@@ -1995,7 +2018,9 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
     if face_line:
-        lines_block.append(f"[AAA FACE] {_calm_face(face_line)}")
+        _fl = _calm_face(face_line) if climax_tag else face_line
+        if _fl:
+            lines_block.append(f"[AAA FACE] {_fl}")
     if config.makeup_tag[episode]:
         lines_block.append(f"[AAA MAKEUP] {config.makeup_tag[episode]}")
     lines_block.append("[AAA EXPRESSION] " + ", ".join(

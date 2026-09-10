@@ -640,8 +640,12 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 | + | 몸의 흔적 | `[AAA MARKS]` | `tear trail, sweat, dirt on cheek` |
 | + | 소지품 | `[PROPS]` | `umbrella, smartphone, wads of cash` |
 | + | 지속 자세 | `[POSTURE]` | `on the ground, kneeling, hands bound` |
+| **+10** | 장소 | `[BACKGROUND]` | `shopping street corner` → `rooftop at dusk` |
+| **+11** | 시간대·조명 | `[BACKGROUND]` | `night` → `dusk, golden light` |
+| **+12** | 배경에 보이는 것 | `[BACKGROUND]` | `crowd, neon signs` → `falling banknotes` |
 
 - **규칙: 언급이 없으면 직전 컷 값 그대로.** LLM은 컷마다 변한 항목만 채우고 나머지는 `""`로 둡니다. 누적 계산은 프로그램이 합니다(`comic_gen.fold_cut_state`) — 그래서 토큰도 적고, LLM이 반복을 빼먹어도 연속성이 안 끊깁니다.
+- 장소·시간·배경은 회차 태그가 **회차 전체의 장소 목록**이라 특히 중요합니다. 회치의 첫 컷과 장면이 바뀌는 컷에서 채우도록 프롬프트에 규칙이 있고, 도입 컷이 비워도 **앞으로 처음 명시된 장소**를 소급해 씁니다(다른 장소 배경이 섞이지 않습니다).
 - 시작 값은 회차 시작 상태입니다. 회차 요약이 순서를 틀리면(실측: 첫 항목이 중반 의상) **본문을 본 컷 스크립트의 초반 다수값**이 이깁니다(`_head_majority`).
 - 컷이 입은 그대로의 복장을 쓰는 컷은 `[AAA EXPOSURE]`를 그대로 유지하고, **옷을 실제로 갈아입은 컷부터** 회차 노출 어구를 떼어 새 옷에 이전 노출 노이즈가 옮지 않게 합니다.
 - 극단 표정(로컬 `extreme_face` 어휘)은 여전히 클라이맥스 컷에만 허용되고, 컷이 `ahegao`를 명시해도 일상 컷에서는 걸러집니다.

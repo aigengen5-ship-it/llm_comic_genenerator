@@ -2110,10 +2110,14 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         lines_block.append(f"[OBSERVER] {observer}")
 
     # [2026-09-07] time_of_day: 생성만 되고 미사용이던 필드 → 배경에 합류(조명/시간 재현)
-    bg_parts = [p for p in [config.location, getattr(config, "time_of_day", ""),
-                            config.background_tag[episode]] if p]
-    if bg_parts:
-        lines_block.append(f"[BACKGROUND] {', '.join(bg_parts)}")
+    # [2026-09-09] 장소·시간·배경도 컷 연속 상태의 일부다. 회차 배경 태그는 회차 전체 목록이라
+    #   컷이 상태를 주면 그것을 쓰고, 비어 있을 때만 회차 값으로 돌아간다.
+    _bg = _dedupe_csv(", ".join([p for p in [
+        str(_st.get("place") or "").strip() or str(getattr(config, "location", "") or "").strip(),
+        str(_st.get("time") or "").strip() or str(getattr(config, "time_of_day", "") or "").strip(),
+        str(_st.get("background") or "").strip() or (config.background_tag[episode] or "")] if p]))
+    if _bg:
+        lines_block.append(f"[BACKGROUND] {_bg}")
     lines_block.append(f"[SAFETY] {config.review_safety[episode]}")
     return "\n".join(lines_block)
 

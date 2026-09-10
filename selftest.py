@@ -2192,6 +2192,50 @@ def main() -> int:
     check("옷을 갈아입은 컷부터는 회차 노출 태그가 빠진다(새 옷에 예전 노출 어구가 옮지 않는다)",
           "gold miniskirt" in _bk_state,
           " ".join(l for l in _bk_state.split("\n") if "CLOTHES" in l)[:100])
+    # 장소·시간·배경 (컷 연속 상태의 일부)
+    _keep_bg = (config.location, getattr(config, "time_of_day", ""), config.background_tag)
+    config.location, config.time_of_day = "busy city street", "night"
+    config.background_tag = ["crowd, neon signs"] * 12
+    _sb = [{"no": 1, "pose": "She sells.", "clothes": "", "emotion": "",
+            "state": {"place": "shopping street corner", "time": "night", "background": "crowd, neon signs"}},
+           {"no": 2, "pose": "She is pushed.", "clothes": "", "emotion": ""},
+           {"no": 3, "pose": "She prays.", "clothes": "", "emotion": "",
+            "state": {"place": "under open sky", "time": "night, golden light",
+                      "background": "falling banknotes"}}]
+    CG.fold_cut_state(_sb, 0)
+    _b1 = anima_gen._build_tag_block(0, "she sells", "front_view", "wide", "", "", False, cut_state=_sb[0]["_state"])
+    _b2 = anima_gen._build_tag_block(0, "she is pushed", "front_view", "wide", "", "", False, cut_state=_sb[1]["_state"])
+    _b3 = anima_gen._build_tag_block(0, "she prays", "front_view", "wide", "", "", False, cut_state=_sb[2]["_state"])
+    check("컷이 장소를 명시하면 회차 배경 태그를 덮는다(회차 전체 목록이 먼저 새지 않는다)",
+          "shopping street corner" in _b1 and "busy city street" not in _b1,
+          " ".join(l for l in _b1.split("\n") if "BACKGROUND" in l)[:120])
+    check("장소를 안 적은 다음 컷은 직전 컷의 장소·배경을 유지한다",
+          "shopping street corner" in _b2 and "falling banknotes" not in _b2,
+          " ".join(l for l in _b2.split("\n") if "BACKGROUND" in l)[:120])
+    check("장면이 바뀌는 컷에서 장소·배경이 교체되고 같은 시간대는 중복되지 않는다",
+          "under open sky" in _b3 and "falling banknotes" in _b3 and _b3.count("night") == 1,
+          " ".join(l for l in _b3.split("\n") if "BACKGROUND" in l)[:130])
+    _b0 = anima_gen._build_tag_block(0, "she stands", "front_view", "wide", "", "", False)
+    check("컷이 상태를 아예 주지 않으면 예전처럼 회차 배경을 쓴다(회귀)",
+          "busy city street" in _b0 and "crowd, neon signs" in _b0,
+          " ".join(l for l in _b0.split("\n") if "BACKGROUND" in l)[:120])
+    _sb2 = [{"no": 1, "pose": "x", "state": {"place": "rooftop", "time": "dusk"}}, {"no": 2, "pose": "y"}]
+    CG.fold_cut_state(_sb2, 0)
+    check("place/time도 시트에 누적·유지된다(STATE_KEYS에 등록)",
+          "place" in CG.STATE_KEYS and _sb2[1]["_state"]["place"] == "rooftop"
+          and _sb2[1]["_state"]["time"] == "dusk", str(_sb2[1]["_state"])[:80])
+    config.location, config.background_tag = "city street, rooftop, mall", ["crowd"] * 12
+    _sb3 = [{"no": 1, "pose": "establishing", "state": {}},          # ★도입 컷은 장소를 비운다(실측)
+            {"no": 2, "pose": "she sells", "state": {"place": "shopping street corner"}},
+            {"no": 3, "pose": "she is pushed"}]
+    CG.fold_cut_state(_sb3, 0)
+    _b_intro = anima_gen._build_tag_block(0, "skyline", "front_view", "wide", "", "", False,
+                                         cut_state=_sb3[0]["_state"])
+    check("도입 컷이 장소를 비워도 회치 전체 배경 목록이 아니라 앞으로 처음 명시된 장소를 쓴다",
+          "shopping street corner" in _b_intro and "rooftop" not in _b_intro,
+          " ".join(l for l in _b_intro.split("\n") if "BACKGROUND" in l)[:120])
+    (config.location, config.time_of_day, config.background_tag) = _keep_bg
+
     _gs = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
     check("컷 스크립트 프롬프트에 상태 시트(스키마 + '미언급 = 직전 컷 유지')가 있다",
           '"state": ' in _gs and "직전 컷과 동일" in _gs and "accessories" in _gs)

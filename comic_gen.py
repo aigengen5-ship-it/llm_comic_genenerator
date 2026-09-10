@@ -658,7 +658,8 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
    "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
    "state": {{"face": "", "makeup": "", "body": "", "clothes": "", "accessories": "",
-              "hair": "", "marks": "", "props": "", "posture": ""}},
+              "hair": "", "marks": "", "props": "", "posture": "",
+              "place": "", "time": "", "background": ""}},
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
   ...
 ]
@@ -677,6 +678,9 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
        · face 표정 / makeup 메이크업 / body 몸매·가슴·엉덩이 크기 / clothes 복장 / accessories 악세사리(안경·리본·목걸이·귀걸이·가방·이어폰)
        · hair 머리 상태(풀림·묶음·젖음·乱れ) / marks 몸의 흔적(땀, 눈물 자국, 상처, 더러움, 붉어짐)
        · props 들고 있는 물건(우산·스마트폰·쇼핑백·성냥…) / posture 지속 자세(바닥에 쓰러짐, 무릎 꿇음, 손 묶임)
+       · place 장소 / time 시간대·조명 / background 화면에 보이는 배경물(건물, 군중, 비, 낙화, 낙서 …)
+       단 회치의 첫 컷과 장면이 바뀌는 컷은 place·time·background를 반드시 채웁니다. 회차 배경 태그는
+       회차 전체 장소를 담고 있어, 그때 적지 않으면 다른 장소의 배경이 컷에 먼저 섞여 들어옵니다.
        본문에 실제로 변화가 있는 컷만 채우세요. 소지품·자세는 **사라지면 안 되는 물건**을 이어가는 데 쓰입니다. 값은 영문 태그.
 {pose_policy}
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
@@ -931,10 +935,13 @@ _EMO_FACE_TAGS = {
 #   본문 전체를 본다) 컷마다 시간이 달라지는 항목(표정/화장/몸/옷/액세서리 …)을 못 맞춘다.
 #   그래서 LLM은 컷마다 **변한 항목만** 적고(델타), 코드가 순서대로 누적한다.
 #   규칙: 언급이 없으면 직전 컷 값을 그대로 유지한다.
-STATE_KEYS = ("face", "makeup", "body", "clothes", "accessories", "hair", "marks", "props", "posture")
-STATE_LABEL = {"face": "표정", "makeup": "메이크업", "body": "몸매·가슴·엉덩이", "clothes": "복장",
-               "accessories": "악세사리", "hair": "머리 상태", "marks": "몸의 흔적(땀/눈물/상처/더러움)",
-               "props": "소지품(든 것/입은 악세사리 외 물건)", "posture": "지속 자세(쓰러짐/무릎/묶임)"}
+STATE_KEYS = ("face", "makeup", "body", "clothes", "accessories", "hair", "marks", "props", "posture",
+              "place", "time", "background")
+STATE_LABEL = {"face": "表정" if False else "표정", "makeup": "메이크업", "body": "몸매·가슴·엉덩이",
+               "clothes": "복장", "accessories": "악세사리", "hair": "머리 상태",
+               "marks": "몸의 흔적(땀/눈물/상처/더러움)", "props": "소지품(든 물건)",
+               "posture": "지속 자세(쓰러짐/무릎/묶임)", "place": "장소",
+               "time": "시간대·조명", "background": "화면에 보이는 배경물"}
 
 
 def base_cut_state(ep_idx: int) -> dict:
@@ -955,7 +962,11 @@ def base_cut_state(ep_idx: int) -> dict:
             "makeup": _ep("makeup_tag"), "body": body,
             "clothes": str(getattr(config, "clothes", "") or "").strip(),
             "accessories": _ep("accessories_tag"), "hair": hair,
-            "marks": _ep("marks_tag"), "props": "", "posture": ""}
+            "marks": _ep("marks_tag"), "props": "", "posture": "",
+            # 회차 배경 태그도 회차 전체 목록이라 첫 컷에 새 장소가 섞일 수 있다 — 컷이 채우면 그것이 이긴다.
+            "place": str(getattr(config, "location", "") or "").strip(),
+            "time": str(getattr(config, "time_of_day", "") or "").strip(),
+            "background": _ep("background_tag")}
 
 
 def _head_majority(panels, key: str) -> str:
@@ -976,6 +987,17 @@ def _head_majority(panels, key: str) -> str:
 def fold_cut_state(panels, ep_idx: int = 0) -> dict:
     """컷 순서대로 상태 델타를 누적해 각 컷에 panel['_state']로 붙인다(미언급 = 유지)."""
     st = base_cut_state(ep_idx)
+    # 도입 컷이 place/time/background를 비우면(실측: ★도입 컷은 빈 값) 앞으로 **처음 명시된 값**을
+    #   소급한다. 회차 배경 태그는 회차 전체 장소를 담고 있어 그대로 두면 다른 장소가 섞인다.
+    for _k in ("place", "time", "background"):
+        _first = ""
+        for p in panels or []:
+            _d = p.get("state")
+            if isinstance(_d, dict) and str(_d.get(_k) or "").strip():
+                _first = str(_d[_k]).strip()
+                break
+        if _first and _first.lower() != st[_k].lower():
+            st[_k] = _first
     _hc = _head_majority(panels, "clothes")
     if _hc and _hc.lower() != st["clothes"].lower():
         st["clothes"] = _hc
@@ -1818,8 +1840,10 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         if any(_cur.get(k) != _prev.get(k) for k in STATE_KEYS):
             _chg += 1
         _prev = _cur
-    _clog(f"EP{ep_num_1based} 컷 상태 시트: 시작 = 표정 '{_sheet['face']}' / 복장 '{_sheet['clothes']}' "
-          f"→ 변화가 적힌 컷 {_chg}개 (나머지는 직전 컷 값 유지)")
+    _c1 = (panels[0].get("_state") or {}) if panels else {}
+    _clog(f"EP{ep_num_1based} 컷 상태 시트: 컷1 = 표정 '{_c1.get('face', '')}' / 복장 '{_c1.get('clothes', '')}' "
+          f"/ 장소 '{_c1.get('place', '')}' → 상태가 바뀌는 컷 {_chg}개 (나머지는 직전 컷 유지, "
+          f"마지막 복장 '{_sheet.get('clothes', '')}')")
     _clog(f"EP{ep_num_1based} 컷 스크립트 완성: {len(panels)}컷 "
           f"(face {sum(1 for p in panels if p['type']=='face')} / action {sum(1 for p in panels if p['type']=='action')})"
           + (f" — cut.yaml {n_pages}페이지 {len(beats)}장면 LLM {len(beats)}회" if page_plans

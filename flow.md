@@ -138,7 +138,7 @@
 1. 회차 정보(EP/총 화수/화자 이름/시트 3종) + 본문 원문(이 장면 것만)
 2. `[페이지 레이아웃(cut.yaml)]` — 슬롯마다 폭%/행 높이%/종류(`_layout_block`, 321) + **"소품·장소는 예시, 지킬 것은 분할 비율·크기·순서"** 지침
 3. 컷 화면 텍스트 3택 규칙: ① 설명만 ② 대사·속마음만 ③ 설명+대사(큰 이벤트 컷, 회당 2~4)
-4. **컷 연속 상태 시트**(`state`) — 표정/메이크업/몸/복장/악세사리 + 머리·흔적·소지품·지속 자세. **변한 항목만** 채우는 델타이고, 누적은 코드가 한다(`fold_cut_state`, `STATE_KEYS`). 시작 값은 `base_cut_state`(회차 시작 상태)이며 회차 요약이 순서를 틀리면 컷 초반 다수값이 이긴다(`_head_majority`).
+4. **컷 연속 상태 시트**(`state`) — 표정/메이크업/몸/복장/악세사리 + 머리·흔적·소지품·지속 자세 + 장소·시간대·배경(12종, `STATE_KEYS`). **변한 항목만** 채우는 델타이고, 누적은 코드가 한다(`fold_cut_state`, `STATE_KEYS`). 시작 값은 `base_cut_state`(회차 시작 상태)이며 회차 요약이 순서를 틀리면 컷 초반 다수값이 이긴다(`_head_majority`).
 4. **화면 장치 지침**(`device_hints`) — 코드가 본문에서 판정한 행동/대사/속마음 (`classify_device` 311, `split_for_cuts` 334). ★슬롯은 제외(자기 규칙이 있음).
 5. 수다장이 규칙(`--chatty`일 때: 모든 컷에 지문, 사건 진전이 없으면 행동·표정 묘사)
 6. 직전 컷 맥락(연속성) + `$행동 키워드` 의무 등장 + 클라이맥스 슬롯(기본 청년향이라 전부 비움)
@@ -224,6 +224,7 @@
 | 지문이 잘림 | 줄 제한 제거 → 폭 성장 → 폰트 11px까지 | `comic_page_merge.py:136~144` |
 | 한 표정으로 고정 | 컷 감정 우선 + 회차 표정은 클라이맥스만 | `anima_gen._calm_face` |
 | 컷이 옷 없이 나옴 | 의류어 제거 후 의류 없으면 회차 의상 복원 | `anima_gen._undress_guard` |
+| 컷 1부터 다른 장소 배경 | 상태 시트에 `place/time/background` 추가 + 도입 컷이 비우면 처음 명시된 장소로 소급 | `comic_gen.fold_cut_state`, `anima_gen`의 `[BACKGROUND]` |
 | 컷 1부터 중반 복장/극단 표정 | 회차 태그를 시작/후반으로 분리(`clothes_late`·`face_style_late`) + **컷별 연속 상태 시트**로 이전(표정·화장·몸·옷·악세사리·머리·흔적·소지품·자세) | `comic_gen.fold_cut_state`, `anima_gen._build_tag_block(cut_state=)` |
 | 머리가 잘린 컷 | 얼굴 앵커 크롭 + 8% 폴백 | `comic_page_merge.fit_cover` |
 | 한글이 태그에 남음 | gloss 번역(EP 1회) + 미번역 제거 + 정제 요약 로그 | `request_ko_glossary`, `_prompt_san_flush` |

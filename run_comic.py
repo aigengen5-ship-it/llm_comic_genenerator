@@ -697,6 +697,13 @@ def main() -> int:
                     help="사용 가능한 페이지 템플릿(id / 이름 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다")
     ap.add_argument("--fresh-extract", action="store_true", dest="fresh_extract",
                     help="이전 실행의 추출 체크포인트(state/extract_cache.yaml)를 무시하고 처음부터 추출한다")
+    ap.add_argument("--balloon-style", choices=("vector", "image"), dest="balloon_style",
+                    default=None, help="말풍선·속마음 그림 방식 (기본: config.comic_balloon_style='vector'; "
+                                        "image = data/balloons/ 자산 9슬라이스 합성, 없으면 벡터 폴백)")
+    ap.add_argument("--get-balloons", action="store_true", dest="get_balloons",
+                    help="말풍선·속마음 자리표시 자산 9종과 manifest.json을 만들고 끝난다")
+    ap.add_argument("--force-balloons", action="store_true", dest="force_balloons",
+                    help="--get-balloons가 기존 자산도 다시 그린다")
     ap.add_argument("--keep-logs", action="store_true", dest="keep_logs",
                     help="log/*.log를 실행 시작에 초기화하지 않고 이어서 쓴다 (기본: 초기화)")
     ap.add_argument("--no-strict-state", action="store_true",
@@ -812,6 +819,14 @@ def main() -> int:
         import comic_page_merge as _CPM
         p("  얼굴 검출 모델 받음 : " + ("완료" if _CPM.download_face_model(log=lambda s: p(s)) else "실패(추정치로 계속)"))
         p(f"    OpenCV : {'있음' if _CPM.face_model_available() else '없음'} — cv2가 없으면 추정치(원본 위에서 8%)를 씁니다")
+    if getattr(args, "get_balloons", False):
+        # [2026-09-10] 말풍선·속마음 자산 9종을 data/balloons/에 만든다(자리는 코드로 그림).
+        #   실제 작화 자산을 같은 파일명·스펙으로 덮어쓰면 코드 수정이 필요 없다.
+        import comic_page_merge as _CPM
+        _bi = _CPM.generate_balloon_set(force=bool(args.force_balloons))
+        p(f"  말풍선 자산 {_bi['made']}장면 → {_bi['dir']} (manifest: {_bi['manifest']})")
+        p("  쓰실 때: --balloon-style image (자산이 없으면 자동으로 벡터로 돌아갑니다)")
+        return 0
     if getattr(args, "list_templates", False):
         import comic_gen as _CG
         _tm = _CG.load_cut_templates()
@@ -826,6 +841,11 @@ def main() -> int:
         ap.error("--episode 필수 (--stop-llm/--llm-plan/--get-fonts/--list-templates/--get-face-model 모드에서는 생략 가능)")
     if args.ep < 1:                      # 1기준. --ep 0(0기준 습관)을 1로 흡수한다 —
         args.ep = 1                      # 0으로 두면 가이드 map은 key 0, 조회는 1기준이라 기승전결이 증발한다
+    if getattr(args, "balloon_style", None):
+        config.comic_balloon_style = args.balloon_style
+    import comic_page_merge as _CPMB
+    _CPMB.set_balloon_style(getattr(config, "comic_balloon_style", "vector"),
+                            getattr(config, "comic_balloon_dir", "data/balloons"))
     if args.font:
         config.comic_font = args.font
     # [2026-09-09] 화면 문법 용도별 폰트 / ★요약·에필로그 컷 스위치

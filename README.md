@@ -267,6 +267,10 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--no-strict-state` | 컷 스크립트 JSON이 필수 항목(상태 시트·pose·첫 컷의 시작 상태)을 못 채워도 **경고만** 하고 진행합니다 (기본은 에러로 종료) |
 | `--no-face-crop` | 컷 크롭을 세로 가운데 자르기로 되돌립니다(기본은 얼굴 중심)
 | `--get-face-model` | 얼굴 검출 모델(YuNet 227KB)을 받습니다 — OpenCV가 있을 때만 쓰입니다 |
+| `--balloon-style image` | 말풍선·속마음을 `data/balloons/` **자산**으로 그립니다(기본 `vector`). 자산이 없으면 자동으로 `vector`로 돌아갑니다 |
+| `--get-balloons` | 말풍선·속마음 자리표시 자산 9종과 `manifest.json`을 만들고 끝납니다(`--force-balloons`로 재생성) |
+| `--keep-logs` | 실행 시작에 로그를 초기화하지 않고 이어서 씁니다 |
+| `--fresh-extract` | 추출 체크포인트(`state/extract_cache.yaml`)를 무시하고 처음부터 추출합니다 |
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
 | `--no-wide` | wide(1366×1024) 컷을 금지합니다 |
 | `--angle` | action 컷에 `data_comfyui/angle.txt` 구도를 적용합니다 |
@@ -660,6 +664,44 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
   비우면 직전 컷이 유지되고, 상대에게만 `[BBB FACE]` / `[BBB CLOTHES]` / `[BBB ACCESSORIES]` / `[BBB MARKS]` /
   `[BBB PROPS]` / `[BBB POSTURE]` 으로 붙습니다. 한글·일본어로 온 값은 이 단계에서 버립니다(최종 프롬프트에서 파기되는 값).
 
+### 3-8f) 말풍선·속마음을 이미지로 — `--balloon-style image`
+
+코드로 그리던 형태(직사각형+꼬리 / 타원+물방울)를 **미리 그려둔 반투명 RGBA 자산**으로
+붙일 수 있습니다. 형태가 다양해지고, 손으로 그린 느낌의 테두리를 쓸 수 있습니다.
+
+- **크기 변형이 아니라 모양·분위기 변형 은행**입니다. 크기는 **9슬라이스**(3×3 확대)로
+  처리해서, 풍선이 아무리 길어져도 테투리 두께와 모서리가 일정합니다.
+- **꼬리와 생각 물방울은 계속 코드로** 그립니다. 꼬리는 "이미지 크기"가 아니라
+  **화자 좌표**에서 나오는 것이라, 컷마다 풍선이 놓이는 자리가 달라집니다.
+- 선택 규칙: **감정 우선 → 결정론 회전**. 같은 페이지에서 같은 모양을 2번 쓰지 않습니다
+  (변형이 1종일 때만 예외). `random`을 쓰지 않아 같은 원고는 같은 풍선이 나옵니다.
+
+| 종류 | 변형 | 쓰이는 때 |
+|---|---|---|
+| 말풍선 | `speech_plain` | 기본 |
+| 말풍선 | `speech_soft` | 다정한 말·속삭임 (물결 가장자리) |
+| 말풍선 | `speech_sharp` | 날선 말 (뾰족) |
+| 말풍선 | `speech_shout` | 큰소리·리액션 (별 모양) |
+| 말풍선 | `speech_flat` | 무표정·기계음 (모서리 각짐) |
+| 속마음 | `thought_cloud` | 기본 (구름) |
+| 속마음 | `thought_dreamy` | 감상·회상 |
+| 속마음 | `thought_knot` | 곤란·당황 (꼬불 테두리) |
+| 속마음 | `thought_void` | 멍한 속마음 (얇은 테두리) |
+
+```
+venv/bin/python run_comic.py --get-balloons      # 9종을 data/balloons/에 만듭니다
+venv/bin/python run_comic.py ... --balloon-style image
+```
+
+- `--get-balloons`가 만드는 것은 **자리표시(코드로 그린 그림)**입니다. 실제 작화 자산을
+  같은 파일명(`speech_sharp.png` …)·같은 스펙으로 덮어넣으면 코드 수정이 필요 없습니다.
+- 자산 스펙은 `data/balloons/manifest.json`에 적혀 있습니다: `slice`(9슬라이스 절선),
+  `safe`(글자 안전 여백 — 곡선 자산에서 글자가 테투리에 닿지 않게 이 값을 씁니다),
+  `alpha`(플레이트 불투명도, 기본 210 ≈ 82%), `moods`(감정 매칭용 영문 태그).
+- **플레이트는 반투명, 테투리는 불투명**으로 구워져 있습니다. 배경이 정확히 비칩니다
+  (selftest가 픽셀 값으로 확인합니다). 글자는 합성 **뒤에** 그려져 흐려지지 않습니다.
+- 자산이 없거나 파일이 깨졌다면 **조용히 벡터로** 그립니다(렌더가 멈추지 않습니다).
+
 ### 3-8d) 이름 고정 — `#캐릭터 태그#`가 이름을 빼앗지 못하게
 
 [2026-09-09] 실측: 시트에 `#Kirisaki Chitoge from Nisekoi#`를 넣었더니 주인공 이름이 'AMD 소녀'에서 **치토게**로 바뀌었습니다. 추출 LLM이 `#…#` 공식 캐릭터 태그를 이름 필드로 옮겨 적었기 때문입니다. `#태그`는 **그림을 그릴 때의 참조(트리거)**이고, 이름은 화면 지문·대사에 쓰이는 별개의 값입니다.
@@ -799,6 +841,7 @@ selftest.py           자가 점검 — 항목 수는 실행 결과에 출력됩
 data/cut.yaml         페이지 템플릿 34종(기승전결, tier shares=폭, tier height=행 높이 예: climax_impact 4:6, **tier role=★서두 요약/에필로그**)
 data/fonts/           [자동 다운로드] 화면 문법 폰트(OFL) — `--get-fonts`로 받습니다(.gitignore 대상)
 data_comfyui/         워크플로 json · actions.yaml · angle.txt · prompt_pov.md · prompt_multi.md
+data/balloons/        [자동 생성] 말풍선·속마음 자산 9종 + manifest — `--get-balloons`
 inputs/               샘플(ep01.txt + sheet01.txt, 그리고 `--special` 검증용 ep90/ep91_deadbeef) — selftest가 읽는 입력도 이것뿐입니다
 input_test/           [로컬 전용] 개인 검증 입력 — .gitignore라 배송에는 없습니다
 order/                설계 메모(standalone 포크 흐름/추가 노트/Windows ollama)

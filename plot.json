@@ -22,7 +22,7 @@
   "anima_lora": 1,
   "anima_style": "lora_lambton",
   "anima_unet": "anima_aestheticV11.safetensors",
-  "ollama_enb": "yes",
+  "ollama_enb": "no",
   "ollama_gguf": "./gguf/gemma-4-26B-A4B-it-uncensored-Q4_K_M.gguf",
   "ollama_model": "comic-gemma-4-26B-A4B-it-uncensored-Q4_K_M",
   "ollama_host": "http://127.0.0.1:11434",

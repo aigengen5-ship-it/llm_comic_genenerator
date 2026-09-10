@@ -734,7 +734,6 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 14. **clothes (모든 컷 필수) — 컷별 복장**: 이 컷에서 주인공이 입고 있는 것만 소문자 영문 태그(최대 6개).
     직전 컷에서 연속돼야 하고, caption/pose에 벗고·입고·갈아입는 동작이 나오는 컷에서만 복장을 바꾼다.
     옷이 안 바뀌면 앞 컷과 똑같이 쓰거나 ""(비우면 앞 컷 것이 자동 승계). 노출 정책 동일
-    (topless·visible nipples·cameltoe 허용, 성기/속옷 벗은 상태 묘사 금지 — 속옷은 lingerie 등으로 짧게).
 {rule15}"""
 
 

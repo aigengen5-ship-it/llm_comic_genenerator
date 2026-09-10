@@ -2678,6 +2678,81 @@ def main() -> int:
         config.char_tags = _keep[3]
 
 
+    # ── ⑮ [2026-09-10] 말풍선·속마음 이미지 은행 (9슬라이스 + 감정 선택)
+    from tempfile import mkdtemp as _mkd_b
+    _btmp = _mkd_b(prefix="selftest_balloons_")
+    _bkeep = CPM.balloon_style()
+    try:
+        _bs = CPM.generate_balloon_set(dest=_btmp)
+        _png = [f for f in os.listdir(_btmp) if f.endswith(".png")]
+        check("--get-balloons가 자산 9종과 manifest를 만든다",
+              len(_png) == len(CPM.BALLOON_ART_VARIANTS) and os.path.exists(_bs["manifest"]),
+              f"{len(_png)}장면 / {_bs['manifest']}")
+        CPM.set_balloon_style("image", _btmp)
+        check("감정으로 변형을 고른다 (anger→sharp, heart→dreamy, surprise→shout, gloom→void)",
+              CPM.pick_balloon_variant("speech", "anger", 0, 0, 0) == "speech_sharp"
+              and CPM.pick_balloon_variant("thought", "heart", 0, 0, 0) == "thought_dreamy"
+              and CPM.pick_balloon_variant("speech", "surprise", 0, 0, 0) == "speech_shout"
+              and CPM.pick_balloon_variant("thought", "gloom", 0, 0, 0) == "thought_void",
+              CPM.pick_balloon_variant("speech", "anger", 0, 0, 0))
+
+        def _one(bg=(40, 40, 40), text="테스트 문장입니다.", emo="anger"):
+            cv = Image.new("RGB", (520, 360), bg)
+            dd = ImageDraw.Draw(cv)
+            used = []
+            bx = CPM._draw_balloon(dd, 10, 10, 500, 340, CPM._balloon("speech", text, emo=emo),
+                                   canvas=cv, bank_used=used)
+            return cv, used, bx
+
+        _cv1, _u1, _bx1 = _one()
+        check("이미지 모드로 그려지고 페이지에 사용 변형이 기록된다", bool(_u1) and _bx1, str(_u1))
+        check("같은 원고를 두 번 그리면 같은 변형이 고른다(random 안 쓴다)",
+              _one()[1] == _u1 and _one((250, 250, 250))[1] == _u1, str(_u1))
+        _used_page = []
+        _seq = []
+        for _i in range(3):
+            _v = CPM.pick_balloon_variant("speech", "", 90 * _i, 0, _i, _used_page) or ""
+            _seq.append(_v)
+            if _v:
+                _used_page.append(_v)
+        check("같은 페이지에서 같은 모양을 2번 쓰지 않는다(변형이 1종일 때만 예외)",
+              len([v for v in _seq if v]) == len(set(_seq)), str(_seq))
+        _x0, _y0, _x1, _y1 = _bx1
+        _cx, _cy = (_x0 + _x1) // 2, (_y0 + _y1) // 2
+        _exp = round(255 * CPM.BALLOON_ART_PLATE_ALPHA / 255.0 + 40 * (1 - CPM.BALLOON_ART_PLATE_ALPHA / 255.0))
+        _got = _cv1.getpixel((_cx, _cy))
+        check("플레이트는 반투명 — 배경이 정확히 비친다(α=210)",
+              abs(_got[0] - _exp) <= 4 and abs(_got[2] - _exp) <= 4, f"{_got} 기대≈{_exp}")
+        check("모서리는 투명(사각형으로 늘리지 않았다 — 형태가 살아 있다)",
+              _cv1.getpixel((_x0 + 1, _y0 + 1)) == (40, 40, 40), str(_cv1.getpixel((_x0 + 1, _y0 + 1))))
+        _cv2, _u2, _bx2 = _one(text="그래서 말인데, 그날 이후로 나는 네가 조금 무서워졌다. 그래도 네가 온 것은 기뻤다.")
+        def _border_px(cv, box):
+            x0, y0, x1, y1 = box
+            cxm = (x0 + x1) // 2
+            row = [cv.getpixel((x, (y0 + y1) // 2))[0] for x in range(x0 - 6, x1 + 6)]
+            dark = [i for i, v in enumerate(row) if v < 90]
+            return (max(dark) - min(dark) + 1) if dark else 0, len([i for i, v in enumerate(row) if v < 200])
+        _w1, _ = _border_px(_cv1, _bx1)
+        _w2, _ = _border_px(_cv2, _bx2)
+        check("9슬라이스 — 다른 크기의 풍선에서 테투리 두께가 거의 일정하다(늘어남 방지)",
+              abs(_w1 - _w2) <= 4, f"작은 것 {_w1}px / 큰 것 {_w2}px")
+        check("긴 대사로 풍선이 커져도 배경이 그대로 비친다(반투명 유지)",
+              abs(_cv2.getpixel((((_bx2[0] + _bx2[2]) // 2), (_bx2[1] + _bx2[3]) // 2))[0] - _exp) <= 6,
+              str(_bx2))
+        CPM.set_balloon_style("image", os.path.join(_btmp, "없는_디렉터리"))
+        _cv3, _u3, _bx3 = _one(bg=(200, 200, 200), text="벡터 폴백 확인")
+        check("자산이 없으면 조용히 벡터로 그린다(렌더가 죽지 않는다)",
+              _u3 == [] and _bx3 is not None and _cv3.getpixel(
+                  ((_bx3[0] + _bx3[2]) // 2, (_bx3[1] + _bx3[3]) // 2))[0] > 250, str(_u3))
+        CPM.set_balloon_style("image", _btmp)
+        _cv4 = Image.new("RGB", (520, 360), (200, 200, 200))
+        check("좌우 반전해서 붙일 수 있다(꼬리 방향이 반대인 컷)",
+              CPM.paste_balloon_art(_cv4, "speech_sharp", (10, 10, 500, 340), (60, 60, 360, 160),
+                                    flip=True) == "speech_sharp")
+    finally:
+        CPM.set_balloon_style(_bkeep, CPM.BALLOON_ART_DIR_DEFAULT)
+
+
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).
     # 스캔 대상은 **한글 어휘**만 — 영문 danbooru 태그(sex/cum/…)는 이 repo의 산출물이라 노출이 아니다.

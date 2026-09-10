@@ -1,0 +1,176 @@
+{
+ "plate_alpha": 210,
+ "assets": {
+  "speech_plain": {
+   "kind": "speech",
+   "file": "speech_plain.png",
+   "moods": "",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "speech_soft": {
+   "kind": "speech",
+   "file": "speech_soft.png",
+   "moods": "gentle warm soft sad",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "speech_sharp": {
+   "kind": "speech",
+   "file": "speech_sharp.png",
+   "moods": "anger",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "speech_shout": {
+   "kind": "speech",
+   "file": "speech_shout.png",
+   "moods": "surprise sparkle",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "speech_flat": {
+   "kind": "speech",
+   "file": "speech_flat.png",
+   "moods": "gloom question",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "thought_cloud": {
+   "kind": "thought",
+   "file": "thought_cloud.png",
+   "moods": "",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "thought_dreamy": {
+   "kind": "thought",
+   "file": "thought_dreamy.png",
+   "moods": "heart sparkle",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "thought_knot": {
+   "kind": "thought",
+   "file": "thought_knot.png",
+   "moods": "sweat question anger",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "thought_void": {
+   "kind": "thought",
+   "file": "thought_void.png",
+   "moods": "gloom",
+   "slice": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "safe": [
+    34,
+    30,
+    34,
+    30
+   ],
+   "border": 7,
+   "alpha": 210
+  }
+ }
+}

@@ -139,6 +139,52 @@ NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스�
 # [2026-09-09] 풍선은 **가로 20% · 세로로 길게**(말풍선이 얼굴을 가린다) — 글자는 그 폭에 맞춰 접는다.
 BALLOON_W_RATIO = 0.20                   # 말풍선(직사각형) 폭 = 컷 폭의 20%
 THOUGHT_W_RATIO = 0.20                   # 속ma음(타원) 폭 = 컷 폭의 20%
+
+# [2026-09-10] 말풍선·속마음 **이미지 은행** — 형태를 미리 그린 RGBA 자산으로 붙인다.
+#  · 크기 변형이 아니라 **모양·분위기 변형**을 은행으로 둔다(크기는 9슬라이스가 처리한다).
+#  · 몸통만 이미지이고 꼬리·생각 물방울은 계속 벡터로 그려, 화자 조준이 컷마다 정확하다.
+#  · 자산이 없으면 지금의 벡터 그리기로 조용히 폴백한다(기본값도 vector).
+BALLOON_ART_DIR_DEFAULT = os.path.join("data", "balloons")
+BALLOON_ART_MANIFEST = "manifest.json"
+BALLOON_ART_W, BALLOON_ART_H = 640, 480       # 자리표시 자산 제작 크기
+BALLOON_ART_MARGIN = 28                        # 9슬라이스 절선(투명 여백) = 테투리 품는幅
+BALLOON_ART_SAFE = (34, 30, 34, 30)            # 글자 안전 여백 (l,t,r,b)
+BALLOON_ART_PLATE_ALPHA = 210                  # 플레이트(내부) 불투명도 — 반투명
+# (id, kind, 모양, moods) — id는 파일명이 된다(영문만)
+BALLOON_ART_VARIANTS = (
+    ("speech_plain", "speech", "round",  ""),
+    ("speech_soft",  "speech", "wavy",   "gentle warm soft sad"),
+    ("speech_sharp", "speech", "spiky",  "anger"),
+    ("speech_shout", "speech", "star",   "surprise sparkle"),
+    ("speech_flat",  "speech", "box",    "gloom question"),
+    ("thought_cloud",  "thought", "cloud",  ""),
+    ("thought_dreamy", "thought", "puff",   "heart sparkle"),
+    ("thought_knot",   "thought", "scallop", "sweat question anger"),
+    ("thought_void",   "thought", "thin",   "gloom"),
+)
+_balloon_style = "vector"          # vector | image  (run_comic가 set_balloon_style로 배선)
+_balloon_art_dir = BALLOON_ART_DIR_DEFAULT
+_balloon_cache = None              # manifest 로딩 1회
+
+
+def set_balloon_style(style: str = None, art_dir: str = None):
+    """'image'로 켜면 자산 은행을 쓰고, 자산이 없는 환경은 자동으로 vector로 돌아간다."""
+    global _balloon_style, _balloon_art_dir, _balloon_cache
+    if style:
+        _balloon_style = str(style).strip().lower()
+    if art_dir:
+        _balloon_art_dir = str(art_dir)
+        _balloon_cache = None
+    return _balloon_style, _balloon_art_dir
+
+
+def balloon_style() -> str:
+    return _balloon_style
+
+
+def _balloon_shapes_dir():
+    return os.path.abspath(_balloon_art_dir)
+
 THOUGHT_W_RELIEF = 0.28                  # 단, 세로가 아래 비율을 넘으면 폭을 이 정도까지 넓힌다(좁은 폭은 세로를 부른다)
 THOUGHT_H_CAP = 0.36                     # 속마음 세로가 컷 높이의 이 비율을 넘지 않게 한다
 FONT_FLOOR = 11                          # 화면 글자의 최소 크기 — 이 아래로 안 줄인다
@@ -1161,10 +1207,214 @@ def bh_ratio(th: float, bw: float, tw: float) -> float:
     return (th / max(0.40, (1.0 - k * k) ** 0.5)) / 1000.0
 
 
+# ── 말풍선·속마음 자산 은행 (2026-09-10) ─────────────────────────────────────
+def _superellipse_pts(cx, cy, a, b, n, k, amp, steps=280):
+    """모양 만들기 — n이 크면 모서리 각진 사각형에 가까워지고(speech), 작으면 타원(thought).
+    k·amp가 가장자리의 곱슬(구름·물결·뾰족·별)을 만든다."""
+    import math as _m
+    pts = []
+    for i in range(steps):
+        t = 2 * _m.pi * i / steps
+        ct, st = _m.cos(t), _m.sin(t)
+        r = 1.0 + amp * _m.sin(k * t)
+        x = (abs(ct) ** (2.0 / n)) * (1 if ct >= 0 else -1) * a
+        y = (abs(st) ** (2.0 / n)) * (1 if st >= 0 else -1) * b
+        pts.append((cx + x * r, cy + y * r))
+    return pts
+
+
+_SHAPE_SPEC = {            # (n, k, amp) — 말풍선은 각진 기반 + 날선, 속마음은 둥근 기반
+    "round":   (9.0, 0, 0.0), "box": (14.0, 0, 0.0),
+    "wavy":    (6.0, 14, 0.020), "spiky": (7.0, 26, 0.040), "star": (5.0, 12, 0.075),
+    "cloud":   (2.4, 9, 0.055), "puff": (2.4, 16, 0.034),
+    "scallop": (2.3, 24, 0.024), "thin": (2.2, 0, 0.0),
+}
+
+
+def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
+    """data/balloons/에 자리표시 자산 9종 + manifest.json을 만든다(코드로 그림).
+
+    실제 작화 자산을 같은 파일명·같은 스펙으로 덮어넣으면 코드 수정이 필요 없다.
+    """
+    import json as _json
+    d = os.path.abspath(dest or _balloon_art_dir)
+    os.makedirs(d, exist_ok=True)
+    man = {"plate_alpha": BALLOON_ART_PLATE_ALPHA, "assets": {}}
+    made = []
+    for vid, kind, shape, moods in BALLOON_ART_VARIANTS:
+        path = os.path.join(d, vid + ".png")
+        man["assets"][vid] = {"kind": kind, "file": vid + ".png", "moods": moods,
+                             "slice": [BALLOON_ART_MARGIN] * 4,
+                             "safe": list(BALLOON_ART_SAFE), "border": 7,
+                             "alpha": BALLOON_ART_PLATE_ALPHA}
+        if os.path.exists(path) and not force:
+            made.append(vid)
+            continue
+        layer = Image.new("RGBA", (BALLOON_ART_W, BALLOON_ART_H), (0, 0, 0, 0))
+        dl = ImageDraw.Draw(layer)
+        n, k, amp = _SHAPE_SPEC.get(shape, (3.0, 0, 0.0))
+        cx, cy = BALLOON_ART_W / 2.0, BALLOON_ART_H / 2.0
+        a = BALLOON_ART_W / 2.0 - BALLOON_ART_MARGIN
+        b = BALLOON_ART_H / 2.0 - BALLOON_ART_MARGIN
+        bw = 7 if shape != "thin" else 3
+        # 테투리(불투명) → 내부(반투명) 순서로 겹쳐 그린다(테투리 두께를 자산에 굽는다)
+        dl.polygon(_superellipse_pts(cx, cy, a, b, n, k, amp),
+                   fill=tuple(DEFAULT_FRAME) + (255,))
+        inn = max(0.02, bw * 2.0 / min(2 * a, 2 * b))
+        dl.polygon(_superellipse_pts(cx, cy, a * (1 - inn), b * (1 - inn), n, k, amp),
+                   fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
+        layer.save(path)
+        made.append(vid)
+    try:
+        with open(os.path.join(d, BALLOON_ART_MANIFEST), "w", encoding="utf-8") as f:
+            _json.dump(man, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    global _balloon_cache
+    _balloon_cache = None
+    return {"dir": d, "made": made, "manifest": os.path.join(d, BALLOON_ART_MANIFEST)}
+
+
+def _balloon_art_safe(variant: str):
+    """자산의 글자 안전 여백 (l,t,r,b) — 곡선 가장자리 자산에서 글자가 테투리에 닿지 않게."""
+    a = (_balloon_bank().get(variant or "") or {}).get("safe") or list(BALLOON_ART_SAFE)
+    try:
+        a = [int(x) for x in a]
+        l, t, r, b = (a + [0, 0, 0, 0])[:4]
+    except Exception:
+        l, t, r, b = BALLOON_ART_SAFE
+    return max(0, l), max(0, t), max(0, r), max(0, b)
+
+
+def _balloon_bank() -> dict:
+    """manifest + PNG를 한 번만 읽어 {id: {"img": RGBA, ...}}로 cache한다."""
+    global _balloon_cache
+    if _balloon_cache is not None:
+        return _balloon_cache
+    out = {}
+    try:
+        import json as _json
+        d = _balloon_shapes_dir()
+        mp = os.path.join(d, BALLOON_ART_MANIFEST)
+        if os.path.exists(mp):
+            man = _json.load(open(mp, encoding="utf-8")) or {}
+            for vid, spec in (man.get("assets") or {}).items():
+                fp = os.path.join(d, str(spec.get("file") or (vid + ".png")))
+                if not os.path.exists(fp):
+                    continue
+                try:
+                    img = Image.open(fp).convert("RGBA")
+                except Exception:
+                    continue
+                out[str(vid)] = {"img": img, "kind": str(spec.get("kind") or "").lower(),
+                                 "slice": [int(x) for x in (spec.get("slice") or [BALLOON_ART_MARGIN] * 4)],
+                                 "safe": [int(x) for x in (spec.get("safe") or BALLOON_ART_SAFE)],
+                                 "moods": str(spec.get("moods") or "")}
+    except Exception:
+        out = {}
+    _balloon_cache = out
+    return out
+
+
+def pick_balloon_variant(kind: str, emo: str = "", ix: int = 0, iy: int = 0,
+                         idx: int = 0, used=None) -> str:
+    """감정 → 결정론 회전 순으로 변형을 고른다 (같은 원고 → 같은 풍선).
+
+    used: 같은 페이지에서 이미 쓴 id 리스트 — 2회 사용은 은행이 1종일 때만 허용한다.
+    """
+    bank = _balloon_bank()
+    pool = [vid for vid, m in bank.items() if m["kind"] == kind]
+    if not pool:
+        return ""
+    pool.sort()
+    used = used if used is not None else []
+    mood = str(emo or "").strip().lower()
+    if mood:
+        for vid in pool:
+            if mood in bank[vid]["moods"].split():
+                if vid not in used or len(pool) == 1:
+                    return vid
+    key = (int(ix) // 97, int(iy) // 97, int(idx), len(used))
+    for off in range(len(pool) * 2):
+        vid = pool[(key[0] + key[1] * 3 + key[2] * 7 + off) % len(pool)]
+        if vid not in used or len(pool) == 1:
+            return vid
+    return pool[0]
+
+
+def _nine_slice(dst, art: "Image.Image", box, slice_px):
+    """9슬라이스 확대 — 모서리·가장자리는 픽셀 유지, 가운데만 늘린다(테투리 두께 일정)."""
+    l, t, r, b = [max(1, int(x)) for x in slice_px]
+    x0, y0, x1, y1 = [int(v) for v in box]
+    w, h = max(1, x1 - x0), max(1, y1 - y0)
+    aw, ah = art.size
+    l, t = min(l, max(1, aw // 2 - 1)), min(t, max(1, ah // 2 - 1))
+    r, b = min(r, max(1, aw // 2 - 1)), min(b, max(1, ah // 2 - 1))
+    if w < l + r + 2 or h < t + b + 2:          # 너무 작으면 자산 전체를 축소가 최선
+        whole = art.resize((max(2, w), max(2, h)), Image.LANCZOS)
+        dst.alpha_composite(whole, (x0, y0))
+        return
+    cw, ch = max(1, aw - l - r), max(1, ah - t - b)
+    mw, mh = max(1, w - l - r), max(1, h - t - b)
+    cen = art.crop((l, t, l + cw, t + ch)).resize((mw, mh), Image.LANCZOS)
+    dst.alpha_composite(art.crop((0, 0, l, t)), (x0, y0))
+    dst.alpha_composite(art.crop((aw - r, 0, aw, t)), (x0 + w - r, y0))
+    dst.alpha_composite(art.crop((0, ah - b, l, ah)), (x0, y0 + h - b))
+    dst.alpha_composite(art.crop((aw - r, ah - b, aw, ah)), (x0 + w - r, y0 + h - b))
+    dst.alpha_composite(art.crop((l, 0, l + cw, t)).resize((mw, t), Image.LANCZOS), (x0 + l, y0))
+    dst.alpha_composite(art.crop((l, ah - b, l + cw, ah)).resize((mw, b), Image.LANCZOS), (x0 + l, y0 + h - b))
+    dst.alpha_composite(art.crop((0, t, l, t + ch)).resize((l, mh), Image.LANCZOS), (x0, y0 + t))
+    dst.alpha_composite(art.crop((aw - r, t, aw, t + ch)).resize((r, mh), Image.LANCZOS), (x0 + w - r, y0 + t))
+    dst.alpha_composite(cen, (x0 + l, y0 + t))
+
+
+def paste_balloon_art(canvas, variant: str, region, box, tail_g=None, bubbles=None,
+                      flip: bool = False, plate=DEFAULT_PLATE, frame=DEFAULT_FRAME,
+                      line: int = DEFAULT_FRAME_WIDTH):
+    """ 컷 영역 RGBA 레이어에 몸통(9슬라이스)+꼬리/물방울을 합성해 한 번에 붙인다.
+
+    텍스트는 이 함수가 끝난 **뒤**에 그린다(그렇지 않으면 글자까지 반투명해진다).
+    성공 시 사용 변형 id, 실패(자산 없음) 시 None → 호출자가 벡터로 그린다.
+    """
+    bank = _balloon_bank()
+    a = bank.get(variant or "")
+    if canvas is None or not a:
+        return None
+    art = a["img"]
+    if flip:
+        art = art.transpose(Image.FLIP_LEFT_RIGHT)
+    ix, iy, iw, ih = [int(v) for v in region]
+    x0, y0, x1, y1 = [int(v) for v in box]
+    if iw < 24 or ih < 24 or x1 - x0 < 24 or y1 - y0 < 24:
+        return None
+    try:
+        layer = Image.new("RGBA", (iw, ih), (0, 0, 0, 0))
+        # 몸통(9슬라이스) → 꼬리/생각 물방울은 **기존 벡터 함수**를 레이어에 그린다
+        #   (화자 조준은 컷마다 달라지므로 이미지를 늘리는 것보다 정확하고, 결과도 같다)
+        _nine_slice(layer, art, (x0 - ix, y0 - iy, x1 - ix, y1 - iy), a["slice"])
+        dl = ImageDraw.Draw(layer)
+        alp = int(a.get("alpha") or BALLOON_ART_PLATE_ALPHA)
+        fill_rgba = tuple(plate)[:3] + (alp,)
+        frame_rgba = tuple(frame)[:3] + (255,)
+        if isinstance(tail_g, dict) and {"a", "tip", "p", "u", "bh"} <= set(tail_g):
+            g = dict(tail_g)
+            g["a"] = (tail_g["a"][0] - ix, tail_g["a"][1] - iy)
+            g["tip"] = (tail_g["tip"][0] - ix, tail_g["tip"][1] - iy)
+            _draw_tail(dl, g, frame=frame_rgba, plate=fill_rgba, line=line)
+        if bubbles:
+            bx0, by0, bx1, by1, tx, ty = bubbles
+            _draw_thought_bubbles(dl, bx0 - ix, by0 - iy, bx1 - ix, by1 - iy, tx - ix, ty - iy,
+                                  frame=frame_rgba, plate=fill_rgba, line=line)
+        canvas.paste(layer, (ix, iy), layer)
+        return variant
+    except Exception:
+        return None
+
+
 def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                   plate=DEFAULT_PLATE, frame=DEFAULT_FRAME, line: int = DEFAULT_FRAME_WIDTH,
                   text_color=DEFAULT_TEXT, font_size: int = BALLOON_FONT_SIZE, font_path=None,
-                  facing: str = None):
+                  facing: str = None, canvas=None, bank_used=None, idx: int = 0):
     """[2026-09-09] 말풍선(speech) / 속마음 풍선(thought).
 
     speech  : **직사각형** — 폭은 컷의 20%, 글자는 그 폭에 맞춰 접고 세로로 늘린다(얼굴 가림 방지)
@@ -1245,12 +1495,32 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     x1, y1 = x0 + box_w, y0 + box_h
     # 말풍선은 **직사각형 + 삼각 꼬리**, 속마음은 **타원 + 작은 원**. 형태 그 자체로 화자를 구분한다.
     tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, _dkey)
-    if kind == "speech":
+    art = ""
+    if _balloon_style == "image" and canvas is not None:
+        # 자산 은행에서 변형을 고른다(감정 우선 → 결정론 회전, 같은 페이지 중복 회피).
+        #   꼬리·생각 물방울은 계속 벡터로 그리므로 화자 조준은 벡터 모드와 똑같다.
+        art = pick_balloon_variant(kind, emo, ix, iy, idx, bank_used)
+        art = paste_balloon_art(canvas, art, (ix, iy, iw, ih), (x0, y0, x1, y1),
+                                tail_g=_tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih)
+                                if kind == "speech" else None,
+                                bubbles=None if kind == "speech" else (x0, y0, x1, y1, tx, ty_),
+                                flip=(_dkey == "right"), plate=plate, frame=frame, line=line)
+        if art:
+            if bank_used is not None:
+                bank_used.append(art)
+            _sl, _st, _sr, _sb = _balloon_art_safe(art)
+            if kind == "speech":
+                ty0 = y0 + max(pad, _st)
+            else:
+                ty0 = y0 + _st + max(0, (box_h - _st - _sb - len(lines) * line_h) // 2)
+        else:
+            art = ""
+    if not art and kind == "speech":
         d.rectangle([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         _draw_tail(d, _tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih),
                    frame=frame, plate=plate, line=line)
         ty0 = y0 + pad
-    else:
+    elif not art:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty_, frame=frame, plate=plate, line=line)
         ty0 = y0 + int(box_h * 0.5 - len(lines) * line_h / 2)        # 타원 안에서는 글자 블록을 세로 가운데에 둔다
@@ -1323,7 +1593,7 @@ def _draw_panel_text(canvas, d, ix: int, iy: int, iw: int, ih: int, item, *,
                      font_size: int = DEFAULT_FONT_SIZE, font_path: str = None,
                      plate=DEFAULT_PLATE, frame=DEFAULT_FRAME,
                      frame_width: int = DEFAULT_FRAME_WIDTH, text_color=DEFAULT_TEXT,
-                     facing: str = None) -> list:
+                     facing: str = None, bank_used=None) -> list:
     """[2026-09-09] 컷 하나에 화면 문법을 그린다 — 의성어 → 설명 박스 → 풍선(≤2개).
 
     모든 요소는 컷 안에서만 쓰이고(컷 밖으로 안 나감), 서로 안 겹치게 배치한다.
@@ -1343,10 +1613,10 @@ def _draw_panel_text(canvas, d, ix: int, iy: int, iw: int, ih: int, item, *,
                               narrow=bool(tp["balloons"]))        # 대사가 있으면 설명을 좁게
         if r:
             placed.append(r[:4])
-    for b in tp["balloons"][:BALLOON_MAX]:
+    for _bi, b in enumerate(tp["balloons"][:BALLOON_MAX]):
         r = _draw_balloon(d, ix, iy, iw, ih, b, avoid=placed, plate=plate, frame=frame,
                           line=frame_width, text_color=text_color, font_path=font_path,
-                          facing=facing)
+                          facing=facing, canvas=canvas, bank_used=bank_used, idx=_bi)
         if r:
             placed.append(r)
     return placed
@@ -1414,6 +1684,7 @@ def compose_page(panel_paths, captions, *,
     if page_size:
         page_h = int(page_size[1])
         page_w = int(page_size[0])
+    bank_used = []      # [2026-09-10] 이 페이지에서 쓴 말풍선 변형 (같은 페이지 중복 회피)
     canvas = Image.new("RGB", (page_w, page_h), bg)
     d = ImageDraw.Draw(canvas)
     if page_label:
@@ -1442,7 +1713,7 @@ def compose_page(panel_paths, captions, *,
                                                 bg=bg, keyline=keyline)
             # [2026-09-09] 화면 문법은 존(zone)과 무관하게 하나로: 설명 박스(하단 왼쪽) + 풍선 + 의성어
             item = c["text"] if c.get("text") is not None else c["blocks"]
-            _draw_panel_text(canvas, d, ix, iy, iw, ih, item,
+            _draw_panel_text(canvas, d, ix, iy, iw, ih, item, bank_used=bank_used,
                              font_size=c["font_size"] if c["zone"] == "right" else font_size,
                              font_path=font_path, plate=plate, frame=frame,
                              frame_width=frame_width, text_color=text_color,

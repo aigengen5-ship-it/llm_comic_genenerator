@@ -625,6 +625,28 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 
 실측(같은 컷 재조립): `bimbo school uniform, tight clothes, short skirt, tattered school uniform, dirty clothes` — 품목이 살아 있어 교복이 유지됩니다.
 
+### 3-8e) 컷별 연속 상태 시트 — 변한 것만 말하고, 나머지는 그대로
+
+회차 태그를 만드는 LLM은 **본문 전체**를 요약합니다. 그래서 중반에 옷을 갈아입거나 표정이 바뀌면 그 목록이 회차 상수가 되어 **첫 컷부터** 후반 상태가 붙었습니다(실측: 컷 1부터 아헤가오·빔보 복장). 컷마다 시간을 따지는 항목을 LLM이 직접 관리하도록 바꿨습니다.
+
+| # | 항목 | 태그 위치 | 예 |
+|---|---|---|---|
+| 1 | 표정 | `[AAA FACE]`/`[AAA EXPRESSION]` | `sad` → `ahegao` |
+| 2 | 메이크업 | `[AAA MAKEUP]` | `natural makeup` → `heavy makeup, glossy lips` |
+| 3 | 몸매·가슴·엉덩이 | `[AAA BODY]` | `petite, medium breasts` → `large breasts, wide hips` |
+| 4 | 복장 | `[AAA CLOTHES]` | `school uniform` → `gold bra, gold miniskirt` |
+| 5 | 악세사리 | `[AAA ACCESSORIES]` | `heart choker, earrings` |
+| + | 머리 상태 | `[AAA HAIR]` | `hair undone, wet hair` |
+| + | 몸의 흔적 | `[AAA MARKS]` | `tear trail, sweat, dirt on cheek` |
+| + | 소지품 | `[PROPS]` | `umbrella, smartphone, wads of cash` |
+| + | 지속 자세 | `[POSTURE]` | `on the ground, kneeling, hands bound` |
+
+- **규칙: 언급이 없으면 직전 컷 값 그대로.** LLM은 컷마다 변한 항목만 채우고 나머지는 `""`로 둡니다. 누적 계산은 프로그램이 합니다(`comic_gen.fold_cut_state`) — 그래서 토큰도 적고, LLM이 반복을 빼먹어도 연속성이 안 끊깁니다.
+- 시작 값은 회차 시작 상태입니다. 회차 요약이 순서를 틀리면(실측: 첫 항목이 중반 의상) **본문을 본 컷 스크립트의 초반 다수값**이 이깁니다(`_head_majority`).
+- 컷이 입은 그대로의 복장을 쓰는 컷은 `[AAA EXPOSURE]`를 그대로 유지하고, **옷을 실제로 갈아입은 컷부터** 회차 노출 어구를 떼어 새 옷에 이전 노출 노이즈가 옮지 않게 합니다.
+- 극단 표정(로컬 `extreme_face` 어휘)은 여전히 클라이맥스 컷에만 허용되고, 컷이 `ahegao`를 명시해도 일상 컷에서는 걸러집니다.
+- 확인: 로그 `EP1 컷 상태 시트: 시작 = 표정 … / 복장 … → 변화가 적힌 컷 N개`, 산출물 `comic/bookNNN/episode_NN_comic.json`의 `panels[i]["_state"]`.
+
 ### 3-8d) 이름 고정 — `#캐릭터 태그#`가 이름을 빼앗지 못하게
 
 [2026-09-09] 실측: 시트에 `#Kirisaki Chitoge from Nisekoi#`를 넣었더니 주인공 이름이 'AMD 소녀'에서 **치토게**로 바뀌었습니다. 추출 LLM이 `#…#` 공식 캐릭터 태그를 이름 필드로 옮겨 적었기 때문입니다. `#태그`는 **그림을 그릴 때의 참조(트리거)**이고, 이름은 화면 지문·대사에 쓰이는 별개의 값입니다.

@@ -657,6 +657,8 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
              {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
    "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
+   "state": {{"face": "", "makeup": "", "body": "", "clothes": "", "accessories": "",
+              "hair": "", "marks": "", "props": "", "posture": ""}},
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
   ...
 ]
@@ -670,6 +672,12 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
        행동 컷도 감정은 있다 — pose와 같은 컷의 감정이다. 회차 후반에 표정이 바뀌는 회차는
        그 이후 컷부터 바뀐 감정(예: "ahegao")을 쓴다. 빈 값은 회차 기본 표정을 쓴다는 뜻.
    danbooru 태그를 문장 안에 섞어 쓸 수 있다 (예: ", her bikini bottom pulled aside, cameltoe, trembling").
+   3-c. **state(컷 연속 상태)**: 위 항목 중 **이 컷에서 바뀐 것만** 채우고 나머지는 ""로 둡니다.
+       ""는 "직전 컷과 동일"이라는 뜻이고, 그 유지 계산은 프로그램이 합니다(LLM이 반복해 쓰지 않아도 됩니다).
+       · face 표정 / makeup 메이크업 / body 몸매·가슴·엉덩이 크기 / clothes 복장 / accessories 악세사리(안경·리본·목걸이·귀걸이·가방·이어폰)
+       · hair 머리 상태(풀림·묶음·젖음·乱れ) / marks 몸의 흔적(땀, 눈물 자국, 상처, 더러움, 붉어짐)
+       · props 들고 있는 물건(우산·스마트폰·쇼핑백·성냥…) / posture 지속 자세(바닥에 쓰러짐, 무릎 꿇음, 손 묶임)
+       본문에 실제로 변화가 있는 컷만 채우세요. 소지품·자세는 **사라지면 안 되는 물건**을 이어가는 데 쓰입니다. 값은 영문 태그.
 {pose_policy}
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
 5. position은 다음 7개 중 하나 (상대방 상태): He is standing. | He is sitting. | He is walking. |
@@ -720,7 +728,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {rule15}"""
 
 
-_PANEL_KEYS = ("caption_ko", "position", "clothes", "emotion", "camera", "climax", "dialog", "facing",
+_PANEL_KEYS = ("caption_ko", "position", "clothes", "emotion", "state", "camera", "climax", "dialog", "facing",
                "center", "multi", "pose", "type", "tier", "wide", "page", "no",
                "lines", "sfx")     # [2026-09-09] 화면 문법(풍선/의성어) 필드 추가
 
@@ -917,6 +925,81 @@ _EMO_FACE_TAGS = {
     "sparkle":  "happy, excited, sparkling eyes, open mouth",
     "question": "confused, tilted head, open mouth",
 }
+
+
+# [2026-09-09] 컷별 **연속 상태 시트** — 회차 태그는 회차 전체를 요약하므로(추출·태그셋 LLM이
+#   본문 전체를 본다) 컷마다 시간이 달라지는 항목(표정/화장/몸/옷/액세서리 …)을 못 맞춘다.
+#   그래서 LLM은 컷마다 **변한 항목만** 적고(델타), 코드가 순서대로 누적한다.
+#   규칙: 언급이 없으면 직전 컷 값을 그대로 유지한다.
+STATE_KEYS = ("face", "makeup", "body", "clothes", "accessories", "hair", "marks", "props", "posture")
+STATE_LABEL = {"face": "표정", "makeup": "메이크업", "body": "몸매·가슴·엉덩이", "clothes": "복장",
+               "accessories": "악세사리", "hair": "머리 상태", "marks": "몸의 흔적(땀/눈물/상처/더러움)",
+               "props": "소지품(든 것/입은 악세사리 외 물건)", "posture": "지속 자세(쓰러짐/무릎/묶임)"}
+
+
+def base_cut_state(ep_idx: int) -> dict:
+    """컷 0의 초기 상태 = 회차 시작 상태(추출이 시간 순으로 준 첫 항목 + 시트)"""
+    def _ep(attr, default=""):
+        v = getattr(config, attr, None)
+        try:
+            if isinstance(v, (list, tuple)):
+                v = v[ep_idx] if 0 <= int(ep_idx) < len(v) else default
+        except Exception:
+            v = default
+        return str(v or "").strip() or default
+    hair = ", ".join([p for p in [str(getattr(config, "hair_color", "") or "").strip(),
+                                  str(getattr(config, "hair_style", "") or "").strip()] if p])
+    body = ", ".join([p for p in [str(getattr(config, "body_shape", "") or "").strip(),
+                                  _ep("body_tag")] if p])
+    return {"face": str(getattr(config, "face_style", "") or "").strip(),
+            "makeup": _ep("makeup_tag"), "body": body,
+            "clothes": str(getattr(config, "clothes", "") or "").strip(),
+            "accessories": _ep("accessories_tag"), "hair": hair,
+            "marks": _ep("marks_tag"), "props": "", "posture": ""}
+
+
+def _head_majority(panels, key: str) -> str:
+    """본문 근거 보정 — 회차 요약 태그가 시작 상태를 틀리는 경우가 있다(실측: 회차 clothes의
+    첫 항목이 중반 의상). 컷 스크립트는 본문 원문을 보고 쓰므로 **초반 컷의 다수값**이 이긴다.
+    """
+    head = [str((p or {}).get(key) or "").strip() for p in (panels or [])[:max(3, (len(panels or [])) // 3)]]
+    head = [h for h in head if h and h.lower() not in ("none", "null")]
+    if not head:
+        return ""
+    cnt = {}
+    for h in head:
+        cnt[h] = cnt.get(h, 0) + 1
+    top = max(sorted(cnt), key=lambda k: cnt[k])
+    return top if cnt[top] >= max(2, len(head) // 2 + 1) else ""
+
+
+def fold_cut_state(panels, ep_idx: int = 0) -> dict:
+    """컷 순서대로 상태 델타를 누적해 각 컷에 panel['_state']로 붙인다(미언급 = 유지)."""
+    st = base_cut_state(ep_idx)
+    _hc = _head_majority(panels, "clothes")
+    if _hc and _hc.lower() != st["clothes"].lower():
+        st["clothes"] = _hc
+    _hf = _head_majority(panels, "emotion")
+    if _hf and _hf.lower() not in st["face"].lower():
+        st["face"] = _hf
+    for p in panels or []:
+        if not isinstance(p, dict):
+            continue
+        delta = p.get("state")
+        if isinstance(delta, dict):
+            for k in STATE_KEYS:
+                v = str(delta.get(k) or "").strip()
+                if v and v.lower() not in ("none", "null", "same", "유지", "변화없음"):
+                    st[k] = v
+        # 컷이 기존 필드(clothes/emotion)만 준 경우에도 연속 상태에 반영한다 — 두 갈래가 어긋나면 안 된다
+        _c = str(p.get("clothes") or "").strip()
+        if _c:
+            st["clothes"] = _c
+        _e = str(p.get("emotion") or "").strip()
+        if _e:
+            st["face"] = _e
+        p["_state"] = dict(st)
+    return st
 
 
 def _is_tag_word(s) -> bool:
@@ -1728,6 +1811,15 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         notes.append(f"본문 {len(body)}자 → 목표 {target}컷, 레이아웃 {n_cut}컷"
                      + (f" — 페이지 상한 {max(1, _cap)}에 닿아 본문 일부가 압축됐다(--max-pages 상향 권장)"
                         if n_pages >= max(1, _cap) else f" — 레이아웃이 {n_pages}페이지 {n_cut}컷으로 목표를 담았다"))
+    _sheet = fold_cut_state(panels, max(0, int(ep_num_1based) - 1))   # 컷별 연속 상태 시트(미언급 = 유지)
+    _chg, _prev = 0, {}
+    for p in panels:                                             # 직전 컷과 다른 컷 수 = 실제로 바뀐 컷
+        _cur = p.get("_state") or {}
+        if any(_cur.get(k) != _prev.get(k) for k in STATE_KEYS):
+            _chg += 1
+        _prev = _cur
+    _clog(f"EP{ep_num_1based} 컷 상태 시트: 시작 = 표정 '{_sheet['face']}' / 복장 '{_sheet['clothes']}' "
+          f"→ 변화가 적힌 컷 {_chg}개 (나머지는 직전 컷 값 유지)")
     _clog(f"EP{ep_num_1based} 컷 스크립트 완성: {len(panels)}컷 "
           f"(face {sum(1 for p in panels if p['type']=='face')} / action {sum(1 for p in panels if p['type']=='action')})"
           + (f" — cut.yaml {n_pages}페이지 {len(beats)}장면 LLM {len(beats)}회" if page_plans
@@ -2202,6 +2294,7 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         pose_text = re.sub(r",?\s*\((?:ahegao|heart-shaped pupils|rolling eyes)\)(?::[\d.]+\)?)?", "", pose_text)
     tag_block = anima_gen._build_tag_block(ep_idx, pose_text, camera_view, aspect_ratio,
                                            position_sentence, step_expression, is_side=False,
+                                           cut_state=(panel.get("_state") if isinstance(panel.get("_state"), dict) else None),
                                            climax_tag=climax_tag,
                                            clothes_override=str(panel.get("clothes") or ""),
                                            partner_block=is_pov, observer_block=is_pov)
@@ -2488,6 +2581,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
         prompts = []
         for p in panels:
             try:
+                fold_cut_state(panels, ep_idx)   # 스크립트에 이미 있으면 그대로 재계산(안전)
                 prompts.append(build_panel_prompt(ep_idx, p, safety_tag, gloss=gloss,
                                                  angle_preset=_pick_panel_angle(p)))
             except Exception as e:

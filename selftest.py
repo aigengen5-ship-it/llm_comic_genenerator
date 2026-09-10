@@ -2132,6 +2132,72 @@ def main() -> int:
           len(_bo) <= CI.PANELS_PER_BEAT_MAX and sum(_wo) >= 10, f"{len(_bo)}개 {_wo}")
     config.comic_item_cuts = _item_keep
 
+    # ── ⑬i [2026-09-09] 컷별 연속 상태 시트 (언급 없으면 직전 컷 유지)
+    _keep_state = (config.clothes, config.clothes_late, config.face_style, config.face_style_late,
+                   config.body_shape, config.exposure_tag)
+    config.clothes, config.clothes_late = "school uniform", "gold bra, gold miniskirt"
+    config.face_style, config.face_style_late = "crying, blushing", "ahegao"
+    config.body_shape = "petite, medium breasts"
+    config.exposure_tag = ["navel, cleavage"] * 12
+    config.makeup_tag = ["natural makeup"] * 12
+    _sp = [
+        {"no": 1, "pose": "She sells matches.", "clothes": "", "emotion": "sad"},
+        {"no": 2, "pose": "She is pushed.", "clothes": "", "emotion": "crying",
+         "state": {"face": "", "makeup": "", "body": "", "clothes": "", "accessories": "",
+                   "hair": "", "marks": "tear trail", "props": "matchbox", "posture": "on the ground"}},
+        {"no": 3, "pose": "She transforms.", "clothes": "", "emotion": "",
+         "state": {"face": "ahegao", "makeup": "heavy makeup", "body": "large breasts, wide hips",
+                   "clothes": "gold bra, gold miniskirt", "accessories": "heart choker",
+                   "hair": "hair undone", "marks": "", "props": "wads of cash", "posture": ""}},
+        {"no": 4, "pose": "She dances.", "clothes": "", "emotion": ""},
+    ]
+    _st0 = CG.base_cut_state(0)                     # 컷 0의 초기 상태 = 회차 시작 상태
+    check("상태 시트 시작 값은 회차 **시작** 상태다(후반 의상/표정이 먼저 오지 않는다)",
+          _st0["clothes"] == "school uniform" and _st0["face"] == "crying, blushing",
+          f"{_st0['clothes']}/{_st0['face']}")
+    CG.fold_cut_state(_sp, 0)
+    check("회차 요약이 시작 복장을 틀려도 **본문을 본 컷 스크립트 초반 다수값**이 이긴다",
+          CG._head_majority([{"clothes": "school uniform"}, {"clothes": "school uniform"},
+                             {"clothes": ""}, {"clothes": "bikini"}], "clothes") == "school uniform"
+          and CG._head_majority([{"clothes": "bikini"}, {"clothes": "school uniform"},
+                                 {"clothes": "school uniform"}], "clothes") == "school uniform",
+          CG._head_majority([{"clothes": "bikini"}, {"clothes": "school uniform"}], "clothes"))
+    check("컷 2에서 생긴 흔적·자세는 이후 컷에도 유지되고, 컷 3이 명시한 소지품은 그것을 덮는다",
+          _sp[3]["_state"]["marks"] == "tear trail"            # 컷 3은 marks를 안 씀 → 유지
+          and _sp[3]["_state"]["posture"] == "on the ground"   # 컷 3 posture "" → 유지
+          and _sp[3]["_state"]["props"] == "wads of cash",     # 컷 3이 덮어씀
+          str(_sp[3]["_state"])[:90])
+    check("컷 3의 변화(옷·화장·몸·악세사리·머리)가 컷 4로 이어진다",
+          _sp[3]["_state"]["clothes"] == "gold bra, gold miniskirt"
+          and _sp[3]["_state"]["makeup"] == "heavy makeup"
+          and _sp[3]["_state"]["body"] == "large breasts, wide hips"
+          and _sp[3]["_state"]["accessories"] == "heart choker"
+          and _sp[3]["_state"]["hair"] == "hair undone", str(_sp[3]["_state"])[:90])
+    check("컷의 clothes/emotion 필드도 상태에 반영된다(두 갈래가 어긋나지 않는다)",
+          _sp[2]["_state"]["clothes"] == "gold bra, gold miniskirt", str(_sp[2]["_state"]["clothes"]))
+    _bk_state = anima_gen._build_tag_block(0, "she dances", "front_view", "wide", "", "", False,
+                                          cut_state=_sp[3]["_state"])
+    check("상태 시트의 악세사리/흔적/소지품/자세가 프롬프트 라인이 된다",
+          "[AAA ACCESSORIES] heart choker" in _bk_state and "[AAA MARKS] tear trail" in _bk_state
+          and "[PROPS] wads of cash" in _bk_state and "[POSTURE] on the ground" in _bk_state,
+          " ".join(l for l in _bk_state.split("\n") if "MARKS" in l or "PROPS" in l)[:110])
+    _bk_start = anima_gen._build_tag_block(0, "she sells", "front_view", "wide", "", "", False,
+                                           cut_state=_sp[0]["_state"])
+    check("회차 시작 복장 컷은 후반 의상이 없고 노출 태그는 살아 있다",
+          "gold miniskirt" not in _bk_start and "school uniform" in _bk_start,
+          " ".join(l for l in _bk_start.split("\n") if "CLOTHES" in l or "EXPOSURE" in l)[:120])
+    check("옷을 갈아입지 않은 컷은 [AAA EXPOSURE]를 잃지 않는다(예전 버그: clothes를 쓴 컷은 전부 빠짐)",
+          "navel" in _bk_start or "cleavage" in _bk_start or "cameltoe" in _bk_start,
+          " ".join(l for l in _bk_start.split("\n") if "EXPOSURE" in l)[:110])
+    check("옷을 갈아입은 컷부터는 회차 노출 태그가 빠진다(새 옷에 예전 노출 어구가 옮지 않는다)",
+          "gold miniskirt" in _bk_state,
+          " ".join(l for l in _bk_state.split("\n") if "CLOTHES" in l)[:100])
+    _gs = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("컷 스크립트 프롬프트에 상태 시트(스키마 + '미언급 = 직전 컷 유지')가 있다",
+          '"state": ' in _gs and "직전 컷과 동일" in _gs and "accessories" in _gs)
+    (config.clothes, config.clothes_late, config.face_style, config.face_style_late,
+     config.body_shape, config.exposure_tag) = _keep_state
+
     # ── ⑬h [2026-09-09] 페이지 템플릿 고정 (--template)
     _tm_all = CG.load_cut_templates()
     _one = sorted(k for k in _tm_all if not _tm_all[k].get("epilogue"))[3]

@@ -1942,7 +1942,8 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
                      position_sentence: str, step_expression: str, is_side: bool,
                      name_a: str = None, name_b: str = None, observer_text: str = None,
                      climax_tag: str = "", clothes_override: str = "",
-                     partner_block: bool = None, observer_block: bool = None) -> str:
+                     partner_block: bool = None, observer_block: bool = None,
+                     cut_state: dict = None) -> str:
     """자연어 문장 대신 원본 danbooru 태그를 카테고리별로 나열 (LLM 프롬프트 생성용)
 
     [2026-08-28] [AAA ...]/[BBB ...] 블록으로 캐릭터별 물리 분리 (오염 방지):
@@ -1980,7 +1981,10 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     # [2026-09-09] 시간 분리 — 회차 의상 목록은 '시작 + 후반'이 한 줄로 섞여 있다(태그셋 LLM은
     #   회차 전체를 본다). 그래서 컷이 옷을 명시하면 **컷 것만** 쓰고, 컷이 침묵하면 회차
     #   시작 상태(config.clothes)를 기준으로 삼는다. 후반 옷/회차 의상 목록은 클라이맥스 컷에서만 더한다.
-    _ovr = str(clothes_override or "").strip()
+    # [2026-09-09] 컷 **연속 상태 시트**(comic_gen.fold_cut_state)가 들어오면 그것이 이 컷의 정답
+    #   이다. 표정/화장/몸/옷/악세사리/머리/흔적/소지품/자세를 회차 상수 대신 쓴다.
+    _st = cut_state if isinstance(cut_state, dict) else {}
+    _ovr = str(_st.get("clothes") or "").strip() or str(clothes_override or "").strip()
     _start = str(getattr(config, "clothes", "") or "").strip()
     _late_c = str(getattr(config, "clothes_late", "") or "").strip()
     if _ovr:
@@ -1992,6 +1996,9 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         base_clothes = _dedupe_csv(", ".join([p for p in bits if p]))
     # 컷별 복장 변화는 '덮어쓰기'가 아니라 '덧쓰기'(정말 갈아입은 컷만 덮어쓴다)
     clothes_tokens = _undress_guard(_merge_clothes(base_clothes, _ovr), _start or base_clothes)
+    # 시작 복장을 그대로 쓰는 컷까지 [AAA EXPOSURE]를 잃지 않게, 노출 태그는 '옷이 실제로
+    #   바뀐 컷'에서만 뺀다(예전은 clothes를 명시한 모든 컷에서 빠져 노출 태그가 사라졌다).
+    _wardrobe_changed = bool(_ovr) and _ovr.lower() != _start.lower()
 
     # expression(주인공): face_tag + step_expression + expression_arr에서 랜덤 1개
     expr_pick = ""
@@ -2004,7 +2011,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     # [2026-09-09] 표정 고정 버그: face_tag는 **회차당 1개**를 태그셋 LLM이 정해 모든 컷에 붙는다.
     #   실측(face_tag = "ahegao, wide eyes, tongue out, rolling eyes, flushed face…") → 일상 컷까지 아헤가오.
     #   그래서 컷별 표정(step_expression = 컷의 화면 감정)이 있으면 회차 톤은 물러난다.
-    cut_face = (step_expression or "").strip()
+    cut_face = (step_expression or str(_st.get("face") or "")).strip()
     ep_face = config.face_tag[episode] or ""
     if cut_face:
         expression_parts = [cut_face]
@@ -2035,7 +2042,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if _ctags:
         lines_block.append(f"[AAA TRIGGER] {_ctags}")
     # [2026-08-27] 안경 혼입 방지: 2인물(사이드뷰)에서 상대방만 안경이면 주인공은 명시적 no glasses
-    hair_line = f"{config.hair_color}, {config.hair_style}"
+    hair_line = str(_st.get("hair") or "").strip() or f"{config.hair_color}, {config.hair_style}"
     if is_side and (getattr(config, 'glasses2', '') or '').strip() == '안경' and not _protagonist_has_glasses():
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
@@ -2050,17 +2057,29 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         _fl = face_line if climax_tag else _calm_face(face_line)
         if _fl:
             lines_block.append(f"[AAA FACE] {_fl}")
-    if config.makeup_tag[episode]:
-        lines_block.append(f"[AAA MAKEUP] {config.makeup_tag[episode]}")
+    _mk = str(_st.get("makeup") or "").strip() or (config.makeup_tag[episode] or "")
+    if _mk:
+        lines_block.append(f"[AAA MAKEUP] {_mk}")
     lines_block.append("[AAA EXPRESSION] " + ", ".join(
         _calm_face(p) if not climax_tag else p for p in expression_parts))
-    body_parts = [p for p in [config.body_shape, config.body_tag[episode], style_tokens] if p]
+    _bd = str(_st.get("body") or "").strip() or ", ".join(
+        [p for p in [config.body_shape, config.body_tag[episode]] if p])
+    body_parts = [p for p in [_bd, style_tokens] if p]
     lines_block.append(f"[AAA BODY] {', '.join(body_parts)}")
     if clothes_tokens:
         lines_block.append(f"[AAA CLOTHES] {clothes_tokens}")
+    # [2026-09-09] 상태 시트로만 표현 가능했던 항목들 — 회차 상수엔 없는 컷 단위 정보다.
+    if str(_st.get("accessories") or "").strip():
+        lines_block.append(f"[AAA ACCESSORIES] {str(_st['accessories']).strip()}")
+    if str(_st.get("marks") or "").strip():
+        lines_block.append(f"[AAA MARKS] {str(_st['marks']).strip()}")
+    if str(_st.get("props") or "").strip():
+        lines_block.append(f"[PROPS] {str(_st['props']).strip()}")
+    if str(_st.get("posture") or "").strip():
+        lines_block.append(f"[POSTURE] {str(_st['posture']).strip()}")
     # [2026-08-28] 주인공 노출: exposure + p_exposure(parts exposure) + marks (모두 주인공)
     # makeup은 [AAA MAKEUP]으로 분리 (이전에는 [EXPOSURE]에 섞여 상대방 전이 원인)
-    exposure_parts = [p for p in ["" if clothes_override else config.exposure_tag[episode],
+    exposure_parts = [p for p in ["" if _wardrobe_changed else config.exposure_tag[episode],
                                   config.p_exposure_tag[episode],
                                   config.marks_tag[episode]] if p]
     # [2026-08-30] -real 모드: 두근거림(L) 레벨별 체모 태그 강제 주입 (신체 속성 → [AAA EXPOSURE], real 모드만)

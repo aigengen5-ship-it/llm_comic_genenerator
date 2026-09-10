@@ -6,16 +6,16 @@
    "file": "speech_plain.png",
    "moods": "",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -25,16 +25,16 @@
    "file": "speech_soft.png",
    "moods": "gentle warm soft sad",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -44,16 +44,16 @@
    "file": "speech_sharp.png",
    "moods": "anger",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -63,16 +63,16 @@
    "file": "speech_shout.png",
    "moods": "surprise sparkle",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -82,16 +82,16 @@
    "file": "speech_flat.png",
    "moods": "gloom question",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -101,16 +101,16 @@
    "file": "thought_cloud.png",
    "moods": "",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -120,16 +120,16 @@
    "file": "thought_dreamy.png",
    "moods": "heart sparkle",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -139,16 +139,16 @@
    "file": "thought_knot.png",
    "moods": "sweat question anger",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
    ],
    "border": 7,
    "alpha": 210
@@ -158,16 +158,143 @@
    "file": "thought_void.png",
    "moods": "gloom",
    "slice": [
-    28,
-    28,
-    28,
-    28
+    18,
+    18,
+    18,
+    18
    ],
    "safe": [
-    34,
-    30,
-    34,
-    30
+    26,
+    26,
+    26,
+    26
+   ],
+   "border": 7,
+   "alpha": 210
+  },
+  "tail_plain": {
+   "kind": "tail",
+   "file": "tail_plain.png",
+   "moods": "",
+   "slice": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "safe": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "border": 7,
+   "alpha": 210,
+   "hinge": [
+    0,
+    48
+   ],
+   "tip": [
+    184,
+    48
+   ]
+  },
+  "tail_sharp": {
+   "kind": "tail",
+   "file": "tail_sharp.png",
+   "moods": "",
+   "slice": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "safe": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "border": 7,
+   "alpha": 210,
+   "hinge": [
+    0,
+    48
+   ],
+   "tip": [
+    184,
+    48
+   ]
+  },
+  "tail_shout": {
+   "kind": "tail",
+   "file": "tail_shout.png",
+   "moods": "",
+   "slice": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "safe": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "border": 7,
+   "alpha": 210,
+   "hinge": [
+    0,
+    48
+   ],
+   "tip": [
+    184,
+    48
+   ]
+  },
+  "tail_soft": {
+   "kind": "tail",
+   "file": "tail_soft.png",
+   "moods": "",
+   "slice": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "safe": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "border": 7,
+   "alpha": 210,
+   "hinge": [
+    0,
+    48
+   ],
+   "tip": [
+    184,
+    48
+   ]
+  },
+  "bubble": {
+   "kind": "bubble",
+   "file": "bubble.png",
+   "moods": "",
+   "slice": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "safe": [
+    10,
+    10,
+    10,
+    10
    ],
    "border": 7,
    "alpha": 210

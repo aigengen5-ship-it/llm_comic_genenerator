@@ -178,6 +178,10 @@ def check_llm_server(check):
 
 
 def main() -> int:
+    # [2026-09-10] selftest는 **기본 정책(청년향)**으로 실행한다. local_settings.yaml에서
+    #   allow_explicit: yes를 켜 두은 기계라도 결과는 똑같아야 한다(실측: 사용자가 켜 둔 날
+    #   청년향 검사 7개가 한꺼번에 붉어졌다). explicit를 전제로 하는 검사는 스스로 켜고 끈다.
+    config.explicit_cli = False
     print("\n== ① 이식성 (필수 파일 자가 보유) ==")
     need_py = ["run_comic.py", "comic_input.py", "comic_gen.py", "comic_page_merge.py", "anima_gen.py",
                "openAPI_control.py", "config.py", "plot.json", "novel_progress.py"]
@@ -2678,36 +2682,25 @@ def main() -> int:
         config.char_tags = _keep[3]
 
 
-    # ── ⑮ [2026-09-10] 말풍선·속마음 이미지 은행 (9슬라이스 + 감정 선택)
+    # ── ⑮ [2026-09-10] 말풍선·속마음 이미지 은행 (9슬라이스 · 감정 선택 · 회전 꼬리)
     from tempfile import mkdtemp as _mkd_b
     _btmp = _mkd_b(prefix="selftest_balloons_")
     _bkeep = CPM.balloon_style()
     try:
         _bs = CPM.generate_balloon_set(dest=_btmp)
-        _png = [f for f in os.listdir(_btmp) if f.endswith(".png")]
-        check("--get-balloons가 자산 9종과 manifest를 만든다",
-              len(_png) == len(CPM.BALLOON_ART_VARIANTS) and os.path.exists(_bs["manifest"]),
-              f"{len(_png)}장면 / {_bs['manifest']}")
+        _png = sorted(f for f in os.listdir(_btmp) if f.endswith(".png"))
+        _bodies = [f for f in _png if f.startswith(("speech_", "thought_"))]
+        _tails = [f for f in _png if f.startswith("tail_")]
+        check("--get-balloons가 몸통 9종 + 꼬리 4종 + 물방울 1종을 만든다",
+              len(_bodies) == len(CPM.BALLOON_ART_VARIANTS) and len(_tails) == len(CPM.TAIL_ART)
+              and (CPM.BUBBLE_ART + ".png") in _png and os.path.exists(_bs["manifest"]),
+              f"몸통 {len(_bodies)} / 꼬리 {len(_tails)} / 물방울 {(CPM.BUBBLE_ART + '.png') in _png}")
         CPM.set_balloon_style("image", _btmp)
         check("감정으로 변형을 고른다 (anger→sharp, heart→dreamy, surprise→shout, gloom→void)",
               CPM.pick_balloon_variant("speech", "anger", 0, 0, 0) == "speech_sharp"
               and CPM.pick_balloon_variant("thought", "heart", 0, 0, 0) == "thought_dreamy"
               and CPM.pick_balloon_variant("speech", "surprise", 0, 0, 0) == "speech_shout"
-              and CPM.pick_balloon_variant("thought", "gloom", 0, 0, 0) == "thought_void",
-              CPM.pick_balloon_variant("speech", "anger", 0, 0, 0))
-
-        def _one(bg=(40, 40, 40), text="테스트 문장입니다.", emo="anger"):
-            cv = Image.new("RGB", (520, 360), bg)
-            dd = ImageDraw.Draw(cv)
-            used = []
-            bx = CPM._draw_balloon(dd, 10, 10, 500, 340, CPM._balloon("speech", text, emo=emo),
-                                   canvas=cv, bank_used=used)
-            return cv, used, bx
-
-        _cv1, _u1, _bx1 = _one()
-        check("이미지 모드로 그려지고 페이지에 사용 변형이 기록된다", bool(_u1) and _bx1, str(_u1))
-        check("같은 원고를 두 번 그리면 같은 변형이 고른다(random 안 쓴다)",
-              _one()[1] == _u1 and _one((250, 250, 250))[1] == _u1, str(_u1))
+              and CPM.pick_balloon_variant("thought", "gloom", 0, 0, 0) == "thought_void")
         _used_page = []
         _seq = []
         for _i in range(3):
@@ -2717,37 +2710,87 @@ def main() -> int:
                 _used_page.append(_v)
         check("같은 페이지에서 같은 모양을 2번 쓰지 않는다(변형이 1종일 때만 예외)",
               len([v for v in _seq if v]) == len(set(_seq)), str(_seq))
-        _x0, _y0, _x1, _y1 = _bx1
-        _cx, _cy = (_x0 + _x1) // 2, (_y0 + _y1) // 2
-        _exp = round(255 * CPM.BALLOON_ART_PLATE_ALPHA / 255.0 + 40 * (1 - CPM.BALLOON_ART_PLATE_ALPHA / 255.0))
-        _got = _cv1.getpixel((_cx, _cy))
-        check("플레이트는 반투명 — 배경이 정확히 비친다(α=210)",
-              abs(_got[0] - _exp) <= 4 and abs(_got[2] - _exp) <= 4, f"{_got} 기대≈{_exp}")
-        check("모서리는 투명(사각형으로 늘리지 않았다 — 형태가 살아 있다)",
-              _cv1.getpixel((_x0 + 1, _y0 + 1)) == (40, 40, 40), str(_cv1.getpixel((_x0 + 1, _y0 + 1))))
-        _cv2, _u2, _bx2 = _one(text="그래서 말인데, 그날 이후로 나는 네가 조금 무서워졌다. 그래도 네가 온 것은 기뻤다.")
-        def _border_px(cv, box):
-            x0, y0, x1, y1 = box
-            cxm = (x0 + x1) // 2
-            row = [cv.getpixel((x, (y0 + y1) // 2))[0] for x in range(x0 - 6, x1 + 6)]
-            dark = [i for i, v in enumerate(row) if v < 90]
-            return (max(dark) - min(dark) + 1) if dark else 0, len([i for i, v in enumerate(row) if v < 200])
-        _w1, _ = _border_px(_cv1, _bx1)
-        _w2, _ = _border_px(_cv2, _bx2)
-        check("9슬라이스 — 다른 크기의 풍선에서 테투리 두께가 거의 일정하다(늘어남 방지)",
-              abs(_w1 - _w2) <= 4, f"작은 것 {_w1}px / 큰 것 {_w2}px")
-        check("긴 대사로 풍선이 커져도 배경이 그대로 비친다(반투명 유지)",
-              abs(_cv2.getpixel((((_bx2[0] + _bx2[2]) // 2), (_bx2[1] + _bx2[3]) // 2))[0] - _exp) <= 6,
-              str(_bx2))
+
+        _LONG = "그래서 말인데, 그날 이후로 나는 네가 조금 무서워졌다. 그래도 네가 온 것은 기뻤다."
+
+        def _shot(kind, text, emo="", side=None, bg=(40, 40, 40), style=None):
+            if style:
+                CPM.set_balloon_style(style, _btmp if style == "image" else None)
+            cv = Image.new("RGB", (560, 380), bg)
+            dd = ImageDraw.Draw(cv)
+            used = []
+            bx = CPM._draw_balloon(dd, 10, 10, 540, 360,
+                                   CPM._balloon(kind, text, side=side, emo=emo), canvas=cv, bank_used=used)
+            if style:
+                CPM.set_balloon_style("image", _btmp)
+            return cv, used, bx
+
+        _cv, _u, _bx = _shot("speech", "거기 서! 오늘 할 이야기가 있어서 왔어.")
+        check("이미지 모드로 그려지고 페이지에 사용 변형이 기록된다", bool(_u) and _bx is not None, str(_u))
+        check("같은 원고를 두 번 그리면 같은 변형이 고른다(random 안 쓴다)",
+              _shot("speech", "거기 서! 오늘 할 이야기가 있어서 왔어.")[1] == _u)
+        # ── 사용자 지시: 몸통이 글자보다 작았다(2~2.5배로) — 벡터때와 견준다
+        _cv_v, _, _bx_v = _shot("speech", "거기 서! 오늘 할 이야기가 있어서 왔어.", style="vector")
+        _a_img = (_bx[2] - _bx[0]) * (_bx[3] - _bx[1])
+        _a_vec = (_bx_v[2] - _bx_v[0]) * (_bx_v[3] - _bx_v[1])
+        check("몸통이 예전(벡터)보다 면적 2배 이상 크다 — 글자를 몸통 안에 다 넣는다",
+              _a_img >= 2.0 * _a_vec, f"이미지 {_a_img} vs 벡터 {_a_vec} = {_a_img / max(1, _a_vec):.1f}배")
+
+        def _bg_leak(cv, box, variant):
+            w, h = box[2] - box[0], box[3] - box[1]
+            sl, st, sr, sb = CPM._balloon_art_safe(variant, w, h)
+            x0, y0, x1, y1 = box[0] + sl, box[1] + st, box[2] - sr, box[3] - sb
+            tot = leak = 0
+            for yy in range(y0, max(y0, y1), 2):
+                for xx in range(x0, max(x0, x1), 2):
+                    tot += 1
+                    if abs(cv.getpixel((xx, yy))[0] - 40) <= 5:
+                        leak += 1
+            return (leak / tot) if tot else 1.0
+
+        _r = []
+        for _k, _t in (("speech", "거기 서!"), ("speech", _LONG), ("thought", "…심장이 너무 시끄럽다."),
+                       ("thought", "고백할 타이밍을 놓쳤다.")):
+            _c2, _u2, _b2 = _shot(_k, _t)
+            _r.append(_bg_leak(_c2, _b2, _u2[0]))
+        check("글자가 몸통 안에 전부 들어간다(안전영역 배경 노출 ≤ 0.5%)",
+              all(x <= 0.005 for x in _r), " ".join(f"{x:.2%}" for x in _r))
+        _cv3, _u3, _bx3 = _shot("speech", "이음새 확인 문장입니다.")
+        _pl = [c for c in (_cv3.getpixel((xx, yy))[0]
+                           for yy in range(_bx3[1] + 30, _bx3[3] - 30, 2)
+                           for xx in range(_bx3[0] + 50, _bx3[2] - 50, 2)) if c > 200]
+        check("플레이트는 반투명(α=210)이고 꼬리와 겹치는 자리에서 짙어지지 않는다",
+              _pl and 210 <= max(_pl) <= 220, f"몸통 안 최대 {max(_pl) if _pl else None} (기대 217)")
+        # 꼬리는 화자를 가리킨다 — 밑점을 기준으로 회전하므로 좌/우에서 중심이 반대편으로 간다
+        def _tail_bias(side):
+            cv, u, bx = _shot("speech", "여기 좀 봐.", side=side)
+            if not bx:
+                return None
+            x0, y0, x1, y1 = bx
+            sx = sy = n = 0
+            for yy in range(max(0, y0 - 44), min(379, y1 + 44)):
+                for xx in range(max(0, x0 - 44), min(559, x1 + 44)):
+                    if cv.getpixel((xx, yy))[0] < 110 and not (x0 <= xx <= x1 and y0 <= yy <= y1):
+                        sx += xx
+                        n += 1
+            return ((sx / float(n)) - (x0 + x1) / 2.0) if n else None
+        _bl, _br = _tail_bias("left"), _tail_bias("right")
+        check("꼬리가 화자 쪽으로 회전한다(왼쪽/오른쪽에서 꼬리 중심이 반대편으로 이동)",
+              _bl is not None and _br is not None and _bl < 0 < _br, f"왼쪽 {(_bl or 0):+.1f} / 오른쪽 {(_br or 0):+.1f}")
+        _cv4, _u4, _bx4 = _shot("thought", "…심장이 너무 시끄럽다.")
+        _outs = sum(1 for yy in range(_bx4[3] + 2, min(379, _bx4[3] + 34))
+                    for xx in range(_bx4[0], _bx4[2]) if _cv4.getpixel((xx, yy))[0] < 110)
+        check("속마음 물방울은 몸통 **바깥**에 놓인다(안에는 같은 색이라 보이지 않았다)",
+              _outs > 40, f"몸통 아래 테두리 픽셀 {_outs}")
         CPM.set_balloon_style("image", os.path.join(_btmp, "없는_디렉터리"))
-        _cv3, _u3, _bx3 = _one(bg=(200, 200, 200), text="벡터 폴백 확인")
+        _cv5, _u5, _bx5 = _shot("speech", "벡터 폴백 확인")
         check("자산이 없으면 조용히 벡터로 그린다(렌더가 죽지 않는다)",
-              _u3 == [] and _bx3 is not None and _cv3.getpixel(
-                  ((_bx3[0] + _bx3[2]) // 2, (_bx3[1] + _bx3[3]) // 2))[0] > 250, str(_u3))
+              _u5 == [] and _bx5 is not None and _cv5.getpixel(
+                  ((_bx5[0] + _bx5[2]) // 2, (_bx5[1] + _bx5[3]) // 2))[0] > 250, str(_u5))
         CPM.set_balloon_style("image", _btmp)
-        _cv4 = Image.new("RGB", (520, 360), (200, 200, 200))
+        _cv6 = Image.new("RGB", (520, 360), (200, 200, 200))
         check("좌우 반전해서 붙일 수 있다(꼬리 방향이 반대인 컷)",
-              CPM.paste_balloon_art(_cv4, "speech_sharp", (10, 10, 500, 340), (60, 60, 360, 160),
+              CPM.paste_balloon_art(_cv6, "speech_sharp", (10, 10, 500, 340), (60, 60, 360, 160),
                                     flip=True) == "speech_sharp")
     finally:
         CPM.set_balloon_style(_bkeep, CPM.BALLOON_ART_DIR_DEFAULT)

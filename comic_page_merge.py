@@ -46,7 +46,7 @@
 """
 import math
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- 기본 파라미터
 DEFAULT_CELL_W = 820          # 그리드 단위 폭 (px)
@@ -147,7 +147,27 @@ THOUGHT_W_RATIO = 0.20                   # 속ma음(타원) 폭 = 컷 폭의 20%
 BALLOON_ART_DIR_DEFAULT = os.path.join("data", "balloons")
 BALLOON_ART_MANIFEST = "manifest.json"
 BALLOON_ART_W, BALLOON_ART_H = 640, 480       # 자리표시 자산 제작 크기
-BALLOON_ART_MARGIN = 28                        # 9슬라이스 절선(투명 여백) = 테투리 품는幅
+BALLOON_ART_MARGIN = 22                        # 모양이 캔버스 밖으로 나가지게 두는 최소 여백
+BALLOON_ART_SLICE = 18                         # 9슬라이스 절선 = 굽혀진 테투리 밴드 폭
+BALLOON_SIZE_BOOST = 2.2                       # 몸통을 컷 폭 기준 이 배수로 키워 만든다(글자보다 작아짐 방지)
+BALLOON_MIN_H_RATIO = 0.42                     # 몸통 최소 높이 = 컷 높이 × 이 값(보스트 반영)
+BALLOON_ART_FIT = 0.88                         # 자산 몸통은 사각에 가까워 타원보다 넓게 쓴다
+# [2026-09-10] 꼬리·생각 물방울도 자산으로 둔다(사용자 제안). 단 **방향이 연속값**이라
+#  資產을 그대로 붙이는 게 아니라 기준 방향으로 그려 놓고 **회전·크기조정·반전**한다.
+#   (꼬리는 이미지 크기가 아니라 화자 좌표를 가리키므로 각이 컷마다 다르다.)
+TAIL_ART = {                       # id: (기반 폭, 끝 두께 배율, 곡률) — 기본은 오른쪽을 가리켜 그려진다
+    "tail_plain": (80, 1.00, 0.16),
+    "tail_sharp": (58, 1.00, 0.02),
+    "tail_shout": (104, 1.00, 0.30),
+    "tail_soft":  (86, 1.00, 0.42),
+}
+TAIL_ART_W, TAIL_ART_H = 192, 96   # 기준 자산 크기(꼬리 hinge는 (0, H/2))
+TAIL_ART_MAP = {                   # 몸통 변형 → 쓸 꼬리 자산
+    "speech_plain": "tail_plain", "speech_flat": "tail_plain",
+    "speech_sharp": "tail_sharp", "speech_shout": "tail_shout", "speech_soft": "tail_soft",
+}
+BUBBLE_ART = "bubble"              # 속마음 물방울(하나를 3번 축소해 쓴다)
+BUBBLE_ART_SIZES = (30, 20, 13)    # 자산 물방울 지름(px) — 벡터(6/4/3)보다 크게(테투리를 굽히려면)
 BALLOON_ART_SAFE = (34, 30, 34, 30)            # 글자 안전 여백 (l,t,r,b)
 BALLOON_ART_PLATE_ALPHA = 210                  # 플레이트(내부) 불투명도 — 반투명
 # (id, kind, 모양, moods) — id는 파일명이 된다(영문만)
@@ -1231,7 +1251,7 @@ _SHAPE_SPEC = {            # (n, k, amp) — 말풍선은 각진 기반 + 날선
 }
 
 
-def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
+def generate_balloon_set(dest: str = None, force: bool = False, plate_fill=None) -> dict:
     """data/balloons/에 자리표시 자산 9종 + manifest.json을 만든다(코드로 그림).
 
     실제 작화 자산을 같은 파일명·같은 스펙으로 덮어넣으면 코드 수정이 필요 없다.
@@ -1244,9 +1264,9 @@ def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
     for vid, kind, shape, moods in BALLOON_ART_VARIANTS:
         path = os.path.join(d, vid + ".png")
         man["assets"][vid] = {"kind": kind, "file": vid + ".png", "moods": moods,
-                             "slice": [BALLOON_ART_MARGIN] * 4,
-                             "safe": list(BALLOON_ART_SAFE), "border": 7,
-                             "alpha": BALLOON_ART_PLATE_ALPHA}
+                             "slice": [BALLOON_ART_SLICE] * 4,      # 테투리 밴드 폭(9슬라이스 절선)
+                             "safe": [BALLOON_ART_SLICE + 8] * 4,    # 글자 안전 여백
+                             "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA}
         if os.path.exists(path) and not force:
             made.append(vid)
             continue
@@ -1265,6 +1285,42 @@ def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
                    fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
         layer.save(path)
         made.append(vid)
+    # ── 꼬리 4종·생각 물방울 1종 (기준은 "오른쪽을 가리켜" 그린다 — 붙일 때 회전·반전)
+    for tid, (bh_, _tw, curl) in TAIL_ART.items():
+        tpath = os.path.join(d, tid + ".png")
+        man["assets"][tid] = {"kind": "tail", "file": tid + ".png", "moods": "",
+                             "slice": [4, 4, 4, 4], "safe": [8, 8, 8, 8],
+                             "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA,
+                             "hinge": [0, TAIL_ART_H // 2], "tip": [TAIL_ART_W - 8, TAIL_ART_H // 2]}
+        if os.path.exists(tpath) and not force:
+            continue
+        tl = Image.new("RGBA", (TAIL_ART_W, TAIL_ART_H), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tl)
+        mid, tipx = TAIL_ART_H / 2.0, TAIL_ART_W - 8.0
+        pts, top, bot = [], [], []
+        for i in range(25):                       # 두 갈래 변을 살짝 부풀려 손그림 느낌으로
+            t = i / 24.0
+            bulge = curl * (bh_ / 2.0) * (t ** 0.6)
+            top.append((t * tipx, mid - (bh_ / 2.0) * (1.0 - t) - bulge * 0.0))
+            bot.append((t * tipx, mid + (bh_ / 2.0) * (1.0 - t) + bulge * 0.0))
+        pts = top + list(reversed(bot))
+        td.polygon(pts, fill=tuple(plate_fill or DEFAULT_PLATE)[:3] + (BALLOON_ART_PLATE_ALPHA,))
+        for side in (top, bot):                   # 밑변(몸통에 붙는 변)에는 선을 긋지 않는다
+            td.line(side, fill=tuple(DEFAULT_FRAME) + (255,), width=7, joint="curve")
+        td.polygon([top[-1], (tipx, mid), bot[-1]], fill=tuple(DEFAULT_FRAME) + (255,))
+        tl.save(tpath)
+    bpath = os.path.join(d, BUBBLE_ART + ".png")
+    man["assets"][BUBBLE_ART] = {"kind": "bubble", "file": BUBBLE_ART + ".png", "moods": "",
+                                 "slice": [6, 6, 6, 6], "safe": [10, 10, 10, 10],
+                                 "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA}
+    if not (os.path.exists(bpath) and not force):
+        bs = 128
+        bl = Image.new("RGBA", (bs, bs), (0, 0, 0, 0))
+        bd = ImageDraw.Draw(bl)
+        bd.ellipse([4, 4, bs - 4, bs - 4], fill=tuple(DEFAULT_FRAME) + (255,))
+        bd.ellipse([12, 12, bs - 12, bs - 12],
+                   fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
+        bl.save(bpath)
     try:
         with open(os.path.join(d, BALLOON_ART_MANIFEST), "w", encoding="utf-8") as f:
             _json.dump(man, f, ensure_ascii=False, indent=1)
@@ -1275,14 +1331,61 @@ def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
     return {"dir": d, "made": made, "manifest": os.path.join(d, BALLOON_ART_MANIFEST)}
 
 
-def _balloon_art_safe(variant: str):
-    """자산의 글자 안전 여백 (l,t,r,b) — 곡선 가장자리 자산에서 글자가 테투리에 닿지 않게."""
-    a = (_balloon_bank().get(variant or "") or {}).get("safe") or list(BALLOON_ART_SAFE)
+def _auto_safe(img, thresh=200):
+    """자산에서 **플레이트가 실제로 덮인** 최대 중앙 사각지의 여백 (l,t,r,b).
+
+    모양(별·뾰족·구름)은 모서리가 파여 있어 정해진 여백 하나로 안전영역을 말할 수 없다.
+    로딩 때 한 번만 이진탐색으로 재고, 이후 텍스트 정렬은 이 값을 쓴다.
+    """
     try:
-        a = [int(x) for x in a]
-        l, t, r, b = (a + [0, 0, 0, 0])[:4]
+        w, h = img.size
+        al = img.split()[3]
+        hi = max(2, int(0.30 * min(w, h)))          # 너무 파인 모양은 30%까지만 양보하지 않는다
+        covered = lambda d: al.crop((d, d, w - d, h - d)).getextrema()[0] >= thresh
+        if covered(1):
+            return 1, 1, 1, 1
+        if not covered(hi):                          # 30%까지 물러나도 안 덮이는 모양
+            return hi, hi, hi, hi
+        lo = 1
+        while lo + 1 < hi:                          # '덮이는 최소 여백'을 찾는다(여백이 클수록 잘 덮인다)
+            mid = (lo + hi) // 2
+            if covered(mid):
+                hi = mid
+            else:
+                lo = mid
+        return hi, hi, hi, hi
     except Exception:
-        l, t, r, b = BALLOON_ART_SAFE
+        return tuple(BALLOON_ART_SAFE)
+
+
+def _balloon_art_safe(variant: str, out_w: int = 0, out_h: int = 0):
+    """자산의 글자 안전 여백 (l,t,r,b) — **9슬라이스로 붙였을 때의 실제 여백**으로 돌려준다.
+
+    자산에서 잰 여백을 그대로 쓰면 틀린다: 9슬라이스는 모서리·가장자리 스트립을 그대로 두고
+    가운데만 늘리므로, 몸통이 자산보다 작아지면(실제 대부분의 컷) 여백의 상대 비중이 달라진다.
+    out_w/out_h를 주면 그 크기로 붙였을 때의 여백을 계산한다.
+    """
+    a = (_balloon_bank().get(variant or "") or {})
+    safe = a.get("safe") or list(BALLOON_ART_SAFE)
+    slc = a.get("slice") or [BALLOON_ART_SLICE] * 4
+    try:
+        safe = [int(x) for x in safe]
+        slc = [max(1, int(x)) for x in slc]
+        l, t, r, b = (safe + [0, 0, 0, 0])[:4]
+        cl, ct, cr, cb = (slc + [1, 1, 1, 1])[:4]
+    except Exception:
+        return tuple(BALLOON_ART_SAFE)
+    if out_w and out_h and a.get("img") is not None:
+        try:
+            aw, ah = a["img"].size
+            sx = max(0.02, (int(out_w) - cl - cr) / float(max(1, aw - cl - cr)))
+            sy = max(0.02, (int(out_h) - ct - cb) / float(max(1, ah - ct - cb)))
+            l = int(cl + max(0, l - cl) * sx)
+            r = int(cr + max(0, r - cr) * sx)
+            t = int(ct + max(0, t - ct) * sy)
+            b = int(cb + max(0, b - cb) * sy)
+        except Exception:
+            pass
     return max(0, l), max(0, t), max(0, r), max(0, b)
 
 
@@ -1304,11 +1407,18 @@ def _balloon_bank() -> dict:
                     continue
                 try:
                     img = Image.open(fp).convert("RGBA")
+                    bb = img.getbbox()                     # [2026-09-10] 투명 여백을 버린다 —
+                    if bb and bb[2] - bb[0] > 8 and bb[3] - bb[1] > 8:
+                        img = img.crop(bb)                 # 여백까지 박스에 늘리면 플레이트가
+                    #   글자보다 작아져 글자가 몸통 밖으로 넘친다(사용자 실측 불만).
                 except Exception:
                     continue
+                sl = [int(x) for x in (spec.get("slice") or [BALLOON_ART_SLICE] * 4)]
+                # 안전여백은 manifest 값이 아니라 **자산의 실제 알파**에서 계산한다(모양이 제각각)
+                sf = list(_auto_safe(img))
                 out[str(vid)] = {"img": img, "kind": str(spec.get("kind") or "").lower(),
-                                 "slice": [int(x) for x in (spec.get("slice") or [BALLOON_ART_MARGIN] * 4)],
-                                 "safe": [int(x) for x in (spec.get("safe") or BALLOON_ART_SAFE)],
+                                 "slice": sl, "safe": sf,
+                                 "alpha": int(spec.get("alpha") or BALLOON_ART_PLATE_ALPHA),
                                  "moods": str(spec.get("moods") or "")}
     except Exception:
         out = {}
@@ -1368,6 +1478,48 @@ def _nine_slice(dst, art: "Image.Image", box, slice_px):
     dst.alpha_composite(cen, (x0 + l, y0 + t))
 
 
+def _alpha_max(base, add, anchor):
+    """`add`를 `base` 위에 **알파가 큰 쪽**으로 합친다.
+
+    일반 합성(over)을 하면 반투명(α=210)끼리 겹쳐 그 자리가 짙어진다(실측 0.82→0.97) —
+    꼬리와 몸통의 이음새가 사각패치처럼 보이는 원인이다. 알파는 큰 값을 쓰고 색은 거의
+    같으므로 그대로 둔다.
+    """
+    try:
+        w, h = base.size
+        lay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        lay.paste(add, (int(anchor[0]), int(anchor[1])))
+        aa = lay.split()[3]
+        if aa.getextrema()[1] == 0:
+            return base
+        out = Image.composite(lay, base, aa)
+        out.putalpha(ImageChops.lighter(base.split()[3], aa))
+        return out
+    except Exception:
+        return base
+
+
+def _compose_tail(art, hinge, tip, length, base_h, angle_deg):
+    """기준(오른쪽 방향) 꼬리 자산을 **길이·밑변·각도**에 맞게 비틀어 층으로 만든다.
+
+    자산 하나 + 회전/반전으로 방향을 모두 처리한다(사용자 제안의 회전 보완판).
+    반환: (RGBA 층, 층 안에서 꼬리 밑점이 놓일 좌표)
+    """
+    aw, ah = art.size
+    hx, hy = [float(v) for v in hinge]
+    tx = max(2.0, float(tip[0]) - hx)
+    sx = max(0.04, float(max(6, length)) / tx)
+    sy = max(0.04, float(max(8, base_h)) / max(1.0, ah - 2.0 * min(hy, ah - hy)))
+    sw, sh = max(3, int(round(aw * sx))), max(3, int(round(ah * sy)))
+    scaled = art.resize((sw, sh), Image.LANCZOS)
+    r = int(max(sw, sh) * 1.10) + 8
+    cv = Image.new("RGBA", (2 * r, 2 * r), (0, 0, 0, 0))
+    ax, ay = r - int(round(hx * sx)), r - int(round(hy * sy))     # 밑점을 캔버스 가운데로
+    cv.alpha_composite(scaled, (ax, ay))
+    cv = cv.rotate(float(angle_deg), resample=Image.BICUBIC, center=(r, r))
+    return cv, (r, r)
+
+
 def paste_balloon_art(canvas, variant: str, region, box, tail_g=None, bubbles=None,
                       flip: bool = False, plate=DEFAULT_PLATE, frame=DEFAULT_FRAME,
                       line: int = DEFAULT_FRAME_WIDTH):
@@ -1392,19 +1544,61 @@ def paste_balloon_art(canvas, variant: str, region, box, tail_g=None, bubbles=No
         # 몸통(9슬라이스) → 꼬리/생각 물방울은 **기존 벡터 함수**를 레이어에 그린다
         #   (화자 조준은 컷마다 달라지므로 이미지를 늘리는 것보다 정확하고, 결과도 같다)
         _nine_slice(layer, art, (x0 - ix, y0 - iy, x1 - ix, y1 - iy), a["slice"])
-        dl = ImageDraw.Draw(layer)
         alp = int(a.get("alpha") or BALLOON_ART_PLATE_ALPHA)
         fill_rgba = tuple(plate)[:3] + (alp,)
         frame_rgba = tuple(frame)[:3] + (255,)
+
+        # ── 꼬리: 자산 하나를 **길이·밑변·각도**에 맞춰 비튼다(사용자 제안 + 회전 보완)
         if isinstance(tail_g, dict) and {"a", "tip", "p", "u", "bh"} <= set(tail_g):
-            g = dict(tail_g)
-            g["a"] = (tail_g["a"][0] - ix, tail_g["a"][1] - iy)
-            g["tip"] = (tail_g["tip"][0] - ix, tail_g["tip"][1] - iy)
-            _draw_tail(dl, g, frame=frame_rgba, plate=fill_rgba, line=line)
+            tid = TAIL_ART_MAP.get(variant, "tail_plain")
+            ta = bank.get(tid)
+            ax_, ay_ = tail_g["a"]
+            tpt = tail_g["tip"]
+            vx, vy = float(tpt[0] - ax_), float(tpt[1] - ay_)
+            ln = math.hypot(vx, vy)
+            if ta and ta.get("kind") == "tail" and ln > 4:
+                im = ta["img"]
+                if flip:
+                    im = im.transpose(Image.FLIP_TOP_BOTTOM)     # 대칭이지만 커스텀 자산은 대비
+                ang = -math.degrees(math.atan2(vy, vx))          # PIL은 반시계 양수 → 부호 반대
+                tv, (rrx, rry) = _compose_tail(
+                    im, ta.get("hinge") or [0, im.size[1] // 2],
+                    ta.get("tip") or [im.size[0] - 8, im.size[1] // 2],
+                    ln, max(10.0, 2.0 * float(tail_g.get("bh") or 8)), ang)
+                layer = _alpha_max(layer, tv, (ax_ - ix - rrx, ay_ - iy - rry))
+            else:                                               # 자산 없음 → 벡터 꼬리
+                dl = ImageDraw.Draw(layer)
+                g = dict(tail_g)
+                g["a"] = (ax_ - ix, ay_ - iy)
+                g["tip"] = (tpt[0] - ix, tpt[1] - iy)
+                _draw_tail(dl, g, frame=frame_rgba, plate=fill_rgba, line=line)
+
+        # ── 속마음 물방울: 원 하나를 3번 축소해 화자 쪽에 늘어놓는다
         if bubbles:
-            bx0, by0, bx1, by1, tx, ty = bubbles
-            _draw_thought_bubbles(dl, bx0 - ix, by0 - iy, bx1 - ix, by1 - iy, tx - ix, ty - iy,
-                                  frame=frame_rgba, plate=fill_rgba, line=line)
+            bx0, by0, bx1, by1, btx, bty = bubbles
+            ba = bank.get(BUBBLE_ART)
+            if ba and ba.get("kind") == "bubble":
+                sc = max(0.42, min(1.0, min(x1 - x0, y1 - y0) / 170.0))
+                # 물방울은 몸통 **바깥**으로 나간다 — 예전 벡터는 몸통 안에 그려져
+                #   (같은 색이라) 안 보이는 데다 테투리 두께만 어색했다.
+                cmx, cmy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+                dx, dy = float(btx - cmx), float(bty - cmy)
+                t_edge = 1.0 / max(abs(dx) / max(1.0, (bx1 - bx0) / 2.0),
+                                   abs(dy) / max(1.0, (by1 - by0) / 2.0), 1e-6)
+                ex, ey = cmx + dx * min(1.0, t_edge) * 0.99, cmy + dy * min(1.0, t_edge) * 0.99
+                for _k, dsz in enumerate(BUBBLE_ART_SIZES):
+                    f = 0.16 + 0.50 * (_k / float(max(1, len(BUBBLE_ART_SIZES) - 1)))
+                    px_ = ex + (btx - ex) * f
+                    py_ = ey + (bty - ey) * f
+                    dd = max(7, int(dsz * sc))
+                    lay2 = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+                    lay2.alpha_composite(ba["img"].resize((dd, dd), Image.LANCZOS),
+                                         (int(px_ - ix - dd / 2.0), int(py_ - iy - dd / 2.0)))
+                    layer = _alpha_max(layer, lay2, (0, 0))
+            else:
+                dl = ImageDraw.Draw(layer)
+                _draw_thought_bubbles(dl, bx0 - ix, by0 - iy, bx1 - ix, by1 - iy, btx - ix, bty - iy,
+                                      frame=frame_rgba, plate=fill_rgba, line=line)
         canvas.paste(layer, (ix, iy), layer)
         return variant
     except Exception:
@@ -1440,12 +1634,25 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     #   (예전은 글자 폭에 맞춰 가로로 넓어지고 4줄에서 접혀, 얼굴을 덮는 넓은 풍선이 나왔다)
     pad = BALLOON_PAD
     wr = THOUGHT_W_RATIO if kind == "thought" else BALLOON_W_RATIO
+    # [2026-09-10] 이미지 모드에서는 **변형을 먼저** 고르고 그 자산의 글자 안전여백으로
+    #   박스를 잰다. 예전은 일반 패드(8px)로만 재서, 자산의 테투리·곡선 안쪽에 글자가
+    #   못 들어가고 몸통이 글자보다 작아졌다(사용자 실측 불만: "글씨보다 작아서 안 보인다").
+    art_id = pick_balloon_variant(kind, emo, ix, iy, idx, bank_used) \
+        if (_balloon_style == "image" and canvas is not None) else ""
+    # 붙일 크기를 먼저 어림잡고, 그 크기로 9슬라이스했을 때의 안전여백을 계산한다
+    _est_w = max(96, int(iw * wr * (BALLOON_SIZE_BOOST if art_id else 1.0)))
+    _est_h = int(min(max(iw, ih) - 16, max(ih * BALLOON_MIN_H_RATIO, 120))) if art_id else 120
+    _sl, _st, _sr, _sb = _balloon_art_safe(art_id, _est_w, _est_h) if art_id else (0, 0, 0, 0)
+    pad_h = max(pad, _sl, _sr) if art_id else pad
+    pad_v = max(pad, _st, _sb) if art_id else pad
+    bst = float(BALLOON_SIZE_BOOST) if art_id else 1.0
+    fit = BALLOON_ART_FIT if art_id else ELLIPSE_FIT
     for fs_try in range(int(font_size), FONT_FLOOR - 1, -2):     # 글자가 많으면 폰트를 줄여 담는다
         fnt = load_font(fs_try, font_path, role=role)
         lh = _text_line_height(fs_try)
-        bw_target = max(96, int(iw * wr))
-        avail_w = int(bw_target / (ELLIPSE_FIT if kind == "thought" else 1.0)) - 2 * pad
-        cap_lines = max(2, int((ih - 2 * pad - 12) // lh))          # 줄 수 상한은 컷 높이에서 계산한다
+        bw_target = max(96, int(iw * wr * bst))
+        avail_w = int(bw_target / (fit if kind == "thought" else 1.0)) - 2 * pad_h
+        cap_lines = max(2, int((ih - 2 * pad_v - 12) // lh))          # 줄 수 상한은 컷 높이에서 계산한다
         ls = wrap_text(text, fnt, max(24, avail_w), probe, max_lines=cap_lines)
         if not ls:
             return None
@@ -1457,24 +1664,28 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                 tw = max(tw, len(ln) * fs_try * 0.6)
         th = len(ls) * lh
         if kind == "thought":
-            bw = int(min(max(bw_target, tw + 2 * pad), iw - 16))
+            bw = int(min(max(bw_target, tw + 2 * pad_h), iw - 16))
             # [2026-09-09] 20% 폭은 세로를 부른다 — 세로가 컷 높이의 THOUGHT_H_CAP을 넘으면
             #   폭을 THOUGHT_W_RELIEF까지 넓혀 줄 수를 줄인다(글자를 버리는 대신 폭을 쓴다).
             if bh_ratio(th, bw, tw) > THOUGHT_H_CAP and bw_target < iw * THOUGHT_W_RELIEF:
                 bw2 = int(min(iw * THOUGHT_W_RELIEF, iw - 16))
-                ls2 = wrap_text(text, fnt, max(24, int(bw2 / ELLIPSE_FIT) - 2 * pad), probe, max_lines=cap_lines)
+                ls2 = wrap_text(text, fnt, max(24, int(bw2 / fit) - 2 * pad_h), probe, max_lines=cap_lines)
                 if ls2 and len(ls2) <= len(ls):
                     th2 = len(ls2) * lh
                     if bh_ratio(th2, bw2, tw) <= THOUGHT_H_CAP or bh_ratio(th2, bw2, tw) < bh_ratio(th, bw, tw):
                         ls, th, bw = ls2, th2, bw2
             # 폭을 정해 두고 타원에 글자 블록을 넣으면: (w/2)²/a² + (h/2)²/b² = 1 → b는 여기서 나온다.
             #   폭이 좁을수록 세로가 는다 — 그래서 세로를 '필요한 만큼만' 쓰는 것이 이 계산의 전부다.
-            a = max(1.0, bw / 2.0 - pad * 0.35)
+            a = max(1.0, bw / 2.0 - pad_h * 0.35)
             k = min(0.90, (tw / 2.0) / a)
-            bh = int(th / max(0.40, (1.0 - k * k) ** 0.5) + 2 * pad * 0.5)
+            bh = int(th / max(0.40, (1.0 - k * k) ** 0.5) + 2 * pad_v * 0.5)
+            if art_id:                # 자산은 몸통 전체가 플레이트 — 최소한 이만큼은 크게
+                bh = max(bh, int(ih * BALLOON_MIN_H_RATIO), int(th + 2 * pad_v))
         else:
-            bw = int(max(bw_target, min(iw - 16, tw + 2 * pad)))     # 직사각형은 컷의 20% 폭을 쓴다
-            bh = int(th + 2 * pad)
+            bw = int(max(bw_target, min(iw - 16, tw + 2 * pad_h)))     # 직사각형은 컷의 20% 폭을 쓴다
+            bh = int(th + 2 * pad_v)
+            if art_id:
+                bh = max(bh, int(ih * BALLOON_MIN_H_RATIO))
         if bw <= iw - 16 and bh <= ih - 16:
             lines, font, fs, line_h, box_w, box_h = ls, fnt, fs_try, lh, bw, bh
             break
@@ -1496,11 +1707,10 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     # 말풍선은 **직사각형 + 삼각 꼬리**, 속마음은 **타원 + 작은 원**. 형태 그 자체로 화자를 구분한다.
     tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, _dkey)
     art = ""
-    if _balloon_style == "image" and canvas is not None:
-        # 자산 은행에서 변형을 고른다(감정 우선 → 결정론 회전, 같은 페이지 중복 회피).
+    if art_id:
+        # 미리 골라 둔 변형을 붙인다(위에서 안전여백을 이 변형 기준으로 잰다).
         #   꼬리·생각 물방울은 계속 벡터로 그리므로 화자 조준은 벡터 모드와 똑같다.
-        art = pick_balloon_variant(kind, emo, ix, iy, idx, bank_used)
-        art = paste_balloon_art(canvas, art, (ix, iy, iw, ih), (x0, y0, x1, y1),
+        art = paste_balloon_art(canvas, art_id, (ix, iy, iw, ih), (x0, y0, x1, y1),
                                 tail_g=_tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih)
                                 if kind == "speech" else None,
                                 bubbles=None if kind == "speech" else (x0, y0, x1, y1, tx, ty_),
@@ -1508,7 +1718,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         if art:
             if bank_used is not None:
                 bank_used.append(art)
-            _sl, _st, _sr, _sb = _balloon_art_safe(art)
+            _sl, _st, _sr, _sb = _balloon_art_safe(art, box_w, box_h)   # 실측 크기로 다시 잰다
             if kind == "speech":
                 ty0 = y0 + max(pad, _st)
             else:

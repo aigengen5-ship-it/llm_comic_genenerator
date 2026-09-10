@@ -648,6 +648,12 @@ def main() -> int:
                     help="★에필로그(마지막 회차 끝의 반투명 이벤트신 1칸 + 큰 여운 지문)를 붙이지 않는다")
     ap.add_argument("--no-summary-cuts", action="store_true", dest="no_summary_cuts",
                     help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
+    ap.add_argument("--wide-share", type=float, default=0.5, dest="wide_share",
+                    help="전폭(가로 넓이) 컷 비중 상한 (기본 0.5 = 컷의 절반까지, 1.0 = 제한 없음)")
+    ap.add_argument("--item-cuts", action="store_true", dest="item_cuts", default=None,
+                    help="본문을 시간 순 '행동/대사/속마음' 항목으로 나눠 항목 하나를 컷 하나로 씁니다(기본 켬)")
+    ap.add_argument("--no-item-cuts", action="store_false", dest="item_cuts",
+                    help="예전처럼 사건 단위로 배분합니다(한 사건에 컷 1~2개를 LLM이 고름)")
     ap.add_argument("--variation", type=int, default=0,
                     help="컷 배분에 변동을 섞는다 (0=완전 재현, N>0=그 값마다 다른 레이아웃·장면당 컷 수)")
     ap.add_argument("--vary", action="store_true",
@@ -775,6 +781,11 @@ def main() -> int:
     if getattr(args, "vary", False):
         import time as _t
         config.comic_variation = (int(_t.time()) % 99999) + 1
+    if getattr(args, "item_cuts", None) is not None:
+        config.comic_item_cuts = bool(args.item_cuts)
+    p(f"  컷 배분 단위   : {'본문 항목 1 = 컷 1 (행동/대사/속마음)' if config.comic_item_cuts else '사건 단위(LLM이 컷 1~2개 지정)'}")
+    if getattr(args, "wide_share", None) is not None:
+        config.comic_wide_share_max = min(1.0, max(0.0, float(args.wide_share)))
     if int(getattr(args, "variation", 0) or 0) > 0:
         config.comic_variation = int(args.variation)        # --variation은 --vary보다 뒤에 적용(강함)
     config.comic_face_crop = bool(getattr(args, "face_crop", True))

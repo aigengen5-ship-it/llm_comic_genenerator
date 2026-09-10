@@ -129,7 +129,7 @@ def load_cut_templates():
     return out
 
 
-def plan_pages(ep_num_1based: int, pages: int = 2):
+def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
     """페이지별 템플릿(회차 시드 결정론) → [{page,situation,template_id,template_name,slots:[...]}]
 
     슬롯 = {page,tier,share,center,wide,desc}. 컷 수는 템플릿 합계로 확정(페이지당 2~8컷).
@@ -148,7 +148,9 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
     cap = max(1, int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO))
     pages = max(1, min(cap, int(pages)))                 # 기승전결 비례 대응, 1~cap 페이지
     # [2026-09-09] variation이 시드에 섞인다 — 같은 회차でも 페이지/템플릿 구성이 값마다 달라진다
-    rng = random.Random(f"cut:{ep_num_1based}:{pages}:{int(getattr(config, 'comic_variation', 0) or 0)}")
+    # salt: 같은 회차・페이지 수でも 레이아웃을 다시 추첨할 때 쓴다(plan_pages_layout이 목표 컷 수에
+    #   가장 가까운 추첨을 고른다 — 사용자: "스토리가 엄청 짤려서 나오는 듯")
+    rng = random.Random(f"cut:{ep_num_1based}:{pages}:{int(getattr(config, 'comic_variation', 0) or 0)}:{int(salt or 0)}")
 
     def _slots_of(t):
         """템플릿 → 납작한 슬롯 목록 (행의 첫 슬롯이 화면에서 가장 위/가장 왼쪽)"""
@@ -178,9 +180,23 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
     used_tmpl, prev_id = set(), ""
 
     def _full_row_first(t):
-        """첫 행이 전폭 1컷인가 — 회차의 첫 페이지와 여운 페이지는 이걸 우대한다(사용자: 첫 컷이 좁다)"""
+        """첫 행이 전폭 1컷인가 — 회차의 첫 페이지는 이걸 우대한다(사용자: 첫 컷이 좁다)"""
         ts = t.get("tiers") or []
         return bool(ts) and len(ts[0]["shares"]) == 1 and ts[0]["shares"][0] >= 0.9
+
+    def _wide_of(t):
+        """템플릿의 (전폭 슬롯 수, 전체 슬롯 수) — 전폭 컷이 회치를 뒤덮지 않게 본다."""
+        n = w = 0
+        for tier in (t.get("tiers") or []):
+            full = len(tier["shares"]) == 1 and tier["shares"][0] >= 0.99 and not tier.get("center")
+            for _ in tier["shares"]:
+                n += 1
+                w += 1 if full else 0
+        return w, n
+
+    _w_used = [0]                                     # 지금까지 배정된 전폭 슬롯
+    _n_used = [0]                                     # 지금까지 배정된 전체 슬롯
+    _w_cap = float(getattr(config, "comic_wide_share_max", 0.5) or 0.0)
 
     def _pick_template(sit, prefer_wide=False):
         nonlocal prev_id
@@ -188,9 +204,22 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
         cand = [t for t in pool if t["id"] not in used_tmpl]
         if not cand:                                  # 풀을 다 썼다 → 직전 페이지 것만 빼고 재사용
             cand = [t for t in pool if t["id"] != prev_id] or pool
-        if prefer_wide:                               # 도입부·여운은 화면을 벌려 놓는 것부터
-            wide = [t for t in cand if _full_row_first(t)]
-            cand = wide or cand
+        if prefer_wide:
+            # 도입부는 전폭으로 화면을 벌리되, **전폭만 몇 개 이어지는 것**(climax_impact류)은 피한다
+            # —那样 하면 세로(portrait) 컷이 회치에서 사라진다(사용자: "portrait 컷은 안 만드나").
+            mixed = [t for t in cand if _full_row_first(t) and _wide_of(t)[0] < _wide_of(t)[1]]
+            cand = mixed or [t for t in cand if _full_row_first(t)] or cand
+        if 0.0 < _w_cap < 1.0 and _n_used[0]:
+            over = (_w_used[0] > _w_cap * _n_used[0])
+
+            def _ok(t):
+                w, n = _wide_of(t)
+                return (_w_used[0] + w) <= _w_cap * (_n_used[0] + n)
+            keep = [t for t in cand if _ok(t)]
+            if keep:
+                cand = keep
+            elif over:
+                cand = sorted(cand, key=lambda t: (_wide_of(t)[0] / max(1, _wide_of(t)[1]), t["id"]))[:3]
         t = rng.choice(cand)
         used_tmpl.add(t["id"])
         prev_id = t["id"]
@@ -200,6 +229,8 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
         sit = _SITUATIONS[0] if pages == 1 else _SITUATIONS[min(3, int(round(pi * 3 / (pages - 1))))]
         t = _pick_template(sit, prefer_wide=(pi == 0))     # 첫 페이지(도입)는 전폭 컷 우대
         slots = _slots_of(t)
+        _w_used[0] += sum(1 for s in slots if s["wide"])
+        _n_used[0] += len(slots)
         # [2026-09-09] 사용자 지시 (수정): ★큰 지문(요약)은 **회차의 가장 첫 컷 하나だけ**.
         #   페이지마다(=기승전결마다) 붙이던 예전 규칙은 70% 박스가 화면을 뒤덮어 폐지했다.
         if pi == 0 and slots and bool(getattr(config, "comic_summary_cuts", True)):
@@ -264,17 +295,23 @@ def plan_pages_layout(ep_num_1based: int, target_panels: int, pages: int = 0):
     target = max(1, int(target_panels))
     cap = max(1, int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO))
     est = max(1, int(round(target / max(1.0, _avg_slots_per_page()))))
-    lo, hi = max(1, est - 2), min(cap, est + 2)
-    best, best_key = None, None
+    lo, hi = max(1, est - 2), min(cap, est + 3)
+    # [2026-09-09] 컷 수 사다리가 너무 성급했다(1페이지 4컷 / 2페이지 12컷). 그래서 목표 7컷이
+    #   "4컷(부족)"과 "12컷(초과)" 사이에서 부족 쪽을 택해 본문이 압축됐다(실측 로그: 목표 7컷 →
+    #   레이아웃 4~5컷). 이제 페이지 수 × 레이아웃 재추첨(salt)을 함께 훑어 목표에 가장 가까운
+    #   구성을 고른다. 모자란 쪽 벌점은 2.2배 — 넘치는 편이 장면 압축보다 낫다(예전부터 같은 판단).
+    rolls = max(1, int(getattr(config, "comic_layout_rolls", 10) or 10))
+    best, best_key, best_n = None, None, 0
     for n in range(lo, hi + 1):
-        pl = plan_pages(ep_num_1based, n)
-        if not pl:
-            continue
-        e = len(spec_slots(pl))
-        diff = abs(e - target)
-        key = (diff * (1.6 if e < target else 1.0), diff, n)
-        if best_key is None or key < best_key:
-            best, best_key, best_n = pl, key, n
+        for salt in range(rolls):
+            pl = plan_pages(ep_num_1based, n, salt=salt)
+            if not pl:
+                break
+            e = len(spec_slots(pl))
+            diff = abs(e - target)
+            key = (diff * (2.2 if e < target else 1.0), diff, n, salt)
+            if best_key is None or key < best_key:
+                best, best_key, best_n = pl, key, n
     if best is None:
         pl = plan_pages(ep_num_1based, min(cap, max(1, est)))
         return pl, (len(pl) if pl else 0)
@@ -485,10 +522,18 @@ def comic_out_dir() -> str:
 
 
 # ------------------------------------------------------------------ 컷 스크립트
+_DEVICE_RULE = {
+    "대사": "**대사 컷** — 말풍선 1개(lines kind=speech)를 반드시 넣는다. 지문은 보조로 짧게(또는 비운다).",
+    "속마음": "**속마음 컷** — 속마음 풍선(lines kind=thought)을 반드시 넣는다. 말풍선과 섞지 않는다.",
+    "행동": "**행동 컷** — 지문(caption_ko)과 pose로 보여주고, lines는 []로 둔다.",
+}
+
+
 def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, partner: str,
                               sub: str, guide_lines, dollar_actions, page_plans=None,
                               episode_text: str = "", panels_expected: int = 0,
-                              prev_tail=None, beat_label: str = "", slot_range=None) -> str:
+                              prev_tail=None, beat_label: str = "", slot_range=None,
+                              device_hints=None) -> str:
     """컷 스크립트 생성용 LLM 프롬프트.
 
     [2026-09-08] 세 가지가 새로 들어간다 —
@@ -502,6 +547,15 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
                    " 그녀의 **행동\u00b7표정을 한 문장**으로 묘사한다 (예: '그녀는 정면을 바라본다. 볼이 붉어졌다.')"
                    " 지문은 비어 있지 않게 쓴다."
                    if bool(getattr(config, "comic_chatty", False)) else "")
+    # [2026-09-09] 항목 1:1 모드 — 컷마다 쓰일 화면 장치를 코드가 미리 정해 알려준다.
+    device_block = ""
+    if device_hints:
+        _dl = []
+        for _no, _kind in device_hints:
+            _dl.append(f"  - 컷 {_no} = {_DEVICE_RULE.get(_kind, _DEVICE_RULE['행동'])}")
+        if _dl:
+            device_block = ("\n[이 컷들의 화면 장치 — 본문에서 프로그램이 판정했습니다. 이 순서와 장치를 따르세요]\n"
+                            + "\n".join(_dl) + "\n")
     guides = "\n".join(f"  - {g}" for g in guide_lines) if guide_lines else "  (가이드 없음)"
     acts = ", ".join(dollar_actions) if dollar_actions else "(없음)"
     sub_block = f"\n[서브 캐릭터 시트]\n{sub}\n" if (getattr(config, 'chr_num3', 0) == 1 and sub) else ""
@@ -601,7 +655,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
    없을 한 'tattered / ripped / dirty' 같은 **옷이 망가지거나 사라진다는 어구**를 먼저 제안하지 않는다
    — 근거 없이 넣으면 그 컷이 옷 없이 그려진다. 회차 의상 태그를 복사해 넣는 편이 안전하다.
    caption_ko는 지문(해설)만 쓰고 대사 금지, 최장 {CAPTION_MAX_LEN}자(길어도 된다 — 잘리지 않는다).
-{chatty_rule}
+{device_block}{chatty_rule}
    **반드시 완전한 서사 문장**(주어 + 서술어, '~한다/~었다/~고 있다' 종결).
    명사 나열·관형형 토막('네온사인이 빛나는 골목' 같은) 금지 — 소리 내어 읽으면 한 문장이어야 한다.
 9. lines는 **최대 {DIALOG_LINES}개의 풍선**: kind=speech(입으로 하는 말 → 말풍선) | thought(속마음·혼잣말 → 속마음 풍선).
@@ -1449,6 +1503,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     segs = _segs_map.get(ep_num_1based) or _segs_map.get(str(ep_num_1based)) or []
     acts = CI.split_by_segments(body, segs) if segs else []
     beat_acts = None
+    units = []                       # 사건/항목 유닛(LLM이 나눈 목록) — 장치 판정에도 쓴다
     unit_w = None                                    # 사건(액션) 기준 배분이 켜지면 유닛별 컷 수가 들어온다
     n_beats = max(1, -(-n_cut // CI.PANELS_PER_BEAT_MAX))
     if 2 <= len(acts) <= 8:
@@ -1536,6 +1591,25 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
             continue
         s0 = sum(quotas[:bi - 1])
         _ai = beat_acts[bi - 1] if beat_acts is not None else -1
+        # [2026-09-09] 항목 1:1 모드 — 이 장면 본문을 컷 수만큼 시간 순으로 쪼개 각 컷의 화면
+        #   장치(행동/대사/속마음)를 **코드가** 정한다. LLM에 맡기면 한 컷에 셋을 다 섞어
+        #   사건을 지워버렸다(그래서 스토리가 짤렸다). 추출 단계가 kind를 줬으면 그것을 쓴다.
+        _hints = None
+        if bool(getattr(config, "comic_item_cuts", True)):
+            _kinds = [(str(u.get("at") or "")[:24], str(u.get("kind") or "")) for u in units
+                      if str(u.get("kind") or "") in ("행동", "대사", "속마음")]
+
+            def _device_of(_piece, _kinds=_kinds):
+                for _at, _kd in _kinds:
+                    if _at and _at in _piece:
+                        return _kd
+                return CI.classify_device(_piece)
+
+            _pc = CI.split_for_cuts(beat, quota)
+            # ★화면 문법 슬롯(서두 요약/프롤로그/에필로그)은 자기 규칙이 있다 — 장치 지침을 덮지 않는다
+            _role = {n + 1: str(s.get("role") or "") for n, s in enumerate(slots or [])}
+            _hints = [(s0 + j + 1, _device_of(_pc[j])) for j in range(quota)
+                      if not _role.get(s0 + j + 1)]
         prompt = build_panel_script_prompt(
             ep_num_1based, total_eps, proto, partner, sub,
             beat_guides[bi - 1] if beat_guides else _slice_guides(guides, bi, len(beats)),
@@ -1543,7 +1617,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
             episode_text=beat, panels_expected=quota, prev_tail=_beat_context(tail),
             beat_label=(((_SITUATIONS[_ai] if 0 <= _ai < len(_SITUATIONS) else str(_ai + 1)) + f"장면 {bi}/{len(beats)}"
                          if _ai >= 0 else (f"장면 {bi}/{len(beats)}" if len(beats) > 1 else ""))),
-            slot_range=((s0, s0 + quota) if slots else None))
+            slot_range=((s0, s0 + quota) if slots else None), device_hints=_hints)
         got = []
         for attempt in range(1, max(1, retry) + 1):
             try:

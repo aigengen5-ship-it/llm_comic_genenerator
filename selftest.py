@@ -1926,10 +1926,14 @@ def main() -> int:
               {"at": "렌이 아야의 손을 잡는다.", "cuts": 2},
               {"at": "아야가 그에게 마음을 고백한다.", "cuts": 2},
               {"at": "아야는 혼자 매장을 연다.", "cuts": 1}]
+    config.comic_item_cuts = False      # ⑫는 '사건 단위' 모드 검사다(항목 모드는 ⑬g에서 따로 본다)
     _ub, _ua, _uw = CI.split_acts_by_units(_acts, _units)
     check("사건 유닛이 막 안에서 막 귀속을保住한 채 더 잘린다", len(_ub) >= 3 and len(set(_ua)) == 3,
           f"{len(_ub)}조각 acts={_ua}")
-    check("_cut 수는 LLM이 준 값을 쓴다(강한 사건 2)", 2 in _uw and _uw.count(1) >= 1, str(_uw))
+    check("컷 수는 LLM이 준 컷 수를 **합쳐서** 지킨다 — 장면을 합쳐도 사건이 줄지 않는다 "
+          "(예전엔 max를 써서 두 사건이 한 컷으로 눌렸다)",
+          sum(_uw) >= sum(u["cuts"] for u in _units) and all(w >= 1 for w in _uw),
+          f"유닛 합 {sum(u['cuts'] for u in _units)} → 배분 {_uw}")
     check("유닛이 다른 막에 있으면 건너뛰고 그 막은 통째로 둔다(분할이 통째로 꺼지지 않는다)",
           CI.split_acts_by_units(["승: 아무 관련 없는 본문이다."], _units)[2] == [1]
           and len(CI.split_acts_by_units(["승: 아무 관련 없는 본문이다."], _units)[0]) == 1,
@@ -2045,6 +2049,64 @@ def main() -> int:
     _widths = [c["w"] for r in _rows for c in r["cells"]]
     check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
           len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
+
+    # ── ⑬g [2026-09-09] 항목 1:1 모드 — 행동/대사/속마음 항목 하나 = 컷 하나
+    config.comic_item_cuts = True
+    _iu = CI.normalize_units([{"at": "렌이 꽃을 집어 든다.", "cuts": 2, "kind": "행동"},
+                              {"at": "아야가 말했다, 잘 지켜봤다고.", "cuts": 2, "kind": "대사"}])
+    check("항목 모드에서는 항목 하나가 컷 1개다(LLM이 2라고 해도)",
+          [x["cuts"] for x in _iu] == [1, 1] and [x["kind"] for x in _iu] == ["행동", "대사"], str(_iu))
+    _iu2 = CI.normalize_units([{"at": f"문장 {n}.", "cuts": 3} for n in range(30)])
+    check("항목 모드 항목 상한은 24개(=컷 24개까지), 사건 모드 상한(14)보다 넓다",
+          len(_iu2) == 24, str(len(_iu2)))
+    check("본문 조각을 화면 장치로 분류한다(인용문=대사, 속으로=속마음, 나머지는 행동)",
+          CI.classify_device("그녀는 문을 열었다.") == "행동"
+          and CI.classify_device("그녀는\"여기 있었구나\"라고 했다") == "대사"
+          and CI.classify_device("「여기 있었구나」") == "대사"
+          and CI.classify_device("속으로 그를 기다렸다") == "속마음"
+          and CI.classify_device("그녀는 그 자리에…") == "속마음")
+    _pc = CI.split_for_cuts("첫 문장이다. 둘째가 이어진다. 셋째 문장이다. 마지막이다.", 2)
+    check("장면 본문을 컷 수만큼 시간 순 조각으로 나눈다(장치 판정 재료)",
+          len(_pc) == 2 and _pc[0].startswith("첫") and _pc[1].startswith("셋째"), str(_pc))
+    _dp = CG.build_panel_script_prompt(1, 3, "시트A", "시트B", "", ["기", "승", "전", "결"], [],
+                                       panels_expected=3, device_hints=[(1, "행동"), (2, "대사"), (3, "속마음")])
+    check("컷마다 화면 장치 지침이 프롬프트에 들어간다(말풍선/속마음/지문 지정)",
+          "화면 장치" in _dp and "컷 2 = **대사 컷**" in _dp and "컷 3 = **속마음 컷**" in _dp
+          and "컷 1 = **행동 컷**" in _dp, _dp[:0])
+    _dp0 = CG.build_panel_script_prompt(1, 3, "시트A", "시트B", "", ["기", "승", "전", "결"], [],
+                                        panels_expected=3)
+    check("장치 지침이 없으면(사건 모드) 프롬프트에 그 블록이 없다", "화면 장치" not in _dp0)
+    _rs5 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("--item-cuts / --no-item-cuts 가 도움말에 있고 config에 배선된다",
+          "--item-cuts" in subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--help"],
+                                          capture_output=True, text=True).stdout
+          and "config.comic_item_cuts = bool(args.item_cuts)" in _rs5)
+    config.comic_item_cuts = True
+
+    # ── ⑬f [2026-09-09] "스토리가 엄청 짤려서 나오는 듯" — 컷 수 사다리가 성급했다
+    config.comic_variation = 0
+    _short = []
+    for _t in (5, 7, 9, 15, 22):
+        for _v in (0, 1, 7):
+            config.comic_variation = _v
+            _pl, _np = CG.plan_pages_layout(2, _t, 0)
+            _e = len(CG.spec_slots(_pl))
+            if _e < _t:
+                _short.append(f"목표{_t}→{_e}({_v})")
+    config.comic_variation = 0
+    check("레이아웃이 목표 컷 수 아래로 떨어지지 않는다(본문이 장면 압축되던 증상)",
+          not _short, str(_short[:4]))
+    _a = CG.plan_pages_layout(3, 11, 0)
+    _b = CG.plan_pages_layout(3, 11, 0)
+    check("같은 목표·같은 변동이면 같은 레이아웃(재현성)",
+          [p["template_id"] for p in _a[0]] == [p["template_id"] for p in _b[0]] and
+          len(CG.spec_slots(_a[0])) == len(CG.spec_slots(_b[0])) == 11,
+          f"{[p['template_id'] for p in _a[0]][:3]}")
+    config.comic_layout_rolls = 1
+    _one = len(CG.spec_slots(CG.plan_pages_layout(3, 11, 0)[0]))
+    config.comic_layout_rolls = 10
+    check("재추첨 횟수를 1로 줄이면 예전처럼粗い 사다리가 된다(회귀 비교용 스위치)",
+          _one < 11, f"rolls=1 → {_one}컷")
 
     # ── ⑬e [2026-09-09] 정제 로그를 회차 끝 한 줄로 (사용자: "이거 정말 필요함?")
     CG._prompt_san_reset()

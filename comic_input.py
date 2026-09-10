@@ -285,6 +285,7 @@ def split_by_segments(text: str, segments) -> list:
 MIN_UNIT_CHARS = 90                  # 이보다 짧은 유닛 조각은 앞 유닛에 합친다(풍선 하나짜리 컷 남발 방지)
 UNITS_PER_CALL_MAX = 6               # 장면(=LLM 1호출)당 유닛 상한 — PANELS_PER_BEAT_MAX와 같은 JSON 보호선
 MAX_UNITS = 14                       # 회차 유닛 상한 (14개 × 강함 2컷 = 28컷이 물리적 상한)
+ITEMS_MAX = 24                       # 항목 1:1 모드(--item-cuts)의 항목 상한 — 항목 하나가 컷 하나                       # 회차 유닛 상한 (14개 × 강함 2컷 = 28컷이 물리적 상한)
 
 # '이 사건은 컷 2개짜리다'로 봐야 하는 큐 — 신체가 움직이거나 관계가 바뀌는 순간들.
 # (민감어는 넣지 않는다: 이 목록은 공개 코드에 탄다)
@@ -298,6 +299,55 @@ _STRONG_CUES = (
 )
 
 
+def _item_mode() -> bool:
+    """항목 1:1 모드 (--item-cuts, 기본 켬) — 본문을 시간 순 항목으로 나누고 항목 = 컷 1개."""
+    try:
+        import config
+        return bool(getattr(config, "comic_item_cuts", True))
+    except Exception:
+        return False
+
+
+def classify_device(text: str) -> str:
+    """본문 조각을 화면 장치(행동/대사/속마음)로 분류한다 — LLM 없이 규칙으로 한다.
+
+    만화에서 한 컷은 대개 한 가지 장치로 말한다(이 repo의 컷 규칙 8번과 같은 결).
+      대사   : 인용부호 안의 말, '~라고 말했다/대답했다/외쳤다'
+      속마음 : '~라고 생각했다', '속으로', '머릿속', 말줄임표가 달린 혼잣말
+      행동   : 나머지 (지문으로 보여주기)
+    """
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not t:
+        return "행동"
+    quoted = re.search(chr(34) + r".{2,}?" + chr(34), t) or re.search(r"[“”「」『』].{2,}?[”“」「』『]", t)
+    think = re.search(r"(속으로|머릿속|마음속|생각했다|생각이|느껴졌다|라고 혼잣말|스스로에게)", t)
+    said = re.search(r"(말했다|대답|답변|외쳤다|질렀|속삭|이야기|대화|대사를|불렀|소리)", t)
+    if think:
+        return "속마음"
+    if quoted or said:
+        return "대사"
+    if t.endswith(("…", "...")):
+        return "속마음"
+    return "행동"
+
+
+def split_for_cuts(text: str, n: int = 1) -> list:
+    """장면 본문을 컷 n개에 해당하는 조각으로 시간 순서대로 나눈다(장치 판정용)."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    n = max(1, int(n or 1))
+    if not t:
+        return [""] * n
+    sents = _sentence_units(t) or [t]
+    if len(sents) <= n:
+        out = sents + [""] * (n - len(sents))
+        return out[:n]
+    per = (len(sents) + n - 1) // n
+    chunks = [" ".join(sents[k:k + per]) for k in range(0, len(sents), per)]
+    while len(chunks) < n:
+        chunks.append("")
+    return chunks[:n]
+
+
 def normalize_units(raw, max_units: int = MAX_UNITS, strong_weight: int = 2) -> list:
     """LLM이 나눈 액션 유닛 목록을 [{at, cuts}]로 정규화한다.
 
@@ -305,10 +355,14 @@ def normalize_units(raw, max_units: int = MAX_UNITS, strong_weight: int = 2) -> 
       {"at": "사건 시작 문장(본문 복사)", "cuts": 2}   ← 권장: 나누는 판단과 컷 수를 LLM이 한다
       "사건 시작 문장(본문 복사)"                       ← 컷 수는 our 큐 판정(폴백)
     """
+    item = _item_mode()
+    if item:
+        max_units = max(int(max_units or 0), ITEMS_MAX)
     out = []
     for u in (raw or []):
         if isinstance(u, dict):
-            at = re.sub(r"\s+", " ", str(u.get("at") or u.get("anchor") or u.get("text") or "")).strip()
+            at = re.sub(r"\s+", " ", str(u.get("at") or u.get("anchor") or u.get("text") or ""))
+            kind = re.sub(r"\s+", "", str(u.get("kind") or u.get("device") or "")).strip()
             try:
                 cuts = int(u.get("cuts") or u.get("panels") or 0)
             except Exception:
@@ -317,9 +371,13 @@ def normalize_units(raw, max_units: int = MAX_UNITS, strong_weight: int = 2) -> 
         else:
             at = re.sub(r"\s+", " ", str(u or "")).strip()
             cuts = 0
+            kind = ""
+        if kind not in ("행동", "대사", "속마음"):
+            kind = ""                                   # LLM이 규칙 밖 값을 주면 장치 판정을 코드가 한다
         if not (3 <= len(at) <= 160) or any(at == o["at"] for o in out):
             continue
-        out.append({"at": at, "cuts": cuts or action_weight(at, strong_weight)})
+        _w = 1 if item else (cuts or action_weight(at, strong_weight))
+        out.append({"at": at, "cuts": _w, "kind": kind})
     return out[:max_units]
 
 
@@ -363,7 +421,7 @@ def split_acts_by_units(acts, units, strong_weight: int = 2,
         for p, w in zip(parts[1:], pw[1:]):
             if len(merged[-1]) < MIN_UNIT_CHARS:
                 merged[-1] = f"{merged[-1]}\n\n{p}".strip()
-                mw[-1] = max(mw[-1], w)
+                mw[-1] = mw[-1] + w        # [2026-09-09] 합쳐도 사건은 사라지지 않는다 — 컷 수는 합(최대값이면 짤린다)
             else:
                 merged.append(p)
                 mw.append(w)
@@ -371,7 +429,7 @@ def split_acts_by_units(acts, units, strong_weight: int = 2,
         while len(merged) > max_units_per_beat:
             j = len(merged) - 2
             merged[j] = f"{merged[j]}\n\n{merged[j + 1]}".strip()
-            mw[j] = max(mw[j], mw[j + 1])
+            mw[j] = mw[j] + mw[j + 1]      # [2026-09-09] 위와 같은 이유(합 보존)
             del merged[j + 1], mw[j + 1]
         beats += merged
         beat_acts += [ai] * len(merged)
@@ -466,11 +524,22 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
     name_lock = ("7-c. 이름이 고정되었습니다: 주인공 = '{p}', 상대방 = '{q}' — 두 필드에 이 이름 외의 것을 넣지 말고, "
                  "가이드 문장에서도 이 호칭을 쓴다.".format(p=_pn or "(임의)", q=_pn2 or "(임의)")
                  if (_pn or _pn2) else "")
-    unit_schema = '"units": [{"at": "사건이 시작하는 문장을 본문에서 그대로 복사", "cuts": 1}],'
-    unit_rule = ("6-b. units는 본문을 **사건(액션) 단위로 나눈 목록**이다 — 글자 수가 아니라 '누가 무엇을 했나'로 자른다.\n"
-                 "   한 유닛 = 사건 하나(이동·호칭·대사만 있는 장면은 앞 유닛에 합친다). 'at'은 그 사건이 시작하는\n"
-                 "   문장을 본문에서 그대로 복사(의역 금지), 'cuts'는 그 사건을 그릴 컷 수(평범한 사건 1,\n"
-                 "   신체 접촉·관계 변화·클라이맥스는 2). 총 4~12개, 일어난 순서대로.")
+    if _item_mode():
+        # [2026-09-09] 항목 1:1 모드 (--item-cuts 기본 켬) — 항목 하나가 컷 하나가 된다.
+        unit_schema = ('"units": [{"at": "화면 항목이 시작하는 문장을 본문에서 그대로 복사", '
+                       '"kind": "\ud589\ub3d9|\ub300\uc0ac|\uc18d\ub9c8\uc74c", "cuts": 1}],')
+        unit_rule = ("6-b. units는 본문을 **일어난 시간 순서대로 화면 항목 하나씩** 나눈 목록이다 — "
+                     "항목 하나가 컷 하나가 된다. 항목은 셋 중 하나: "
+                     "**\ud589\ub3d9**(무엇을 했다) / **\ub300\uc0ac**(누가 무엇을 말했다) / **\uc18d\ub9c8\uc74c**(누가 무엇을 생각했다).\n"
+                     "   'at'에는 그 항목이 시작하는 문장을 본문에서 그대로 복사(의역 금지), 'kind'는 위 셋 중 하나, "
+                     "'cuts'는 항상 1로 둔다. 인사 몇 마디 같은 사소한 흐름은 한 항목으로 합치고, "
+                     "행동\u00b7대사\u00b7속마음이 교차하는 흐름은 쪼개서 그대로 남긴다. 총 4~24\u1110, \uc77c\uc5b4\ub09c \uc21c\uc11c\ub300\ub85c.")
+    else:
+            unit_schema = '"units": [{"at": "사건이 시작하는 문장을 본문에서 그대로 복사", "cuts": 1}],'
+            unit_rule = ("6-b. units는 본문을 **사건(액션) 단위로 나눈 목록**이다 — 글자 수가 아니라 '누가 무엇을 했나'로 자른다.\n"
+                         "   한 유닛 = 사건 하나(이동·호칭·대사만 있는 장면은 앞 유닛에 합친다). 'at'은 그 사건이 시작하는\n"
+                         "   문장을 본문에서 그대로 복사(의역 금지), 'cuts'는 그 사건을 그릴 컷 수(평범한 사건 1,\n"
+                         "   신체 접촉·관계 변화·클라이맥스는 2). 총 4~12개, 일어난 순서대로.")
     rule6 = ("6. segments는 기/승/전/결 부분의 **첫 문장을 본문에서一字不사본**(의역/요약을 넣으면 앵커 매칭이\n"
              "   깨져 장면 분할이 사라진다). 문장이 길면 **앞 40자만 잘라 복사해도 된다**(부분 복사 OK, 총 4개).\n"
              "   본문에 뚜렷한 4부 구조가 없으면 빈 배열.\n"

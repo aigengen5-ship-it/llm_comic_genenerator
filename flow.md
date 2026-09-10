@@ -84,6 +84,8 @@
 | 1 | `comic_input.py:795` (`_extract_once`) | 본문 → 기승전결 가이드 + `segments`(막 앵커) + `units`(화면 항목) | EP당 1회 (전체 재시도 1회) | `call_openai_for_text`, low reasoning | JSON: `{guides, segments, units, name…}` | 파싱 실패 → 재시도, 그래도 실패 → 글자 수 기반 배분 + 자동 가이드 |
 | 2 | `anima_gen._generate_tags_via_llm` (호출은 `anima_gen.py:1127` → `openAPI_control.openAI_response`, 825) | 회차 렌더 태그 일체 (face / makeup / exposure / parts / body / background / expressions / partner / location / time / safety) | EP당 1회 | `openAI_response` 경로 = plot.json `mainLLM` 해석 모델 (qwen 계열은 `enable_thinking=False`, 그 외 `repeat_penalty 1.15 + top_k 64`, 800s timeout·3회 재시도) | 태그 dict → `config.*_tag`, `config.current_level` | client 없거나 파싱 실패 → **결정론 fallback 태그**(`fb`) |
 | 3 | `comic_gen.py:1625` (장면 루프 안) | 장면 본문 → **컷 스크립트 JSON** | **장면당 1회** (장면 = 항목 ≤6개 묶음, 본문 ≤1800자) | `call_openai_for_text`, `reasoning_effort="low"`, `enable_thinking=False` | 컷 배열(pose/camera/position/caption_ko/lines/clothes/climax…) | 장면당 `retry`회 재시도 → 여전히 미달이면 남은 컷을 **침묵 컷**으로 채움(`notes`에 기록) |
+
+**재시도 요약(2026-09-09)** — 트랜스포트 재시도(`max_retries=3`)와 별개로, **JSON 파싱 실패**에도 재시도합니다: 추출 2회(2회는 `temperature=0.0`) · 태그 생성 2회(`_retry` 라벨) · 컷 스크립트 장면당 2회(`retry=2`). 그래도 모자라면 컷 스크립트는 침묵 컷/`PanelScriptError`, 태그는 결정론 fallback.
 | 4 | `comic_gen.py:1792` (`request_ko_glossary`) | 컷에 남는 **한글 조각 → 영문 태그** 번역 | EP당 1회 (frag가 있을 때만) | `call_openai_for_plot`, `temperature=0.0`, `repeat_penalty=1.0` | `{"한글": "english tag"}` | gloss 없이 진행 → `sanitize_english`가 남은 한글을 지움 |
 | 5 | `comic_gen.py:1999` (`_llm_compose_panel_prompt`) | **POV / multi 컷만** 태그 블록 → 자연어 이미지 프롬프트 재작성 | 해당 컷당 1회 | `call_openai_for_text`, system = `data_comfyui/prompt_pov.md` / `prompt_multi.md` | `##PROMPT##` 사이에 완성 프롬프트 | 없으면 결정론 `flatten_tag_block`으로 조립 (에이전트가 재작성한 것처럼 보이나 실제로는 예외 경로만 LLM) |
 | + | `--chatty`일 때만 (`comic_gen.py:1407` → `_fill_chatty_narration`) | 지문 비어 있는 컷의 하단 설명 작문 | EP당 1회 (빈 컷이 있을 때만) | `call_openai_for_text`, `temperature=0.7` | 문자열 배열 | 장면 본문의 남은 문장 → 짧은 기본 문장 순으로 메움 |
@@ -217,7 +219,7 @@
 | 증상 | 방어선 | 코드 |
 |---|---|---|
 | 규칙 블록 잘림(응답만 옴) | 문자 예산 산식, 장면 1800자 상한 | `episode_char_budget` |
-| LLM이 JSON을 깨뜨림 | 느슨한 파서 + 재시도 + 침묵 컷 | `comic_input.py:629`, 장면 retry |
+| LLM이 JSON을 깨뜨림 | ① 관대한 파서(`json_soft_fix`) ② 객체 단위 구제(`_salvage_objects`) ③ 재시도(추출 2회·태그 2회·컷 스크립트 장면당 2회) ④ 그래도 모자라면 침묵 컷/에러 | `comic_input._extract_once`, `anima_gen._generate_tags_via_llm`, `request_panel_script(retry=2)` |
 | 키 앞에 홀 글자(러 / U+2024)가 섞여 배열째 파싱 실패(실측) | `json_soft_fix`가 잡문자·이상 따옴표 정리 → 실패 시 `_salvage_objects`가 짝 맞는 `{}`만 주워拾음(부분 손실 < 전량 손실) | `comic_input.json_soft_fix`, `comic_gen._salvage_objects` |
 | 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |
 | 규칙이 잘려 LLM이 규칙 일부를 못 봄(실측: `{pose_policy}`가 3-c 아래로 밀림) | 규칙 3 → 그 뒷줄 → 3-b/3-c 순으로 배치 고정 | `comic_gen.build_panel_script_prompt` |

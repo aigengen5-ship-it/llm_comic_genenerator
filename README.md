@@ -482,6 +482,24 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
       role: "epilogue"
 ```
 
+#### 페이지 템플릿 DB (`data/cut.yaml`) — 34종, 회차 안에서 반복하지 않습니다
+
+[2026-09-09] 주신 20종(구 `test/cut_new.yaml` — 병합 후 정리)을 기존 14종에 더해 **34종**이 되었습니다.
+`shares`(행 안 폭), `height`(행 높이), `center`(중앙 정렬), `role`(★화면 문법), `epilogue`(전용 페이지)를 같은 방식으로 읽습니다.
+
+| 상황 | 선택지 | 설명 |
+|---|---|---|
+| 기 | 7종 | 도입 — 전폭 1컷으로 화면을 벌리는 것이 먼저 뽑힙니다 |
+| 승 | 18종 | 전개 — 티키타카·질투·우연한 접촉·나뉜 화면 등 |
+| 전 | 22종 | 전환 — 급정거, 오해가 터지는 컷, 손끝 클로즈업 등 |
+| 결 | 11종 | 마무리 — 여운·배웅·빈 풍경 |
+| (여운) | 2종 | `epilogue: true` — 일반 페이지로 뽑히지 않고 마지막 회차 끝에만 |
+
+- **용도가 같은 페이지でも 다른 컷을 씁니다.** 페이지마다 독립 추첨이 아니라 **회차 안 재사용 추첨**입니다(12페이지 회차 → 12장 전부 다른 템플릿). 풀을 다 쓰는 초장편에서는 직전 페이지 것만 피하고 재사용합니다.
+- **회차의 첫 페이지**는 첫 행이 전폭 1컷인 템플릿을 우대합니다(도입부가 좁은 3단 세로로 시작하던 증상의 방지책). 여운 페이지도 처음부터 전폭 1칸입니다.
+- 템플릿 설명의 소품·장소는 **예시로만** 씁니다. 컷 스크립트 프롬프트에 "지킬 것은 분할 비율·크기·순서뿐, 본문에 없는 물건(우산·음식·벽 등)은 같은 크기의 다른 행동으로 바꾸세요"가 함께 전달됩니다.
+- 직접 늘리실 때: `data/cut.yaml`에 `- id: …`로 추가하면 되고, `situations`는 `기/승/전/결` 어휘를 써 주세요. 행의 `shares` 합은 1.0(`center: true`인 중앙 슬롯만 예외)입니다.
+
 #### 화면 문법 폰트 (무료 · OFL) — `--get-fonts` 한 번
 
 | 용도 | 폰트 (앞이 1순위, 뒤는 후보) | 라이선스 |
@@ -659,7 +677,7 @@ config.py             전역 상태(plot.json, data/episode_setup.json)
 LORA.md             선택 가능한 LoRA·UNet 안내(화풍을 고르실 때만 보는 문서 — 활성 키만 수록)
 llm_server.py         [선택] ollama 대체 전용 LLM 서버
 selftest.py           자가 점검 — 항목 수는 실행 결과에 출력됩니다(배송되는 inputs/ 샘플만 사용)
-data/cut.yaml         페이지 템플릿(기승전결, tier shares=폭, tier height=행 높이 예: climax_impact 4:6, **tier role=★서두 요약/에필로그**)
+data/cut.yaml         페이지 템플릿 34종(기승전결, tier shares=폭, tier height=행 높이 예: climax_impact 4:6, **tier role=★서두 요약/에필로그**)
 data/fonts/           [자동 다운로드] 화면 문법 폰트(OFL) — `--get-fonts`로 받습니다(.gitignore 대상)
 data_comfyui/         워크플로 json · actions.yaml · angle.txt · prompt_pov.md · prompt_multi.md
 inputs/               샘플(ep01.txt + sheet01.txt, 그리고 `--special` 검증용 ep90/ep91_deadbeef) — selftest가 읽는 입력도 이것뿐입니다

@@ -261,3 +261,352 @@ manga_panel_templates:
         height: 1.0
         role: "epilogue"
         description: "전폭 1컷 (페이지 가득) - 결 뒤의 여운 이벤트 신. 컷은 반투명하게 처리하고 그 위에 여운의 큰 지문 하나(대사 없음). 본문의 마지막 장면을 그대로 옮겨 적지 않는다"
+
+# ── [2026-09-09] test/cut_new.yaml에서 병합한 20종 (번호 15~34) ─────────────────
+#   용도가 같은 페이지라도 회차 안에서 같은 템플릿을 반복하지 않는다(plan_pages).
+#   situations 값은 예전 DB와 같은 기/승/전/결 어휘를 쓴다.
+
+  # 15. 전신 등장 (데이트 복장)  [기/승] — 2컷 분할 (우 30% 작은 컷, 좌 70% 큰 컷)
+  - id: outfit_reveal_vertical
+    name: "전신 등장 (데이트 복장)"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [0.7, 0.3]
+        height: 0.7
+        description: "2컷 분할 (우 30% 작은 컷, 좌 70% 큰 컷) - [우측] 기다리며 시계를 보거나 지루해하는 주인공 / [좌측] '기다렸지?' 하며 등장하는 상대방의 전신 샷 (머리부터 발끝까지 세로로 길게 배치)"
+      - tier: 2
+        shares: [0.4, 0.6]
+        height: 0.3
+        description: "2컷 분할 (우 60% 큰 컷, 좌 40% 작은 컷) - [우측] 평소와 다른 매력에 넋을 잃고 붉어진 주인공의 얼굴 / [좌측] '왜 그래? 이상해?' 하며 쑥스러워하는 상대방의 상반신"
+
+  # 16. 귀여운 질투 (4단)  [승] — 1컷 통짜 (100%)
+  - id: cute_jealousy_4tiers
+    name: "귀여운 질투 (4단)"
+    situations: ["승"]
+    total_size: "1 Page"
+    total_tiers: 4
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 멀리서 화기애애하게 대화하는 주인공과 제3자의 모습 (상황 제시)"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (각 33%) - 그것을 지켜보는 인물의 눈썹이 꿈틀, 입술이 삐죽, 주먹을 꽉 쥐는 3단 변화"
+      - tier: 3
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - [우측] 쾅 소리를 내며 책상을 치거나 헛기침 / [좌측] 깜짝 놀라 돌아보는 주인공"
+      - tier: 4
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 고개를 홱 돌려버리며 '흥!' 하고 토라진 모습 (SD 캐릭터 믹스 가능)"
+
+  # 17. 기습 공격 / 위기 발생  [전] — 2컷 분할 (우 40%, 좌 60%)
+  - id: sudden_ambush
+    name: "기습 공격 / 위기 발생"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.6, 0.4]
+        description: "2컷 분할 (우 40%, 좌 60%) - 일상적인 대화를 나누며 웃고 있는 평온한 두 사람"
+      - tier: 2
+        shares: [1.0]
+        height: 0.15
+        description: "1컷 통짜 (페이지 높이 15%, 얇고 가로로 긴 컷) - '퍼억!' 혹은 '끼익!' 하는 날카로운 효과음과 함께 날아오는 흉기나 위협 요소만 클로즈업"
+      - tier: 3
+        shares: [1.0]
+        height: 0.5
+        description: "1컷 통짜 (페이지 높이 50%) - 피를 흘리며 쓰러지거나, 상대를 밀쳐내고 대신 공격을 받는 처절한 액션 풀샷"
+
+  # 18. 숨막히는 대치 (4단 교차)  [승/전] — 1컷 통짜 (100%)
+  - id: tense_staredown
+    name: "숨막히는 대치 (4단 교차)"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 4
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 두 인물이 거리를 두고 서 있는 전경 풀샷"
+      - tier: 2
+        shares: [0.3, 0.7]
+        description: "2컷 분할 (우 70%, 좌 30%) - [우측] 인물 A의 차가운 눈빛 클로즈업 / [좌측] 땀방울이 맺힌 인물 B의 입술"
+      - tier: 3
+        shares: [0.7, 0.3]
+        description: "2컷 분할 (우 30%, 좌 70%) - [우측] 꽉 쥔 인물 B의 주먹 / [좌측] 지지 않고 노려보는 인물 B의 눈빛 클로즈업"
+      - tier: 4
+        shares: [0.5, 0.5]
+        description: "사선 2컷 분할 (50%, 50%) - 두 인물의 눈매만 화면 가득 대각선으로 분할하여 팽팽한 기싸움 연출"
+
+  # 19. 과거 회상 도입  [기/승] — 2컷 분할 (우 50%, 좌 50%)
+  - id: flashback_intro
+    name: "과거 회상 도입"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (우 50%, 좌 50%) - [우측] 오래된 사진이나 기념품을 발견하는 손 / [좌측] 아련한 표정으로 그것을 바라보는 주인공"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100% 가로 컷) - 주인공의 눈동자 클로즈업, 눈동자 안에 과거의 형상이 반사됨"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100% 타치키리 여백 없음) - 안개가 걷히듯 펼쳐지는 과거의 특정 장면 (어린 시절의 놀이터 등)"
+
+  # 20. 결정타 / 카운터 적중  [전/결] — 사선 2컷 분할 (우 60%, 좌 40%)
+  - id: finishing_move
+    name: "결정타 / 카운터 적중"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [0.4, 0.6]
+        height: 0.3
+        description: "사선 2컷 분할 (우 60%, 좌 40%) - [우측] 적의 거대한 공격이 스쳐 지나가는 아슬아슬한 순간 / [좌측] 틈을 파고들며 눈을 빛내는 주인공"
+      - tier: 2
+        shares: [1.0]
+        height: 0.7
+        description: "1컷 통짜 (높이 70% 전폭) - 사방으로 파편이 튀고 거대한 이펙트와 함께 적의 급소에 필살기가 꽂히는 극적인 풀샷"
+
+  # 21. 충격적 진실 자각  [전] — 2컷 분할 (우 50%, 좌 50%)
+  - id: realization_twist
+    name: "충격적 진실 자각"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (우 50%, 좌 50%) - 단서를 든 손과 평범한 대사를 던지는 상대방의 모습"
+      - tier: 2
+        shares: [0.3, 0.3, 0.4]
+        description: "3컷 분할 (조각난 컷들) - 주인공의 뇌리에 스쳐 지나가는 과거의 힌트들이 파편화되어 빠르게 플래시백"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100% 검은 배경) - 동공이 바늘처럼 수축되고 식은땀을 흘리며 얼어붙은 주인공의 얼굴 클로즈업"
+
+  # 22. 비 오는 날 우산 공유  [승/전] — 1컷 통짜 (100%)
+  - id: shared_umbrella
+    name: "비 오는 날 우산 공유"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 비가 쏟아지는 거리, 하나의 우산 아래 나란히 걷는 두 사람의 뒷모습 풀샷"
+      - tier: 2
+        shares: [0.4, 0.6]
+        description: "2컷 분할 (우 60%, 좌 40%) - [우측] 비를 맞지 않게 주인공 쪽으로 우산을 기울여준 상대방의 젖은 어깨 / [좌측] 그것을 눈치채고 놀란 주인공의 시선"
+      - tier: 3
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (50%, 50%) - [우측] 살짝 맞닿은 두 사람의 손등 클로즈업 / [좌측] 빗소리 속에서 서로 의식하며 붉어진 얼굴"
+
+  # 23. 요리 시식 리액션  [승] — 2컷 분할 (우 40%, 좌 60%)
+  - id: food_tasting
+    name: "요리 시식 리액션"
+    situations: ["승"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.6, 0.4]
+        description: "2컷 분할 (우 40%, 좌 60%) - [우측] 꿀꺽 침을 삼키며 요리를 한 입 먹는 상대방 / [좌측] 긴장해서 두 손을 모으고 결과를 기다리는 주인공"
+      - tier: 2
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 눈을 감고 우물우물 씹으며 아무 말이 없는 무음의 정적 (긴장감 최고조)"
+      - tier: 3
+        shares: [0.4, 0.6]
+        description: "2컷 분할 (우 60%, 좌 40%) - [우측] 눈을 번쩍 뜨며 배경에 화려한 요리왕 비룡식 리액션(꽃, 빛 뿜어짐) / [좌측] 안도하며 털썩 주저앉는 주인공"
+
+  # 24. 엇갈림과 이별  [전/결] — 1컷 통짜 (100%)
+  - id: parting_ways
+    name: "엇갈림과 이별"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - '잘 가.' 라는 짧은 인사와 함께 뒤돌아서는 두 사람의 측면 샷"
+      - tier: 2
+        shares: [0.5, 0.5]
+        description: "2컷 분할 (우 50%, 좌 50%) - [우측] 멈칫하며 뒤를 돌아보려다 참는 주인공 / [좌측] 주먹을 꽉 쥐고 앞만 보며 걷는 상대방"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100% 원경) - 텅 빈 거리에서 양극단으로 멀어지는 두 사람의 뒷모습. 여백을 넓게 주어 쓸쓸함 극대화"
+
+  # 25. 감정 폭발과 오열  [전/결] — 3컷 분할 (우 50% 큰 컷, 나머지 작은 컷)
+  - id: breaking_down_crying
+    name: "감정 폭발과 오열"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [0.25, 0.25, 0.5]
+        height: 0.25
+        description: "3컷 분할 (우 50% 큰 컷, 나머지 작은 컷) - 떨리는 어깨, 툭 떨어지는 눈물방울, 꽉 깨문 입술 등 터지기 직전의 감정 조각들"
+      - tier: 2
+        shares: [1.0]
+        height: 0.75
+        description: "1컷 통짜 (높이 75%) - 결국 바닥에 주저앉아 아이처럼 소리 내어 엉엉 우는 인물의 전폭 샷. 텍스트 없이 그림만으로 압도적인 슬픔 전달"
+
+  # 26. 데칼코마니 대칭 연출  [승/전] — 세로 2컷 분할 (우 50%, 좌 50%)
+  - id: parallel_screens
+    name: "데칼코마니 대칭 연출"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.5, 0.5]
+        description: "세로 2컷 분할 (우 50%, 좌 50%) - [우측] 침대에 누워 천장을 보는 A / [좌측] 창가에 기대 밖을 보는 B (서로 다른 공간)"
+      - tier: 2
+        shares: [0.5, 0.5]
+        description: "세로 2컷 분할 (우 50%, 좌 50%) - [우측] A가 스마트폰의 메신저를 켰다 끄는 손 / [좌측] B가 스마트폰 화면을 하염없이 보는 손"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 밤하늘의 달이나 비 내리는 창밖 풍경. (두 사람이 동시에 보고 있는 하나의 매개체)"
+
+  # 27. 구원의 손길  [전/결] — 1컷 통짜 (100% 어두운 배경)
+  - id: reaching_out_salvation
+    name: "구원의 손길"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100% 어두운 배경) - 어둠 속에서 체념한 듯 고개를 푹 숙이고 있는 주인공"
+      - tier: 2
+        shares: [0.5]
+        center: true
+        description: "중앙 1컷 (좌우 여백) - 갑자기 위에서 쏟아지는 한 줄기 빛과 함께 주인공 쪽으로 뻗어 나오는 누군가의 손"
+      - tier: 3
+        shares: [0.3, 0.7]
+        description: "2컷 분할 (우 70%, 좌 30%) - [우측] 그 손을 꽉 맞잡으며 어둠에서 끌어올려지는 강렬한 동작 / [좌측] 눈물이 고인 채 환하게 미소 짓는 상대방의 얼굴"
+
+  # 28. 비밀 귓속말  [승/전] — 1컷 통짜 (100%)
+  - id: secret_whisper
+    name: "비밀 귓속말"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 주변에 사람들이 많거나 소란스러운 상황. 주인공을 향해 다가오는 상대방"
+      - tier: 2
+        shares: [0.6, 0.4]
+        description: "2컷 분할 (우 40%, 좌 60%) - [우측] 갑자기 주인공의 옷깃을 잡아당겨 얼굴을 밀착시킴 / [좌측] 당황하여 주변을 의식하는 주인공"
+      - tier: 3
+        shares: [0.25, 0.75]
+        description: "2컷 분할 (우 75% 큰 컷, 좌 25% 좁은 컷) - [우측] 손으로 입을 가리고 주인공의 귀에 닿을 듯 속삭이는 입술 클로즈업 / [좌측] 그 내용을 듣고 놀라 굳어버린 주인공의 눈"
+
+  # 29. 1인칭 시점 관찰  [승/전] — 1컷 통짜 (높이 60%)
+  - id: first_person_pov
+    name: "1인칭 시점 관찰"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.6
+        description: "1컷 통짜 (높이 60%) - 1인칭 시점 카메라. 눈앞에서 나를 향해 몸을 숙이고 걱정스러운 듯 쳐다보는 상대방의 큼직한 얼굴"
+      - tier: 2
+        shares: [0.5, 0.5]
+        height: 0.4
+        description: "2컷 분할 (50%, 50%) - [우측] 상대방이 내 이마에 손을 얹어 열을 재는 시점 / [좌측] 주인공의 시선(카메라)이 흔들리거나 블러 처리되며 심쿵하는 연출"
+
+  # 30. 타이틀 드롭 (도입부)  [기] — 전폭 1컷 (높이 70% 타치키리)
+  - id: chapter_title_drop
+    name: "타이틀 드롭 (도입부)"
+    situations: ["기"]
+    total_size: "1 Page"
+    total_tiers: 2
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.7
+        role: "summary"
+        description: "전폭 1컷 (높이 70% 타치키리) - 인물 없는 아름다운 배경(하늘, 학교 전경 등)이나, 주인공의 강렬한 실루엣. 상단이나 하단에 큰 텍스트(제목)가 들어갈 여백이 많음"
+      - tier: 2
+        shares: [0.5, 0.5]
+        height: 0.3
+        description: "2컷 분할 (50%, 50%) - 본편 이야기로 자연스럽게 연결되는 인물들의 가벼운 일상적 동작이나 대사 시작"
+
+  # 31. 발각 위기 (숨기)  [승/전] — 1컷 통짜 (100%)
+  - id: hiding_suspense
+    name: "발각 위기 (숨기)"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 좁고 어두운 곳(옷장 등)에 구겨져 들어가 숨죽이고 있는 두 사람의 밀착된 모습"
+      - tier: 2
+        shares: [0.4, 0.6]
+        description: "2컷 분할 (우 60%, 좌 40%) - [우측] 밖에서 다가오는 발걸음 소리와 그림자 / [좌측] 들킬까 봐 입을 틀어막고 눈빛을 교환하는 두 사람"
+      - tier: 3
+        shares: [0.3, 0.3, 0.4]
+        description: "3컷 분할 (30%, 30%, 40%) - 문고리를 잡는 바깥 사람의 손, 맞닿은 두 사람의 얽힌 다리, 식은땀을 흘리며 심장 소리가 울리는 클로즈업"
+
+  # 32. 전력 질주  [전/결] — 사선 2컷 분할 (우 30% 작은 컷, 좌 70% 큰 컷)
+  - id: full_sprint
+    name: "전력 질주"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    tier_details:
+      - tier: 1
+        shares: [0.7, 0.3]
+        description: "사선 2컷 분할 (우 30% 작은 컷, 좌 70% 큰 컷) - [우측] 시계를 보거나 결심을 굳히는 눈빛 / [좌측] 바닥을 박차고 튀어 나가는 발의 역동적 모션"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "사선 3컷 분할 - 스쳐 지나가는 풍경, 거친 숨을 내쉬는 입, 땀방울이 흩날리는 얼굴 등 달리는 속도감 극대화"
+      - tier: 3
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 마침내 목적지에 도착하여 쾅 하고 문을 열거나, 대상의 이름을 크게 부르는 풀샷"
+
+  # 33. 다중 리액션 (충격)  [승/전] — 1컷 통짜 (100%)
+  - id: crowd_shock_reaction
+    name: "다중 리액션 (충격)"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 4
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 분위기를 얼어붙게 만드는 충격적인 폭탄발언 컷"
+      - tier: 2
+        shares: [0.334, 0.333, 0.333]
+        description: "3컷 분할 (각 33%) - 물을 뿜는 친구 A, 입을 쩍 벌린 친구 B, 들고 있던 책을 떨어뜨리는 친구 C"
+      - tier: 3
+        shares: [0.25, 0.25, 0.25, 0.25]
+        description: "4컷 세로 분할 - 더 많은 엑스트라들의 다양한 '에에에엑?!' 하는 경악 표정 콜라주"
+      - tier: 4
+        shares: [1.0]
+        description: "1컷 통짜 (100%) - 혼란에 빠져 아수라장이 된 교실/사무실 전체 풀샷"
+
+  # 34. 에필로그 빈 풍경 1칸  [결] — 전폭 1컷 (페이지 가득)
+  - id: epilogue_empty_scenery
+    name: "에필로그 빈 풍경 1칸"
+    epilogue: true
+    situations: ["결"]
+    total_size: "1 Page"
+    total_tiers: 1
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 1.0
+        role: "epilogue"
+        description: "전폭 1컷 (페이지 가득) - 인물 없이 두 개의 빈 커피잔, 혹은 맑은 하늘이나 파도 치는 바다 등 상징적인 배경만 배치. 컷을 반투명하게 처리하고 그 위에 모든 이야기를 갈무리하는 깊은 여운의 지문 독백이 들어감."

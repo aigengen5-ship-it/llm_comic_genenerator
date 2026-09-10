@@ -1002,7 +1002,8 @@ def main() -> int:
     check_llm_server(check)
     print("\n== ⑥ cut.yaml: 템플릿/페이지 플래너/스펙 레이아웃 ==")
     tmpls = CG.load_cut_templates()
-    check("cut.yaml 템플릿 14개 로드", len(tmpls) == 14, str(len(tmpls)))
+    # [2026-09-09] test/cut_new.yaml의 20종을 병합해 14 → 34종 (⑬b에서 종류별 커버리지까지 본다)
+    check("cut.yaml 템플릿 34개 로드", len(tmpls) == 34, str(len(tmpls)))
     bad_tier = []
     for t in tmpls.values():
         for td in t["tiers"]:
@@ -1969,6 +1970,81 @@ def main() -> int:
           "--no-action-cuts" in _hp and "--strong-cut-weight" in _hp)
     check("config.comic_action_cuts 기본은 켜두기 (끄면 본문 길이 배분으로 복귀)",
           config.comic_action_cuts is True and config.comic_cut_strong_weight == 2)
+
+    # ── ⑬b [2026-09-09] 컷 템플릿 DB 14종 → 34종 병합 + '같은 용도でも 다른 컷' 추첨
+    _tm = CG.load_cut_templates()
+    _ids = sorted(_tm)
+    check("data/cut.yaml 템플릿이 34종이고 id가 겹치지 않는다 (기존 14 + test/cut_new.yaml 20)",
+          len(_tm) == 34 and len(_ids) == len(set(_ids))
+          and {"outfit_reveal_vertical", "cute_jealousy_4tiers", "epilogue_empty_scenery"} <= set(_ids),
+          f"{len(_tm)}종")
+    _bad = []
+    for _tid, _t in _tm.items():
+        if not _t["tiers"]:
+            _bad.append(_tid + ":티어없음")
+        for _td in _t["tiers"]:
+            _sh = _td["shares"]
+            if any(x <= 0 or x > 1 for x in _sh):
+                _bad.append(f"{_tid}:share")
+            if abs(sum(_sh) - 1.0) > 0.02 and not _td.get("center"):
+                _bad.append(f"{_tid}:합{round(sum(_sh), 2)}")
+    check("34종 모두 파싱된다(shares 0~1, 행 합 1.0 — 중앙 정렬 슬롯만 예외)", not _bad, str(_bad[:4]))
+    _cov = {sit: sum(1 for t in _tm.values() if not t.get("epilogue") and sit in t["situations"])
+            for sit in ("기", "승", "전", "결")}
+    check("기승전결마다 선택지가 넉넉하다(각 5종 이상 → 회차 안에서 재사용 없이 돌아간다)",
+          all(v >= 5 for v in _cov.values()) and len(_cov) == 4, str(_cov))
+    config.comic_variation = 0
+    _p12 = CG.plan_pages(5, 12)
+    _idp = [q["template_id"] for q in _p12 if not q.get("prologue") and not q.get("epilogue")]
+    check("12페이지 회차는 12장 전부 다른 템플릿(용도가 같은 페이지でも 다른 컷 구성)",
+          len(_idp) == 12 and len(set(_idp)) == 12, str(_idp[:4]))
+    _diff = []
+    for _v in (1, 2, 3, 4, 5):
+        config.comic_variation = _v
+        _diff.append(tuple(q["template_id"] for q in CG.plan_pages(5, 4)
+                           if not q.get("prologue") and not q.get("epilogue")))
+    config.comic_variation = 0
+    check("변동 값마다 템플릿 조합이 달라진다", len(set(_diff)) >= 4, str(len(set(_diff))))
+    _epseen = set()
+    for _v in range(1, 31):
+        config.comic_variation = _v
+        config.total_episodes = 3
+        _epseen |= {q["template_id"] for q in (CG.plan_pages(3, 2) or []) if q.get("epilogue")}
+    config.comic_variation = 0
+    check("에필로그 여운 페이지도 고정 1개가 아니라 여운 템플릿 중에서 고른다",
+          len(_epseen) >= 2 and _epseen <= {"epilogue_aftermath", "epilogue_empty_scenery"}, str(_epseen))
+    _pb = CG._layout_block(CG.plan_pages(2, 2), (1, 999))
+    check("슬롯 설명의 소품은 '예시'라는 지침이 프롬프트에 있다 (본문에 없는 우산·음식 방지)",
+          "예시" in _pb and "분할 비율" in _pb, _pb[:0])
+
+    # ── ⑬c [2026-09-09] 사용자: "첫 페이지가 너무 좁다" — 도입부는 전폭·가로 컷이 먼저다
+    _ki = [t for t in _tm.values() if not t.get("epilogue") and "기" in t["situations"]]
+    def _wide_first(t):
+        return bool(t["tiers"]) and len(t["tiers"][0]["shares"]) == 1 and t["tiers"][0]["shares"][0] >= 0.9
+    _ki_wide = [t for t in _ki if _wide_first(t)]
+    check("도입(기)용 템플릿에 전폭 1컷으로 시작하는 것이 3종 이상 있다(좁은 3단 세로만 있던 회귀)",
+          len(_ki_wide) >= 3, str(sorted(t["id"] for t in _ki_wide)))
+    _firsts = []
+    for _v in (0, 1, 7, 19):
+        config.comic_variation = _v
+        _pp = CG.plan_pages(4, 3) or []
+        _firsts.append((_pp[0]["slots"][0]["share"], _pp[-1]["slots"][0]["share"]))
+    config.comic_variation = 0
+    check("회차의 첫 페이지와 마지막 여운 페이지는 전폭 컷으로 시작한다(첫 화면이 좁던 증상)",
+          all(s0 >= 0.9 for s0, _ in _firsts) and all(s1 >= 0.9 for _, s1 in _firsts), str(_firsts))
+    _ep_first = [t for t in _tm.values() if t.get("epilogue")]
+    check("에필로그 템플릿도 전폭 1컷 행으로 시작한다(작은 컷 여러 개 금지)",
+          _ep_first and all(t["tiers"][0]["shares"][0] >= 0.9 for t in _ep_first),
+          str([(t["id"], t["tiers"][0]["shares"]) for t in _ep_first]))
+    _pw, _ph = 1280, 1846
+    _pw2, _rows = CPM._plan_rows(2, ["", ""], [True, False], [False, False], [False, False],
+                                 unit_w=600, cols=2, gutter=8, pad=10, border=10, font_size=18,
+                                 row_spec=[{"cells": [{"idx": 0, "share": 1.0}]},
+                                           {"cells": [{"idx": 1, "share": 1.0}]}],
+                                 page_size=(_pw, _ph))
+    _widths = [c["w"] for r in _rows for c in r["cells"]]
+    check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
+          len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
 
     # ── ⑬ [2026-09-09] 컷 배분 변동(--variation/--vary) + 수다장이 모드(--chatty)
     check("变动 헬퍼는 같은 입력 → 같은 값(재현성)이고 값마다 다른 값을 준다",

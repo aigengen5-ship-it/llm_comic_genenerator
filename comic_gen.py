@@ -171,11 +171,34 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
     total_eps = max(1, int(getattr(config, "total_episodes", 1) or 1))
     first_ep, last_ep = int(ep_num_1based) <= 1, int(ep_num_1based) >= total_eps
     plans = []
+    # [2026-09-09] 템플릿이 14종 → 34종으로 늘었다(테스트용으로 주신 20종 병합). 그래서 추첨을
+    #   '페이지마다 독립 랜덤'에서 **'회차 안 재사용 추첨'**으로 바꿨다 — 용도(기승전결 기능)가
+    #   같은 페이지라도 다른 컷 구성이 나온다. 풀이 비면(_long 페이지) 직전 페이지 것만 피해 재사용한다.
+    all_pool = sorted((t for t in tmpls.values() if not t.get("epilogue")), key=lambda t: t["id"])
+    used_tmpl, prev_id = set(), ""
+
+    def _full_row_first(t):
+        """첫 행이 전폭 1컷인가 — 회차의 첫 페이지와 여운 페이지는 이걸 우대한다(사용자: 첫 컷이 좁다)"""
+        ts = t.get("tiers") or []
+        return bool(ts) and len(ts[0]["shares"]) == 1 and ts[0]["shares"][0] >= 0.9
+
+    def _pick_template(sit, prefer_wide=False):
+        nonlocal prev_id
+        pool = [t for t in all_pool if sit in t["situations"]] or all_pool
+        cand = [t for t in pool if t["id"] not in used_tmpl]
+        if not cand:                                  # 풀을 다 썼다 → 직전 페이지 것만 빼고 재사용
+            cand = [t for t in pool if t["id"] != prev_id] or pool
+        if prefer_wide:                               # 도입부·여운은 화면을 벌려 놓는 것부터
+            wide = [t for t in cand if _full_row_first(t)]
+            cand = wide or cand
+        t = rng.choice(cand)
+        used_tmpl.add(t["id"])
+        prev_id = t["id"]
+        return t
+
     for pi in range(pages):
         sit = _SITUATIONS[0] if pages == 1 else _SITUATIONS[min(3, int(round(pi * 3 / (pages - 1))))]
-        pool = sorted((t for t in tmpls.values() if not t.get("epilogue")), key=lambda t: t["id"])
-        pool = [t for t in pool if sit in t["situations"]] or pool
-        t = rng.choice(pool)
+        t = _pick_template(sit, prefer_wide=(pi == 0))     # 첫 페이지(도입)는 전폭 컷 우대
         slots = _slots_of(t)
         # [2026-09-09] 사용자 지시 (수정): ★큰 지문(요약)은 **회차의 가장 첫 컷 하나だけ**.
         #   페이지마다(=기승전결마다) 붙이던 예전 규칙은 70% 박스가 화면을 뒤덮어 폐지했다.
@@ -200,7 +223,9 @@ def plan_pages(ep_num_1based: int, pages: int = 2):
     if (bool(getattr(config, "comic_epilogue", True))
             and int(ep_num_1based) >= max(1, int(getattr(config, "total_episodes", 1) or 1))
             and len(plans) < cap):
-        ep = next((t for t in tmpls.values() if t.get("epilogue")), None)
+        _eppool = [t for t in tmpls.values() if t.get("epilogue")]
+        # [2026-09-09] 여운 페이지도 1고정(이벤트 신)이 아니라 '빈 풍경 1칸' 같은 대안과 돌린다
+        ep = rng.choice(_eppool) if _eppool else None
         if ep:
             slots = _slots_of(ep)
             for s in slots:
@@ -299,6 +324,10 @@ def _layout_block(page_plans, slot_range=None):
                     str(s.get("role") or ""), "")
             lines.append(f"  - 슬롯{gn} p{pl['page']}t{s['tier']}: {kind}{cen}{hnt} — "
                          f"{s['desc'][:70]}{star}")
+    # [2026-09-09] 템플릿이 34종으로 늘었다 — 그중엔 우산·음식·벽치기처럼 소품이 구체적인 것이 있다.
+    #   본문에 그 소품이 없으면 컷이 딴 이야기가 되므로 '지킬 것은 비율·순서'라고 못 박는다.
+    lines.append("슬롯 설명의 소품·장소는 **예시**입니다. 반드시 지킬 것은 분할 비율·컷 크기·순서뿐 — "
+                 "본문에 없는 물건이나 장소(우산, 음식, 벽, 거리 등)는 같은 크기의 다른 행동으로 바꾸세요.")
     lines.append("컷은 이 순서 그대로. 슬롯마다 page/tier 필드를 JSON에 넣을 필요는 없다(순서로 매칭).")
     return "\n".join(lines)
 

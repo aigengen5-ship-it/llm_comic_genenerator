@@ -215,6 +215,7 @@
 |---|---|---|
 | 규칙 블록 잘림(응답만 옴) | 문자 예산 산식, 장면 1800자 상한 | `episode_char_budget` |
 | LLM이 JSON을 깨뜨림 | 느슨한 파서 + 재시도 + 침묵 컷 | `comic_input.py:629`, 장면 retry |
+| 키 앞 `"`가 U+2024 같은 유니코드로 디코딩됨(실측) | `json_soft_fix`(따옴표류 정규화·잡문자 제거·키 감싸기) — **정상 응답은 이 복구기를 거치지 않음**, 실패 시 오류 위치를 로그에 남김 | `comic_input.json_soft_fix`, `extract_json_obj_checked` |
 | 사건 병합으로 스토리 압축 | 병합 시 컷 수 **합**, 레이아웃 목표 컷 수 재추첨 | `split_acts_by_units`, `plan_pages_layout` |
 | ★ 박스가 화면을 덮음 | 면적 70% 상한 + 글자 1.25배(크기는 폰트로) + 위치 규칙 | `comic_page_merge` NARR_* |
 | 지문이 잘림 | 줄 제한 제거 → 폭 성장 → 폰트 11px까지 | `comic_page_merge.py:136~144` |

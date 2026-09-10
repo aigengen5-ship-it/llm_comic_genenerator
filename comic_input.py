@@ -615,26 +615,55 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
 """
 
 
+# [2026-09-09] 추출 실패 실측 재현: gemma가 키 앞 따옴표를 이상한 유니코드 문자로 디코딩한다
+#   "eye_color": "brown eyes",\n․  "skin_color": ...   → U+2024 ONE DOT LEADER
+#   json.loads는 "Expecting property name enclosed in double quotes"로 죽고 우리는 {}를 받았다.
+#   즉 원고가 문제인 게 아니라 **토큰 디코딩 사고**이므로 파서 쪽에서 주워拾는다.
+_QUOTE_LIKE = "\u201c\u201d\u201e\u201f\u301d\u301e\uff02\u2018\u2019\u201a\u201b\uff40"   # 따옴표류
+ODD_TOKEN_CHARS = "\u2024\u2025\u2026\u30fb\u00b7"                       # 키 자리에서 발견된 이상 문자
+
+
+def json_soft_fix(text: str) -> str:
+    """관대한 JSON 복구 — 파싱이 실패했을 때만 쓴다(성공한 응답은 절대 이걸 거치지 않는다)."""
+    t = str(text or "")
+    for _q in _QUOTE_LIKE:
+        t = t.replace(_q, '"')
+    t = re.sub(r"([{\[,])\s*[" + ODD_TOKEN_CHARS + r"]+", r"\1", t)                 # 키 앞 이상 문자 제거
+    t = re.sub(r'([{\[,]\s*)([A-Za-z_\u00c0-\u318f][^"\n:]*?)(\s*":)', r'\1"\2\3', t)  # 따옴표 없는 키 감싸기
+    t = re.sub(r",\s*([}\]])", r"\1", t)                                             # trailing comma
+    return t
+
+
 def _extract_json_obj(text: str) -> dict:
-    """LLM 응답에서 첫 JSON 객체를 관대하게 추출"""
+    """LLM 응답에서 첫 JSON 객체를 관대하게 추출 → 실패 시 (dict, 오류문자열) 중 dict만"""
+    obj, _err = extract_json_obj_checked(text)
+    return obj
+
+
+def extract_json_obj_checked(text: str):
+    """({} 또는 객체, 실패 사유) — 실패 사유에 JSON 오류 위치 문맥까지 넣어 진단을 쉽게 한다."""
     if not text:
-        return {}
-    t = text.strip()
+        return {}, "빈 응답"
+    t = str(text).strip()
     t = re.sub(r"^```[a-zA-Z]*", "", t).strip()
     t = re.sub(r"```$", "", t).strip()
     i, j = t.find("{"), t.rfind("}")
-    if 0 <= i < j:
-        for cand in (t[i:j + 1],):
-            try:
-                return json.loads(cand)
-            except Exception:
-                # trailing comma / 말줄임 같은 가벼운 JSON 오류 완화
-                relaxed = re.sub(r",\s*([}\]])", r"\1", cand)
-                try:
-                    return json.loads(relaxed)
-                except Exception:
-                    return {}
-    return {}
+    if not (0 <= i < j):
+        return {}, "JSON 객체 기호({ … })를 찾지 못함"
+    cand = t[i:j + 1]
+    last = ""
+    for fix in (False, True):
+        src = json_soft_fix(cand) if fix else cand
+        try:
+            return json.loads(src), ""
+        except Exception as e:
+            last = str(e)
+    p = ""
+    m = re.search(r"char (\d+)", last)
+    if m:
+        k = int(m.group(1))
+        p = " | 문제 부근: " + repr(cand[max(0, k - 70):k + 40])
+    return {}, f"{last}{p}"
 
 
 def _norm_char_tag(raw) -> str:
@@ -797,9 +826,9 @@ def _extract_once(episode_text: str, sheet_text: str, ep_num: int, log_fn=None,
     except Exception as e:
         clog(f"추출 API 예외: {e}")
         return {}
-    data = _extract_json_obj(raw or "")
+    data, _perr = extract_json_obj_checked(raw or "")
     if not isinstance(data, dict) or not data:
-        clog(f"추출 JSON 파싱 실패 (응답 앞 120자): {str(raw)[:120]}")
+        clog(f"추출 JSON 파싱 실패: {_perr} (응답 앞 120자): {str(raw)[:120]}")
         return {}
     return _normalize_extract(data)
 

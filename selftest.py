@@ -2050,6 +2050,36 @@ def main() -> int:
     check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
           len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
 
+    # ── ⑬g2 [2026-09-09] LLM 디코딩 사고로 파싱이 죽지 않는다 (실측 재현: 키 앞 U+2024)
+    #    (따옴표·역슬래시는 조립해서 씁니다 — 이스케이프 실수로 테스트가 먼저 죽는 걸 막습니다)
+    _Q, _B = chr(34), chr(92)
+    _esc = _B + _Q            # JSON 안에서 이스케이프된 따옴표
+    _odd = chr(0x2024)        # ONE DOT LEADER : 키 따옴표 자리를 대신한 문자(실측 그대로)
+    _bad = ("{ " + _Q + "protagonist" + _Q + ": { " + _Q + "name" + _Q + ": " + _Q + "A" + _Q
+            + ", " + _Q + "eye_color" + _Q + ": " + _Q + "brown eyes" + _Q + ",\n"
+            + _odd + "  " + _Q + "skin_color" + _Q + ": " + _Q + "fair skin" + _Q + " }, "
+            + _Q + "units" + _Q + ": [ { " + _Q + "at" + _Q + ": " + _Q + "그녀는 " + _esc + "인하" + _esc
+            + "라고 말한다" + _Q + ", " + _Q + "kind" + _Q + ": " + _Q + "대사" + _Q
+            + ", " + _Q + "cuts" + _Q + ": 1 } ] }")
+    _obj, _err = CI.extract_json_obj_checked(_bad)
+    check("키 앞 따옴표가 U+2024로 깨진 응답도 주워拾는다 (실측 재현)",
+          bool(_obj) and bool(_obj.get("units")), _err[:60])
+    check("복구된 항목의 내용까지 산다 (kind/cuts/값 안 따옴표 보존)",
+          bool(_obj.get("units")) and _obj["units"][0]["kind"] == "대사"
+          and _obj["units"][0]["cuts"] == 1 and "인하" in _obj["units"][0]["at"],
+          str(_obj.get("units"))[:80])
+    _good = "{" + _Q + "b" + _Q + ": " + _Q + "그녀는 " + _esc + "안녕" + _esc + "이라 했다" + _Q + "}"
+    _ok, _e2 = CI.extract_json_obj_checked(_good)
+    check("정상 응답은 원문 그대로 (값 안 따옴표 보존 — 복구기는 실패할 때만 돈다)",
+          _ok == {"b": "그녀는 " + chr(34) + "안녕" + chr(34) + "이라 했다"} and _e2 == "", str(_ok))
+    _o3, _e3 = CI.extract_json_obj_checked("잘 모르겠어요")
+    check("정말 못 읽으면 사유 문자열을 남긴다 (로그로 진단 가능)",
+          _o3 == {} and "기호" in _e3, _e3[:40])
+    _arr = CG._extract_json_array("[{ " + _odd + " " + _Q + "pose" + _Q + ": " + _Q + "she smiles" + _Q
+                                  + ", " + _Q + "emotion" + _Q + ": " + _Q + "happy" + _Q + " }]")
+    check("컷 스크립트 배열 파서도 같은 디코딩 사고를 복구한다",
+          len(_arr) == 1 and _arr[0].get("emotion") == "happy", str(_arr)[:70])
+
     # ── ⑬h [2026-09-09] 페이지 템플릿 고정 (--template)
     _tm_all = CG.load_cut_templates()
     _one = sorted(k for k in _tm_all if not _tm_all[k].get("epilogue"))[3]

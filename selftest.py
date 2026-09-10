@@ -2339,6 +2339,31 @@ def main() -> int:
     check("place/time도 시트에 누적·유지된다(STATE_KEYS에 등록)",
           "place" in CG.STATE_KEYS and _sb2[1]["_state"]["place"] == "rooftop"
           and _sb2[1]["_state"]["time"] == "dusk", str(_sb2[1]["_state"])[:80])
+    # ── [2026-09-09] 상대방(BBB) 상태 시트 — 두 사람이 한 화면인 컷의 '지금'
+    _pn = [{"no": 1, "pose": "x", "camera": "wide", "type": "action", "caption_ko": "a",
+            "state": "p_face=angry; p_clothes=white shirt; p_posture=standing behind a counter"},
+           {"no": 2, "pose": "y", "camera": "multi", "type": "dialogue", "dialogue_ko": "b"},
+           {"no": 3, "pose": "z", "camera": "multi", "type": "action", "caption_ko": "c",
+            "state": "p_face=shocked; p_hair=短 い"}]
+    CG.fold_cut_state(_pn, 0)
+    check("상대 상태도 누적·유지된다(p_face/p_clothes/p_posture)",
+          _pn[1]["_state"]["p_face"] == "angry" and _pn[1]["_state"]["p_clothes"] == "white shirt"
+          and _pn[2]["_state"]["p_face"] == "shocked" and _pn[2]["_state"]["p_clothes"] == "white shirt",
+          str(_pn[2]["_state"])[:90])
+    _bbb = lambda s: " ".join(l for l in s.split("\n") if l.startswith("[BBB"))
+    _pb1 = anima_gen._build_tag_block(0, "she talks", "front_view", "multi", "", "", False,
+                                      cut_state=_pn[0]["_state"])
+    _pb2 = anima_gen._build_tag_block(0, "he answers", "front_view", "multi", "", "", False,
+                                      cut_state=_pn[1]["_state"])
+    check("상대가 화면에 있는 컷은 컷 상태가 회차 상대 태그를 덮는다",
+          "[BBB FACE] angry" in _bbb(_pb1) and "[BBB CLOTHES] white shirt" in _bbb(_pb1)
+          and "average face" not in _bbb(_pb1), _bbb(_pb1)[:170])
+    check("표정이 없는 다음 컷도 상대의 직전 표정·복장을 유지한다",
+          "angry" in _bbb(_pb2) and "white shirt" in _bbb(_pb2), _bbb(_pb2)[:170])
+    check("한글·일본어로 온 상대 항목은 지금 버린다(최종 프롬프트에서 파기되는 값)",
+          "[BBB HAIR]" not in anima_gen._build_tag_block(
+              0, "x", "front_view", "multi", "", "", False,
+              cut_state={**_pn[2]["_state"], "p_hair": "짧은 먼리"}))
     config.location, config.background_tag = "city street, rooftop, mall", ["crowd"] * 12
     _sb3 = [{"no": 1, "pose": "establishing", "state": {}},          # ★도입 컷은 장소를 비운다(실측)
             {"no": 2, "pose": "she sells", "state": {"place": "shopping street corner"}},

@@ -1798,7 +1798,7 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
     return out, head_add + tail_add
 
 
-def _build_partner_block(episode: int, name_b: str) -> list:
+def _build_partner_block(episode: int, name_b: str, cut_state: dict = None) -> list:
     """[2026-08-28] 상대방(BBB) 태그 블록 — 주인공(AAA)과 물리 분리.
 
     [BBB ...] 라인의 태그는 상대방에게만 적용됨을 명시 (LLM 프롬프트 생성용).
@@ -1817,22 +1817,43 @@ def _build_partner_block(episode: int, name_b: str) -> list:
         # 스토리 설정 없음(기존 프로젝트) → 기존 faceless 실루엣 fallthrough
         lines.append("[BBB LOOK] faceless_male, silhouette, black_body, no clothes")
         return lines
-    if pbase["hair"]:
-        lines.append(f"[BBB HAIR] {pbase['hair']}")
-    if pbase["face"]:
-        lines.append(f"[BBB FACE] {pbase['face']}")
-    if pbase["makeup"]:
-        lines.append(f"[BBB MAKEUP] {pbase['makeup']}")
+    # [2026-09-09] 컷 상태 시트에 상대방 항목이 있으면 회차 설정보다 앞선다 — 주인공만 '지금'을
+    #   가지고 상대는 회차 평균 태그였던 탓에, 두 사람이 한 화면인 컷에서상이 회차 중간의
+    #   표정·복장으로 그려졌다. (빈 항목만 회차 값 사용)
+    _cs = cut_state or {}
+
+    def _own(_k):
+        _v = str(_cs.get(_k) or "").strip()
+        _v = _dedupe_csv(_v)
+        # 한글 값은 최종 프롬프트에서 파기되니 지금 버린다(재시도 여지 확보)
+        return ",".join(t for t in _v.split(",") if t and not re.search(r"[\u3131-\u318e\uac00-\ud7af\u4e00-\u9fff]", t))
+
+    def _pick(_k, _base):
+        return _own(_k) or (_base or "")
+
+    if _pick("p_hair", pbase["hair"]):
+        lines.append(f"[BBB HAIR] {_pick('p_hair', pbase['hair'])}")
+    if _pick("p_face", pbase["face"]):
+        lines.append(f"[BBB FACE] {_pick('p_face', pbase['face'])}")
+    if _pick("p_makeup", pbase["makeup"]):
+        lines.append(f"[BBB MAKEUP] {_pick('p_makeup', pbase['makeup'])}")
     p_expr = config.partner_expression_tag[episode] if 0 <= episode < len(config.partner_expression_tag) else ""
+    p_expr = _dedupe_csv(",".join([x for x in (p_expr, _own("p_face")) if x]))
     if p_expr:
         lines.append(f"[BBB EXPRESSION] {p_expr}")
-    if pbase["body"]:
-        lines.append(f"[BBB BODY] {pbase['body']}")
-    if pbase["clothes"]:
+    if _pick("p_body", pbase["body"]):
+        lines.append(f"[BBB BODY] {_pick('p_body', pbase['body'])}")
+    if _own("p_clothes"):
+        lines.append(f"[BBB CLOTHES] {_own('p_clothes')}")
+    elif pbase["clothes"]:
         lines.append(f"[BBB CLOTHES] {pbase['clothes']} (Korean - translate to English)")
     p_exposure = config.partner_exposure_tag[episode] if 0 <= episode < len(config.partner_exposure_tag) else ""
     if p_exposure:
         lines.append(f"[BBB EXPOSURE] {p_exposure}")
+    for _lab, _k in (("[BBB ACCESSORIES]", "p_accessories"), ("[BBB MARKS]", "p_marks"),
+                     ("[BBB PROPS]", "p_props"), ("[BBB POSTURE]", "p_posture")):
+        if _own(_k):
+            lines.append(f"{_lab} {_own(_k)}")
     return lines
 
 
@@ -2115,7 +2136,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     # [2026-09-07] 청년향 1인 화면: comic은 상대방이 실제로 프레임에 있는 컷(POV)만 True로 켠다.
     #   (예전엔 무조건 주입 — "혼자 있는" 회차에서도 상대방 태그가 프레임을 오염시켰다.)
     if True if partner_block is None else partner_block:
-        lines_block.extend(_build_partner_block(episode, name_b))
+        lines_block.extend(_build_partner_block(episode, name_b, cut_state))
 
     # [2026-09-07] observer도 동일: 기본은 옛 동작(not is_side)이나 comic은 POV 컷만 켠다.
     if (not is_side) if observer_block is None else observer_block:

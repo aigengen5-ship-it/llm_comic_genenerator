@@ -657,7 +657,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
              {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
    "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
-   "state": "face=sad; clothes=school uniform; place=shopping street; background=crowd, neon signs",
+   "state": "face=sad; clothes=school uniform; place=shopping street; background=crowd, neon signs; p_face=angry; p_clothes=white shirt",
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
   ...
 ]
@@ -684,6 +684,9 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
        **근거는 [에피소드 본문]의 이 컷에 해당하는 조각뿐입니다.** 가이드(기승전결 4줄)는 흐름
        이해용입니다 — 가이드에 나온 결말의 복장·표정을 앞 컷에 미리 입히지 마세요(컷 1은 회차가
        **시작하는** 복장·표정을 입는다).
+       · **상대방 상태(p_ 접두사)**: 상대가 화면에 나오는 컷(multi/pov)은 `p_face`(표정) · `p_clothes`(복장) ·
+         `p_hair` · `p_posture` 를 같이 적습니다(예: `p_face=angry; p_clothes=white shirt`). 상대가 안 변하면
+         비우면 직전 컷이 유지됩니다. 근거는 동일하게 이 컷 본문 조각뿐입니다.
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
 5. position은 다음 7개 중 하나 (상대방 상태): He is standing. | He is sitting. | He is walking. |
    He is lying down. | He is lying on top of her. | He is behind her. | NONE
@@ -977,12 +980,18 @@ _EMO_FACE_TAGS = {
 #   그래서 LLM은 컷마다 **변한 항목만** 적고(델타), 코드가 순서대로 누적한다.
 #   규칙: 언급이 없으면 직전 컷 값을 그대로 유지한다.
 STATE_KEYS = ("face", "makeup", "body", "clothes", "accessories", "hair", "marks", "props", "posture",
-              "place", "time", "background")
+              "place", "time", "background",
+              # [2026-09-09] 상대방(BBB) 상태 — 두 사람이 한 화면인 컷(multi/pov)에서는 상대에게도 '지금'이 필요하다
+              "p_face", "p_makeup", "p_body", "p_clothes", "p_accessories", "p_hair", "p_marks",
+              "p_props", "p_posture")
 STATE_LABEL = {"face": "表정" if False else "표정", "makeup": "메이크업", "body": "몸매·가슴·엉덩이",
                "clothes": "복장", "accessories": "악세사리", "hair": "머리 상태",
                "marks": "몸의 흔적(땀/눈물/상처/더러움)", "props": "소지품(든 물건)",
                "posture": "지속 자세(쓰러짐/무릎/묶임)", "place": "장소",
-               "time": "시간대·조명", "background": "화면에 보이는 배경물"}
+               "time": "시간대·조명", "background": "화면에 보이는 배경물",
+               "p_face": "상대 표정", "p_makeup": "상대 메이크업", "p_body": "상대 몸",
+               "p_clothes": "상대 복장", "p_accessories": "상대 악세사리", "p_hair": "상대 머리",
+               "p_marks": "상대 몸의 흔적", "p_props": "상대 소지품", "p_posture": "상대 자세"}
 
 
 def state_of(panel) -> dict:
@@ -1706,28 +1715,46 @@ def fill_first_cut(panels, ep_num_1based, body: str = "", log_fn=None):
     if not miss:
         return 0
     prompt = ("만화 1컷의 **시작 상태**만 정하는 일입니다. 이 컷은 회차가 **시작하는** 지점입니다. "
-              "이 컷의 pose·지문에 나온 것만 근거로 쓰세요(가이드의 결말 복장·표정을 쓰면 안 됩니다).\n\n"
+              "이 컷의 pose·지문에 나온 것만 근거로 쓰세요(가이드의 결말 복장·표정을 쓰면 안 됩니다).\n"
+              "**빈 문자열로 보내지 마세요** — 이 컷 지문에 의복이 안 나오면 캐릭터 설정의 **평상복** 태그를 쓰세요"
+              " (회차 중반 이후 복장 금지). 표정은 인물이 지금 어떤 얼굴인지 한 단어.\n\n"
               f"[컷 {first.get('no', '?')}의 근거]\n"
               f"pose: {str(first.get('pose') or '')}\n"
               f"지문: {str(first.get('caption_ko') or '')}\n"
               f"이 회차 본문 도입부: {str(body or '')[:500]}\n\n"
               f"[비어 있는 항목] {', '.join(miss)} (face=표정, clothes=복장)\n"
               '출력: JSON 한 객체만 — {"no": ' + str(first.get("no", 1)) + ', "state": "face=sad; clothes=school uniform"}')
-    try:
-        raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or _clog,
-                                      temperature=0.1, reasoning_effort="low", enable_thinking=False)
-    except Exception as e:
-        _clog(f"EP{ep_num_1based} 첫 컷 상태 보충 실패: {e}")
-        return 0
-    arr = _extract_json_array(raw or "")
-    if arr and isinstance(arr[0], dict):
-        got = state_of(arr[0])
-    else:
-        # 단일 객체로 답하는 경우가 많다 — 배열만 기다리면 이 보충이 매번 헛돈다(실측)
-        obj, _e = CI.extract_json_obj_checked(raw or "")
-        got = state_of(obj) if isinstance(obj, dict) else {}
-    # 값이 한글로 오면 태그로 쓸 수 없다 — gloss 없이 영문만 남기고, 다 지워지면 미채움으로 둔다
-    got = {k: v for k, v in got.items() if not re.search(r"[\u3131-\u318e\uac00-\ud7af]", v)}
+    got = {}
+    for _try in (1, 2):          # 1회를 허무하게 읽는 일이 많아(실측) 0.0으로 한 번 더 묻는다
+        try:
+            raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or _clog,
+                                          temperature=0.1 if _try == 1 else 0.0,
+                                          reasoning_effort="low", enable_thinking=False)
+        except Exception as e:
+            _clog(f"EP{ep_num_1based} 첫 컷 상태 보충 {_try}회 실패: {e}")
+            continue
+        arr = _extract_json_array(raw or "")
+        if arr and isinstance(arr[0], dict):
+            got = state_of(arr[0])
+        else:
+            # 단일 객체로 답하는 경우가 많다 — 배열만 기다리면 이 보충이 매번 헛돈다(실측)
+            obj, _e = CI.extract_json_obj_checked(raw or "")
+            got = state_of(obj) if isinstance(obj, dict) else {}
+        # 값이 한글로 오면 태그로 쓸 수 없다 — gloss 없이 영문만 남기고, 다 지워지면 미채움으로 둔다
+        got = {k: v for k, v in got.items() if not re.search(r"[\u3131-\u318e\uac00-\ud7af]", v)}
+        # 회차 중반 이후 상태를 가져온 답은 답이 아니다(컷 1 오염의 원본)
+        _late = [x.strip().lower() for x in (str(getattr(config, "clothes_late", "") or "") + ","
+                 + str(getattr(config, "face_style_late", "") or "")).split(",") if x.strip()]
+        for k in list(got):
+            if any(t[:12] and t[:12] in got[k].lower() for t in _late):
+                _clog(f"EP{ep_num_1based} 첫 컷 {k}의 답이 회차 중반 이후 상태({got[k]})라 받지 않습니다 — 다시 묻습니다")
+                got.pop(k)
+        if got:
+            if _try > 1:
+                _clog(f"EP{ep_num_1based} 첫 컷 시작 상태 {_try}회 시도에서 회수")
+            break
+        if _try == 1:
+            _clog(f"EP{ep_num_1based} 첫 컷 상태 확인 1회는 답을 읽지 못했습니다 → temperature 0.0으로 재시도")
     fixed = 0
     for k in miss:
         if got.get(k):

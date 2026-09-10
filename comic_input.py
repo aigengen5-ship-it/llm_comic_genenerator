@@ -597,8 +597,8 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
    "clothes": "영문 태그 (예: police uniform, utility belt)",
    "body_shape": "영문 태그 (예: loli, child, aged down)",
    "job": "한국어 직업",
-   "breasts_size": -1에서 5 사이 정수,
-   "hip_size": -1에서 5 사이 정수
+   "breasts_size": 영문 태그,
+   "hip_size": 영문 태그
  }},
  "partner": {{"name": "한국어 이름", "sex": "female 또는 male", "clothes": "영문 태그"}},
  "guides": {{"protagonist": ["기", "승", "전", "결 각 1문장 한국어"], "partner": ["상대방 시선 1~2문장"], "sub": []}},
@@ -623,11 +623,11 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
 [캐릭터 시트(평문)]
 {sh}
 
-[에피소드 {ep_num} 본문]
-{ep}
 """
 
-
+# 본문 미사용
+#[에피소드 {ep_num} 본문]
+#{ep}
 # [2026-09-09] 추출 실패 실측 재현: gemma가 키 앞 따옴표를 이상한 유니코드 문자로 디코딩한다
 #   "eye_color": "brown eyes",\n․  "skin_color": ...   → U+2024 ONE DOT LEADER
 #   json.loads는 "Expecting property name enclosed in double quotes"로 죽고 우리는 {}를 받았다.

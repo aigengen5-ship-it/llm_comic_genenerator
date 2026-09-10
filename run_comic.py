@@ -535,7 +535,13 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         if isinstance(init, dict) and init.get("status") != "ok":
             p(f"  ✗ 태그 초기화 실패: {str(init)[:200]}")
             return 4
-        script = CG.request_panel_script(ep_num, max(1, int(config.total_episodes)), client=client)
+        try:
+            script = CG.request_panel_script(ep_num, max(1, int(config.total_episodes)), client=client)
+        except CG.PanelScriptError as e:
+            p(f"[오류] {e}")
+            p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다. 원고는 그대로 두고, ") 
+            p("  --no-strict-state로 경고만 켜고 진행하거나 장면을 조금 더 잘게 나눠 주세요.")
+            return 2
         panels = script.get("panels", [])
         plans = script.get("page_plans") or []
         if plans:
@@ -593,7 +599,13 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         return 0
 
     # 5) 본 실행: 태그 초기화 + 컷 생성 + 렌더 + 페이지 합성 (comic_gen_episode가 전 과정 담당)
-    meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True)
+    try:
+        meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True)
+    except CG.PanelScriptError as e:
+        p(f"[오류] {e}")
+        p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다(렌더는 시작되지 않았습니다).")
+        p("  --no-strict-state로 경고만 켜고 진행하거나, 장면을 조금 더 잘게 나눠 주세요.")
+        return 2
     pages = meta.get("pages", [])
     if not args.no_thumb:
         make_thumbs(pages)
@@ -658,6 +670,8 @@ def main() -> int:
                     help="페이지 템플릿을 고정합니다 (id 또는 이름 일부, 쉼표로 여러 개 → 페이지마다 회전). 예: --template romcom_banter_6panels")
     ap.add_argument("--list-templates", action="store_true",
                     help="사용 가능한 페이지 템플릿(id / 이름 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다")
+    ap.add_argument("--no-strict-state", action="store_true",
+                    help="컷 스크립트 JSON이 필수 항목(상태 시트 12종·pose·첫 컷의 시작 상태)을 못 채울 때 기본은 에러로 종료합니다 — 이 플래그는 경고만 하고 진행")
     ap.add_argument("--item-cuts", action="store_true", dest="item_cuts", default=None,
                     help="본문을 시간 순 '행동/대사/속마음' 항목으로 나눠 항목 하나를 컷 하나로 씁니다(기본 켬)")
     ap.add_argument("--no-item-cuts", action="store_false", dest="item_cuts",
@@ -794,6 +808,8 @@ def main() -> int:
         config.comic_emo_marks = False
     if args.no_prologue:
         config.comic_prologue_cut = False
+    if getattr(args, "no_strict_state", False):
+        config.comic_strict_state = False
     # [2026-09-09] 아래 스위치들도 이 자리에서 배선한다 — 예전에 이 위치에 붙이지 않아
     #   --no-action-cuts / --name 이 장식품이었던 적(플래그만 있고 안 씀)이 있다.
     if args.no_action_cuts:

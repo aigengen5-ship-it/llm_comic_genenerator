@@ -657,9 +657,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
              {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
    "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
    "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
-   "state": {{"face": "", "makeup": "", "body": "", "clothes": "", "accessories": "",
-              "hair": "", "marks": "", "props": "", "posture": "",
-              "place": "", "time": "", "background": ""}},
+   "state": "face=sad; clothes=school uniform; place=shopping street; background=crowd, neon signs",
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
   ...
 ]
@@ -668,12 +666,13 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {rule1}
 {rule2}
 3. pose는 반드시 영어 한 문장(두 문장 가능): "She ..." 또는 "She is ..."로 시작, 주인공은 여성(She), 상대방은 him/her 대명사 사용.
+   danbooru 태그를 문장 안에 섞어 쓸 수 있다 (예: ", her bikini bottom pulled aside, cameltoe, trembling").
+{pose_policy}
    3-b. **emotion(모든 컷 필수)**: 이 컷에서 주인공이 짓는 감정 하나를 영문 태그로 쓴다
        (예: "sad", "envious", "joyful", "embarrassed", "crying", "smiling"). 지문·대사가 없는
        행동 컷도 감정은 있다 — pose와 같은 컷의 감정이다. 회차 후반에 표정이 바뀌는 회차는
        그 이후 컷부터 바뀐 감정(예: "ahegao")을 쓴다. 빈 값은 회차 기본 표정을 쓴다는 뜻.
-   danbooru 태그를 문장 안에 섞어 쓸 수 있다 (예: ", her bikini bottom pulled aside, cameltoe, trembling").
-   3-c. **state(컷 연속 상태)**: 위 항목 중 **이 컷에서 바뀐 것만** 채우고 나머지는 ""로 둡니다.
+   3-c. **state(컷 연속 상태)**: 위 항목 중 **이 컷에서 바뀐 것만** 채우고 나머지는 비웁니다. 형식은 한 줄 문자열 `"항목=값; 항목=값"`(권장) 또는 객체 모두 허용.
        ""는 "직전 컷과 동일"이라는 뜻이고, 그 유지 계산은 프로그램이 합니다(LLM이 반복해 쓰지 않아도 됩니다).
        · face 표정 / makeup 메이크업 / body 몸매·가슴·엉덩이 크기 / clothes 복장 / accessories 악세사리(안경·리본·목걸이·귀걸이·가방·이어폰)
        · hair 머리 상태(풀림·묶음·젖음·乱れ) / marks 몸의 흔적(땀, 눈물 자국, 상처, 더러움, 붉어짐)
@@ -682,7 +681,9 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
        단 회치의 첫 컷과 장면이 바뀌는 컷은 place·time·background를 반드시 채웁니다. 회차 배경 태그는
        회차 전체 장소를 담고 있어, 그때 적지 않으면 다른 장소의 배경이 컷에 먼저 섞여 들어옵니다.
        본문에 실제로 변화가 있는 컷만 채우세요. 소지품·자세는 **사라지면 안 되는 물건**을 이어가는 데 쓰입니다. 값은 영문 태그.
-{pose_policy}
+       **근거는 [에피소드 본문]의 이 컷에 해당하는 조각뿐입니다.** 가이드(기승전결 4줄)는 흐름
+       이해용입니다 — 가이드에 나온 결말의 복장·표정을 앞 컷에 미리 입히지 마세요(컷 1은 회차가
+       **시작하는** 복장·표정을 입는다).
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
 5. position은 다음 7개 중 하나 (상대방 상태): He is standing. | He is sitting. | He is walking. |
    He is lying down. | He is lying on top of her. | He is behind her. | NONE
@@ -735,6 +736,32 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 _PANEL_KEYS = ("caption_ko", "position", "clothes", "emotion", "state", "camera", "climax", "dialog", "facing",
                "center", "multi", "pose", "type", "tier", "wide", "page", "no",
                "lines", "sfx")     # [2026-09-09] 화면 문법(풍선/의성어) 필드 추가
+
+
+def _salvage_objects(seg: str):
+    """중괄호를 짝지어 안 객체들을 꺼낸다 — 부분 손상 시 전량을 버리기보다 살아남은 것만 주운다."""
+    out, depth, start, in_str, esc = [], 0, None, False, False
+    for k, ch in enumerate(seg):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = k
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                out.append(seg[start:k + 1])
+                start = None
+    return out
 
 
 def _json_repair(s: str) -> str:
@@ -880,6 +907,20 @@ def _extract_json_array(text: str):
         if bad:
             _clog(f"JSON {bad}블록 파싱 실패 → 컷 {len(objs)}개만 사용(나머지는 슬롯 패딩)")
         return objs
+    # [2026-09-09] 마지막 구제 — 한 컷의 잡문자(실측: 키 앞에 ㅤㄴ가 들어온 사고) 때문에
+    #   배열째 22컷을 버리지 않는다. 짝 맞는 { }만 주워拾는다(부분 손실 < 전량 손실).
+    _sal = []
+    for chunk in _salvage_objects(t[i:]):
+        for cand in (chunk, CI.json_soft_fix(chunk), _json_repair(chunk)):
+            try:
+                v2 = json.loads(cand)
+            except Exception:
+                continue
+            if isinstance(v2, dict) and (v2.get("no") or v2.get("pose") or v2.get("state")):
+                _sal.append(v2)
+                break
+    if _sal:
+        return _sal
     return []
 
 
@@ -944,6 +985,33 @@ STATE_LABEL = {"face": "表정" if False else "표정", "makeup": "메이크업"
                "time": "시간대·조명", "background": "화면에 보이는 배경물"}
 
 
+def state_of(panel) -> dict:
+    """컷의 state를 dict로 읽는다 — 26B Q4는 중첩 객체를 자주 버린다.
+
+    세 갈래를 다 받는다(우선순위 순):
+      1) {"state": {"face": "sad", ...}}          권장(정석)
+      2) {"state": "face=sad; clothes=school uniform"}   ← 작은 모델이 제일 잘 지키는 한 줄 형식
+      3) {"state_face": "sad", "state_clothes": ...}     평문 키
+    """
+    raw = (panel or {}).get("state")
+    out = {}
+    if isinstance(raw, dict):
+        out = {k: str(v or "").strip() for k, v in raw.items() if str(v or "").strip()}
+    elif isinstance(raw, str) and raw.strip():
+        for chunk in re.split(r"[;\n|]", raw):
+            if "=" in chunk:
+                k, v = chunk.split("=", 1)
+                k, v = k.strip().lower(), v.strip().strip('"\'')
+                if k in STATE_KEYS and v:
+                    out[k] = v
+    if not out:
+        for k in STATE_KEYS:
+            v = str((panel or {}).get("state_" + k) or "").strip()
+            if v:
+                out[k] = v
+    return out
+
+
 def base_cut_state(ep_idx: int) -> dict:
     """컷 0의 초기 상태 = 회차 시작 상태(추출이 시간 순으로 준 첫 항목 + 시트)"""
     def _ep(attr, default=""):
@@ -962,7 +1030,7 @@ def base_cut_state(ep_idx: int) -> dict:
             "makeup": _ep("makeup_tag"), "body": body,
             "clothes": str(getattr(config, "clothes", "") or "").strip(),
             "accessories": _ep("accessories_tag"), "hair": hair,
-            "marks": _ep("marks_tag"), "props": "", "posture": "",
+            "marks": _ep("marks_tag"), "props": "", "posture": "standing",
             # 회차 배경 태그도 회차 전체 목록이라 첫 컷에 새 장소가 섞일 수 있다 — 컷이 채우면 그것이 이긴다.
             "place": str(getattr(config, "location", "") or "").strip(),
             "time": str(getattr(config, "time_of_day", "") or "").strip(),
@@ -1007,12 +1075,11 @@ def fold_cut_state(panels, ep_idx: int = 0) -> dict:
     for p in panels or []:
         if not isinstance(p, dict):
             continue
-        delta = p.get("state")
-        if isinstance(delta, dict):
-            for k in STATE_KEYS:
-                v = str(delta.get(k) or "").strip()
-                if v and v.lower() not in ("none", "null", "same", "유지", "변화없음"):
-                    st[k] = v
+        delta = state_of(p)
+        for k in STATE_KEYS:
+            v = str(delta.get(k) or "").strip()
+            if v and v.lower() not in ("none", "null", "same", "유지", "변화없음"):
+                st[k] = v
         # 컷이 기존 필드(clothes/emotion)만 준 경우에도 연속 상태에 반영한다 — 두 갈래가 어긋나면 안 된다
         _c = str(p.get("clothes") or "").strip()
         if _c:
@@ -1294,7 +1361,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         panels.append(p)
 
     if not panels:
-        return [], ["LLM 응답에 유효한 컷이 없음"]
+        return []
 
     if spec:
         # 컷 수 = 템플릿 슬롯 수로 확정. 부족 패딩/초과 절단 (MAX_PANELS 대신 슬롯 수 기준)
@@ -1576,6 +1643,158 @@ def _fill_chatty_narration(panels, beats, quotas, notes):
         notes.append(f"컷 {p['no']}: 수다장이 설명({how})")
 
 
+class PanelScriptError(RuntimeError):
+    """컷 스크립트 JSON이 필수 항목을 채우지 못했다 — 규칙: 모자라면 에러 내고 끝낸다."""
+
+
+# 인물이 나오는 첫 컷이 **반드시** 적어야 하는 것 — 이 둘이 비면 회차 요약(회치 전체)이 대신 들어간다.
+#   place/background는 치명적이지 않다: 코드가 '앞으로 처음 명시된 장소'를 소급해 쓰기 때문이다.
+STATE_REQUIRED_FIRST = ("face", "clothes")
+
+
+def validate_panel_script(panels):
+    """컷 스크립트 필수 항목 검사 → 문제 목록(비면 통과).
+
+    '회차 요약으로 대체'를 허용하지 않는 지점이다: 인물이 나오는 첫 컷이 state를 비우면 그
+    컷은 회차 태그(회차 전체를 요약한 값)를 쓰게 돼, 결국 컷 1부터 중반 복장·표정이 붙는다.
+    """
+    problems, first, stated = [], None, 0
+    for p in panels or []:
+        if not isinstance(p, dict):
+            continue
+        # 프로그램이 만든 컷(★도입 요약·프롤로그·에필로그·배경만)은 LLM 산이 아니다 — 검사에서 뺀다
+        if p.get("bg_only") or str(p.get("text_role") or "") in ("summary", "prologue", "epilogue"):
+            continue
+        no = p.get("no", "?")
+        if not str(p.get("pose") or "").strip():
+            problems.append(f"컷 {no}: pose가 비었다")
+        st = state_of(p)
+        if st:
+            stated += 1
+        # 키가 없는 것은 문제가 아니다 — 델타 방식이라 '없음 = "" = 직전 컷 유지'와 같은 뜻이다.
+        #   문제 삼는 것은 ① state 객체 자체 ② 인물이 나오는 첫 컷의 시작 상태 ③ pose 뿐이다.
+        if first is None and not p.get("bg_only"):
+            first = p
+    # 변화가 없는 컷이 대부분이 정상이니 'state 안 썼다' 자체는 문제가 아니다. 다만 LLM이 필드를
+    #   이해하지 못해 거의 안 채운 경우(절반 미만)는 잡는다 — 그러면 상태가 회차 태그에 의존한다.
+    human = [p for p in panels or [] if isinstance(p, dict) and not p.get("bg_only")
+             and str(p.get("text_role") or "") not in ("summary", "prologue", "epilogue")]
+    if human and stated == 0:
+        problems.append(f"state를 한 컷도 안 채웠습니다({len(human)}컷) — 화면 상태가 전부 회차 태그에 의존합니다")
+    if first is not None:
+        st = state_of(first)
+        empty = [k for k in STATE_REQUIRED_FIRST if not str(st.get(k) or "").strip()]
+        if empty:
+            problems.append(f"컷 {first.get('no', '?')}(인물이 나오는 첫 컷): state의 {empty}가 비어 "
+                            f"회차 요약 값으로 대체됩니다")
+    return problems
+
+
+def fill_first_cut(panels, ep_num_1based, body: str = "", log_fn=None):
+    """인물이 나오는 첫 컷의 시작 상태(표정·복장)만 따로 묻는다 — 이 값이 비면 회차 요약이
+    대신 들어가 컷 1부터 중반 복장·표정이 붙는다(사용자가 막으라고 한 바로 그 사고)."""
+    first = None
+    for p in panels or []:
+        if isinstance(p, dict) and not p.get("bg_only") \
+                and str(p.get("text_role") or "") not in ("summary", "prologue", "epilogue"):
+            first = p
+            break
+    if first is None:
+        return 0
+    st = state_of(first)
+    miss = [k for k in STATE_REQUIRED_FIRST if not str(st.get(k) or "").strip()]
+    if not miss:
+        return 0
+    prompt = ("만화 1컷의 **시작 상태**만 정하는 일입니다. 이 컷은 회차가 **시작하는** 지점입니다. "
+              "이 컷의 pose·지문에 나온 것만 근거로 쓰세요(가이드의 결말 복장·표정을 쓰면 안 됩니다).\n\n"
+              f"[컷 {first.get('no', '?')}의 근거]\n"
+              f"pose: {str(first.get('pose') or '')}\n"
+              f"지문: {str(first.get('caption_ko') or '')}\n"
+              f"이 회차 본문 도입부: {str(body or '')[:500]}\n\n"
+              f"[비어 있는 항목] {', '.join(miss)} (face=표정, clothes=복장)\n"
+              '출력: JSON 한 객체만 — {"no": ' + str(first.get("no", 1)) + ', "state": "face=sad; clothes=school uniform"}')
+    try:
+        raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or _clog,
+                                      temperature=0.1, reasoning_effort="low", enable_thinking=False)
+    except Exception as e:
+        _clog(f"EP{ep_num_1based} 첫 컷 상태 보충 실패: {e}")
+        return 0
+    arr = _extract_json_array(raw or "")
+    if arr and isinstance(arr[0], dict):
+        got = state_of(arr[0])
+    else:
+        # 단일 객체로 답하는 경우가 많다 — 배열만 기다리면 이 보충이 매번 헛돈다(실측)
+        obj, _e = CI.extract_json_obj_checked(raw or "")
+        got = state_of(obj) if isinstance(obj, dict) else {}
+    # 값이 한글로 오면 태그로 쓸 수 없다 — gloss 없이 영문만 남기고, 다 지워지면 미채움으로 둔다
+    got = {k: v for k, v in got.items() if not re.search(r"[\u3131-\u318e\uac00-\ud7af]", v)}
+    fixed = 0
+    for k in miss:
+        if got.get(k):
+            st[k] = got[k]
+            fixed += 1
+    first["state"] = st
+    if fixed:
+        _clog(f"EP{ep_num_1based} 첫 컷 시작 상태를 보충했습니다: "
+              + ", ".join(f"{k}={st[k]}" for k in miss if st.get(k)))
+    return fixed
+
+
+def fill_missing_state(panels, ep_num_1based, log_fn=None):
+    """빈 상태 항목만 LLM에 한 번 더 시켜 채운다(장면 전체 재요청보다 값싼 호출 1회)."""
+    bad = [p for p in panels or [] if isinstance(p, dict)]
+    if not bad:
+        return 0
+    prev, rows = {}, []
+    first_no = None
+    for p in bad:
+        if first_no is None and not p.get("bg_only") \
+                and str(p.get("text_role") or "") not in ("summary", "prologue", "epilogue"):
+            first_no = p.get("no", "?")
+        break
+    for p in bad:
+        st = state_of(p)
+        need = [k for k in STATE_KEYS if not str(st.get(k) or "").strip()]
+        tag = " ★회차가 시작하는 상태 — face/clothes/place/background 4개는 반드시" if p.get("no", "?") == first_no else ""
+        rows.append(f"- 컷 {p.get('no', '?')}: pose=\"{str(p.get('pose') or '')[:110]}\" "
+                    f"지문=\"{str(p.get('caption_ko') or '')[:40]}\" | 직전 상태: 표정 "
+                    f"{prev.get('face', '')} / 복장 {prev.get('clothes', '')} / 장소 {prev.get('place', '')}"
+                    f" | 빈 항목: {', '.join(need) if need else 'state 전체'}{tag}")
+        prev = dict(st) or prev
+    prompt = ("만화 컷의 **연속 상태**를 채우는 일입니다. 아래 컷들은 상태 항목이 비었습니다. "
+              "각 컷의 근거(pose·지문)와 직전 상태로 **알 수 있는 것만** 채우세요. 결말의 복장·표정을 "
+              "앞 컷에 미리 입히면 안 됩니다(컷 1은 회차가 시작하는 상태입니다).\n\n"
+              "[상태 어휘] " + ", ".join(f"{k}={STATE_LABEL[k]}" for k in STATE_KEYS) + "\n\n"
+              "[비어 있는 컷]\n" + "\n".join(rows[:8]) + "\n\n"
+              '출력: JSON 배열만 — [{"no": 3, "state": "face=sad; clothes=school uniform"}] '
+              "(채운 항목만, 값은 영문 태그. 모르겠으면 그 항목은 빼세요)")
+    try:
+        raw, _ = call_openai_for_text(prompt, messages=None, log_fn=log_fn or _clog,
+                                      temperature=0.2, reasoning_effort="low", enable_thinking=False)
+    except Exception as e:
+        _clog(f"EP{ep_num_1based} 상태 보충 호출 실패: {e}")
+        return 0
+    byno = {int(x.get("no", -1)): x for x in _extract_json_array(raw or "") if isinstance(x, dict)}
+    fixed = 0
+    for p in bad:
+        try:
+            no = int(p.get("no", -1))
+        except Exception:
+            continue
+        g2 = byno.get(no)
+        if not g2:
+            continue
+        got_st = state_of(g2) if "state" in g2 else {}
+        st = state_of(p)
+        for k in STATE_KEYS:
+            v = str(got_st.get(k) or "").strip()
+            if v and not str(st.get(k) or "").strip():
+                st[k] = v
+                fixed += 1
+        p["state"] = st
+    return fixed
+
+
 def _fill_star_narration(panels, beats, quotas, notes):
     """[2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 컷이 속한 **장면 본문의 첫 문장**으로 채운다.
 
@@ -1833,6 +2052,29 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         notes.append(f"본문 {len(body)}자 → 목표 {target}컷, 레이아웃 {n_cut}컷"
                      + (f" — 페이지 상한 {max(1, _cap)}에 닿아 본문 일부가 압축됐다(--max-pages 상향 권장)"
                         if n_pages >= max(1, _cap) else f" — 레이아웃이 {n_pages}페이지 {n_cut}컷으로 목표를 담았다"))
+    _prob = validate_panel_script(panels)
+    if _prob:
+        if bool(getattr(config, "comic_strict_state", True)):
+            # 모자라면 끝내기 전에, 빈 항목만_small 호출 1회로 채워 본다(장면 전체 재요청보다 싸다).
+            _clog(f"EP{ep_num_1based} 컷 스크립트 필수 항목 {len(_prob)}건 부족 — 빈 항목만 한 번 더 채웁니다: "
+                  + "; ".join(_prob[:4]))
+            fill_missing_state(panels, ep_num_1based)
+            _prob = validate_panel_script(panels)
+            # 그래도 첫 인물 컷이 모자라면, 그 컷만 따로 한 번 더 묻습니다(성공률이 제일 높다)
+            if any("첫 컷" in x for x in _prob) and fill_first_cut(panels, ep_num_1based, body):
+                _prob = validate_panel_script(panels)
+            if _prob:
+                raise PanelScriptError(
+                    f"EP{ep_num_1based} 컷 스크립트가 필수 항목을 채우지 못했습니다 — {_prob[:6]} "
+                    f"(계속하면 회차 요약 태그가 컷 상태를 대체해 태그가 꼬입니다. --no-strict-state로 경고만 가능)")
+        else:
+            _clog(f"EP{ep_num_1based} 컷 상태 미비 {len(_prob)}건 — --no-strict-state라 경고만 남깁니다: "                  + "; ".join(_prob[:4]))
+    _human = [p for p in panels if isinstance(p, dict) and not p.get("bg_only")
+              and str(p.get("text_role") or "") not in ("summary", "prologue", "epilogue")]
+    _wrote = sum(1 for p in _human if state_of(p))
+    if _human and _wrote * 3 < len(_human):
+        _clog(f"EP{ep_num_1based} 상태 변화를 적은 컷이 {_wrote}/{len(_human)}뿐입니다 — 나머지 컷은 직전"
+              f"(=시작) 상태를 유지합니다. 실제로 안 바뀌었다면 정상입니다.")
     _sheet = fold_cut_state(panels, max(0, int(ep_num_1based) - 1))   # 컷별 연속 상태 시트(미언급 = 유지)
     _chg, _prev = 0, {}
     for p in panels:                                             # 직전 컷과 다른 컷 수 = 실제로 바뀐 컷
@@ -2295,6 +2537,11 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         return _build_bg_only_prompt(ep_idx, panel, safety_tag)
     raw = panel_raw_line(panel)
     pose_text, camera_view, aspect_ratio, position_sentence, climax_tag = anima_gen._parse_action_entry(raw)
+    # [2026-09-09] pose를 비운 컷은 **기본 standing** — 상태 시트의 지속 자세(기본 서기)를 쓴다.
+    #   빈 pose는 렌더에서 아무 자세도 없는 그림으로 이어졌다.
+    if not str(pose_text or "").strip():
+        _st0 = panel.get("_state") if isinstance(panel.get("_state"), dict) else {}
+        pose_text = "She is %s." % (str(_st0.get("posture") or "standing").strip() or "standing")
     is_face = panel["type"] == "face"
     if is_face:
         # [2026-09-07] portrait 정면 정책: "tilted head / looking away" 류 각도 어구를 pose에서 제거

@@ -1171,6 +1171,9 @@ def main() -> int:
 
     orig_pl = CG.call_openai_for_text
     CG.call_openai_for_text = _fake_panels
+    # 스텁 LLM은 state 객체를 채우지 않으므로 이 구간만 엄격 검사를 꺼둔다(엄격 검사는 ⑬j에서 따로 검증)
+    _strict_keep = getattr(config, "comic_strict_state", True)
+    config.comic_strict_state = False
     try:
         sc = CG.request_panel_script(3, 1, pages=0, episode_text=body,
                                      chars_per_panel=100, beat_chars=600)
@@ -2131,6 +2134,75 @@ def main() -> int:
     check("--no-item-cuts(사건 모드)에서는 짧은 조각 병합이 그대로 돈다(회귀 확인)",
           len(_bo) <= CI.PANELS_PER_BEAT_MAX and sum(_wo) >= 10, f"{len(_bo)}개 {_wo}")
     config.comic_item_cuts = _item_keep
+
+    config.comic_strict_state = _strict_keep
+    # ── ⑬j [2026-09-09] 컷 스크립트 JSON이 모자라면 에러로 끝낸다(사용자 규칙)
+    _bad_panels = [{"no": 1, "pose": "She stands.", "type": "action", "camera": "front_view",
+                    "caption_ko": "아침.", "clothes": "school uniform", "emotion": "sad"}]   # state 없음
+    check("state를 하나도 안 채우면 문제로 잡힌다(화면 상태가 회차 태그에 의존한다)",
+          bool(CG.validate_panel_script(_bad_panels)), str(CG.validate_panel_script(_bad_panels))[:80])
+    check("state는 한 줄 문자열 '항목=값; …' 도 accepts된다(작은 모델은 중첩 객체를 자주 버린다)",
+          CG.state_of({"state": "face=sad; clothes=school uniform; nope=x"})
+          == {"face": "sad", "clothes": "school uniform"}
+          and CG.state_of({"state_props": "umbrella"}) == {"props": "umbrella"},
+          str(CG.state_of({"state": "face=sad"})))
+    _ok_panels = [dict(_bad_panels[0], state={k: "" for k in CG.STATE_KEYS})]
+    _ok_panels[0]["state"].update({"face": "sad", "clothes": "school uniform"})
+    check("인물이 나오는 첫 컷이 시작 상태(face/clothes/place/background)를 채우면 통과한다",
+          CG.validate_panel_script(_ok_panels) == [], str(CG.validate_panel_script(_ok_panels))[:90])
+    check("장소/배경은 첫 컷에서 비어도 치명적이 아니다(코드가 처음 명시된 장소를 소급한다)",
+          all("place" not in x and "background" not in x for x in CG.validate_panel_script(_ok_panels)),
+          str(CG.validate_panel_script(_ok_panels))[:80])
+    check("pose가 빈 컷도 문제다(기본 pose는 standing이지만 스크립트 단계에서는 반드시 채운다)",
+          any("pose" in x for x in CG.validate_panel_script(
+              [dict(_ok_panels[0], pose="")])), str(CG.validate_panel_script([dict(_ok_panels[0], pose="")]))[:70])
+    check("프로그램이 만든 ★ 컷(도입 요약·배경만)은 검사에서 제외한다",
+          CG.validate_panel_script([{"no": 1, "pose": "", "bg_only": True},
+                                    dict(_ok_panels[0], no=2)]) == [],
+          str(CG.validate_panel_script([{"no": 1, "pose": "", "bg_only": True},
+                                        dict(_ok_panels[0], no=2)]))[:80])
+    config.comic_strict_state = True
+    # ── ⑬k [2026-09-09] 오염된 JSON에서도 컷을 주운다 (실측: 키 앞에 러 / U+2024가 섞인다)
+    _corrupt = ('```json\n[\n  {"no": 1, "state": {"place": "mall", "time": "night"}},\n'
+                '  {"no": 2, "state": {"face": "sad", "props": "matches",\n'
+                '                    \ub7ec      "background": "mall"}},\n'
+                '  {"no": 3, "state": "face=ahegao; clothes=gold bra"},\n'
+                '  {"no": 4, "pose": "She dances."}\n]\n```')
+    _sv = CG._extract_json_array(_corrupt)
+    check("키 앞에 홀 글자(러)가 섞여도 배열째 버리지 않고 컷을 주운다(실측 오염)",
+          len(_sv) == 4 and CG.state_of(_sv[1]).get("background") == "mall", str(len(_sv)))
+    check("한 줄 문자열 state도 같은 경로로 읽는다",
+          CG.state_of(_sv[2]) == {"face": "ahegao", "clothes": "gold bra"}, str(CG.state_of(_sv[2])))
+    check("json_soft_fix가 키 앞 홀 글자를 지운다(추출·컷 스크립트 공용)",
+          "".join(CI.json_soft_fix('{\n\ub7ec  "background": "x"\n}').split()).startswith('{"background'),
+          CI.json_soft_fix('{\n\ub7ec  "background": "x"\n}')[:40])
+    check("구제 실패(완전한 비문)는 빈 목록을 돌려주고 침묵하지 않는다",
+          CG._extract_json_array("모델이 한국어로 설명만 해버림") == [], "")
+
+    check("엄격 검사 스위치가 config에 있다(--no-strict-state로 해제 가능)",
+          hasattr(config, "comic_strict_state")
+          and "no_strict_state" in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read())
+    _fc = [{"no": 1, "pose": "She sells matches.", "type": "face", "camera": "front_view",
+            "caption_ko": "아침 번화가.", "state": {"face": "sad"}}]        # clothes가 비어 있음
+    _orig_cgo = CG.call_openai_for_text
+    CG.call_openai_for_text = lambda *a, **k: ('{"no": 1, "state": "clothes=shabby school uniform"}', "")
+    try:
+        _nf = CG.fill_first_cut(_fc, 1, "본문 도입부: 번화가에서 교복 소녀가 성냥을 판다.")
+    finally:
+        CG.call_openai_for_text = _orig_cgo
+    check("첫 컷 보충은 배열이 아닌 단일 객체 응답도 주워 쓴다(실측으로 이 경로가 제일 잘 통했다)",
+          _nf == 1 and _fc[0]["state"].get("clothes") == "shabby school uniform",
+          "%s/%s" % (_nf, _fc[0]["state"]))
+    _fc2 = [{"no": 1, "pose": "She sells.", "type": "face", "camera": "front_view",
+             "caption_ko": "", "state": {}}]
+    CG.call_openai_for_text = lambda *a, **k: ('{"no": 1, "state": "clothes=\ud55c\uad6d\uc5b4 \ub418\uc9c1"}', "")
+    try:
+        CG.fill_first_cut(_fc2, 1, "본문")
+    finally:
+        CG.call_openai_for_text = _orig_cgo
+    check("보충 값이 한글이면 표정/복장 태그로 쓰지 않는다(한글은 최종 프롬프트에서 파기된다)",
+          not _fc2[0]["state"].get("clothes"), str(_fc2[0]["state"])[:60])
+    config.comic_strict_state = _strict_keep
 
     # ── ⑬i [2026-09-09] 컷별 연속 상태 시트 (언급 없으면 직전 컷 유지)
     _keep_state = (config.clothes, config.clothes_late, config.face_style, config.face_style_late,

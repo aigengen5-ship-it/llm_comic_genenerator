@@ -643,6 +643,8 @@ def json_soft_fix(text: str) -> str:
         t = t.replace(_q, '"')
     t = re.sub(r"([{\[,])\s*[" + ODD_TOKEN_CHARS + r"]+", r"\1", t)                 # 키 앞 이상 문자 제거
     t = re.sub(r'([{\[,]\s*)([A-Za-z_\u00c0-\u318f][^"\n:]*?)(\s*":)', r'\1"\2\3', t)  # 따옴표 없는 키 감싸기
+    # 키 앞에 섞여 들어온 홀 글자(실측: ...,\n\ub7ec  "background": "shopping mall") — Q4 디코딩 사고
+    t = re.sub(r'(?m)^(\s*)[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3040-\u30ff]{1,3}\s+(?=")', r"\1", t)
     t = re.sub(r",\s*([}\]])", r"\1", t)                                             # trailing comma
     return t
 

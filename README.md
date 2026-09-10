@@ -264,6 +264,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--no-emo-marks` | 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끕니다 |
 | `--template ID[,ID…]` | 페이지 템플릿을 **고정**합니다 (1종 = 회차 전체 같은 구성, 여러 종 = 페이지마다 회전) |
 | `--list-templates` | 사용 가능한 템플릿(id / 단수 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다 |
+| `--no-strict-state` | 컷 스크립트 JSON이 필수 항목(상태 시트·pose·첫 컷의 시작 상태)을 못 채워도 **경고만** 하고 진행합니다 (기본은 에러로 종료) |
 | `--no-face-crop` | 컷 크롭을 세로 가운데 자르기로 되돌립니다(기본은 얼굴 중심)
 | `--get-face-model` | 얼굴 검출 모델(YuNet 227KB)을 받습니다 — OpenCV가 있을 때만 쓰입니다 |
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
@@ -649,6 +650,9 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 - 시작 값은 회차 시작 상태입니다. 회차 요약이 순서를 틀리면(실측: 첫 항목이 중반 의상) **본문을 본 컷 스크립트의 초반 다수값**이 이깁니다(`_head_majority`).
 - 컷이 입은 그대로의 복장을 쓰는 컷은 `[AAA EXPOSURE]`를 그대로 유지하고, **옷을 실제로 갈아입은 컷부터** 회차 노출 어구를 떼어 새 옷에 이전 노출 노이즈가 옮지 않게 합니다.
 - 극단 표정(로컬 `extreme_face` 어휘)은 여전히 클라이맥스 컷에만 허용되고, 컷이 `ahegao`를 명시해도 일상 컷에서는 걸러집니다.
+- **형식은 한 줄 문자열을 권장합니다** — `"state": "face=sad; clothes=school uniform"` (객체도 인식합니다). 26B·Q4 계열은 중첩 객체를 자주 버리기 때문입니다(실측으로 문자열 형식의 준수율이 높았습니다).
+- **모자라면 에러로 끝냅니다.** 인물이 나오는 첫 컷이 `face`/`clothes`를 비우면 회차 요약 태그가 대신 들어가 컷 1부터 중반 복장·표정이 붙습니다. 그래서 ① 빈 항목만 작은 호출 1회로 보충 → ② 그래도 첫 컷이 모자라면 **그 컷만** 따로 재확인 → ③ 여전히 모자라면 `PanelScriptError`로 멈추고 안내합니다(렌더는 시작되지 않음). `--no-strict-state`로 경고만 켤 수 있습니다.
+  - 실측: 모델이 state를 아예 안 채운 회차에서 첫 컷 보충이 `clothes=shabby Japanese school uniform`을 회수해 통과했습니다.
 - 확인: 로그 `EP1 컷 상태 시트: 시작 = 표정 … / 복장 … → 변화가 적힌 컷 N개`, 산출물 `comic/bookNNN/episode_NN_comic.json`의 `panels[i]["_state"]`.
 
 ### 3-8d) 이름 고정 — `#캐릭터 태그#`가 이름을 빼앗지 못하게

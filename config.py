@@ -127,6 +127,9 @@ comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차
 comic_item_cuts = True
 # [2026-09-09] 페이지 템플릿 고정 (--template) — 예: ["romcom_banter_6panels"] 또는 이름 부분 일치.
 #   빈 배열이면 34종 자동 배분. 1개면 회차 전체가 그 구성, 여러 개면 페이지마다 회전한다.
+# 컷 스크립트 JSON이 필수 항목(state 12종 · pose · 첫 컷의 시작 상태)을 못 채우면 에러로 끝낸다.
+#   false(--no-strict-state)면 경고만 하고 회차 태그로 대체한다(= 태그가 꼬일 수 있다).
+comic_strict_state = True
 comic_templates_pin = []
 comic_layout_rolls = 10         # 페이지 수마다 레이아웃을 몇 번 다시 추첨해 목표 컷 수에 가까운 것을 고르는가
 comic_wide_share_max = 0.5

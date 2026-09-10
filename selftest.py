@@ -2177,13 +2177,21 @@ def main() -> int:
           "%s/%s" % (_nf, _fc[0]["state"]))
     _fc2 = [{"no": 1, "pose": "She sells.", "type": "face", "camera": "front_view",
              "caption_ko": "", "state": {}}]
+    _cloth_keep = getattr(config, "clothes", "")
+    config.clothes = "police uniform"                      # 회차 **시작** 복장(영문 태그)
     CG.call_openai_for_text = lambda *a, **k: ('{"no": 1, "state": "clothes=\ud55c\uad6d\uc5b4 \ub418\uc9c1"}', "")
     try:
         CG.fill_first_cut(_fc2, 1, "본문")
     finally:
         CG.call_openai_for_text = _orig_cgo
-    check("보충 값이 한글이면 표정/복장 태그로 쓰지 않는다(한글은 최종 프롬프트에서 파기된다)",
-          not _fc2[0]["state"].get("clothes"), str(_fc2[0]["state"])[:60])
+    check("보충 값이 한글이면 태그로 쓰지 않는다(한글은 최종 프롬프트에서 파기된다)",
+          "한글" not in str(_fc2[0]["state"].get("clothes", "")), str(_fc2[0]["state"])[:60])
+    check("답이 unusable이면 회차 **시작** 태그로 채운다 — 빈 상태 때문에 엄격 게이트가 회차를 죽이지 않는다(EP09 실측)",
+          _fc2[0]["state"].get("clothes") == "police uniform", str(_fc2[0]["state"])[:60])
+    config.clothes = _cloth_keep
+    _fp_src = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("첫 컷 보충 프롬프트가 '소문자 영문 태그'와 회차 시작 후보(영문)를 준다(--special EP09 실측 회귀)",
+          "값은 반드시 소문자 영문 태그" in _fp_src and "[회차 시작 후보 — 영문 태그]" in _fp_src, "")
     config.comic_strict_state = _strict_keep
     # ── ⑬l [2026-09-09] JSON 파싱 실패 재시도 (추출 / 태그 생성 / 컷 스크립트)
     _keep_ci, _keep_ag = CI.call_openai_for_text, anima_gen.openAI_response
@@ -2751,6 +2759,168 @@ def main() -> int:
                                     flip=True) == "speech_sharp")
     finally:
         CPM.set_balloon_style(_bkeep, CPM.BALLOON_ART_DIR_DEFAULT)
+
+
+    # ── ⑮ [2026-09-10] --special 10회차 중 5회차를 죽인 '"cuts"' 자리 디코딩 사고 (실측 회귀)
+    #   log/error.log 13:28:58·13:37:14·13:37:38·13:38:03·13:38:29 = EP02·EP05·EP06·EP07·EP08
+    #   전부 "kind": "행동", 바로 아래 "cuts" 자리에서 깨졌다(EP09는 strict 게이트로 따로빠졌다).
+    _unit = lambda key_line: ('{ "units": [ { "at": "그녀는 가슴을 주무르고 있었다.", '
+                              '"kind": "행동",\n' + key_line + '\n } ] }')
+    _c1 = CI.extract_json_obj_checked(_unit("     *cuts*: 1"))[0]                    # 마크다운 별표
+    _c2 = CI.extract_json_obj_checked(_unit("     \u0989\u09aa\u09b8\u09cd\u09a5\u09bf\u09a4 cuts: 1"))[0]  # 벵골·태국(실측 코드포인트 그대로)
+    _c3 = CI.extract_json_obj_checked(_unit('     \u1ec5ncuts": 1'))[0]                # 베트남 글자 + 열림따옴표 실종
+    check("키 앞 이물질 3종을 키 이름으로 되살린다(*cuts* / 벵골·태국 / 베트남) — 실측 그대로",
+          all(bool(x.get("units")) for x in (_c1, _c2, _c3)),
+          " / ".join(str(x)[:40] for x in (_c1, _c2, _c3)))
+    check("복구한 항목의 값까지 산다 (at/kind가 원문대로)",
+          bool(_c1.get("units")) and _c1["units"][0]["kind"] == "행동"
+          and "가슴" in _c1["units"][0]["at"], str(_c1)[:60])
+    check("스키마와 다른 키 이름('ncuts')은 접는 단추(fold_extract_keys)가 'cuts'로 되돌린다",
+          CI._fold_key("ncuts", CI.UNIT_KEYS) == "cuts"
+          and CI._fold_key("*cuts*", CI.UNIT_KEYS) == "cuts", CI._fold_key("ncuts", CI.UNIT_KEYS))
+    # 파싱은 **성공**했는데 키 이름만 찢어진 경우 — 조용히 필드가 사라지는 제일 위험한 형태(실측 yaml)
+    _silent = '{"protagonist": {"name": "유즈", "eye_ \u0435\u0439_color": "brown eyes", "skin_color": "fair skin"}}'
+    _sd, _slog = CI.fold_extract_keys(CI.extract_json_obj_checked(_silent)[0])
+    check("파싱은 성공했으나 키가 찢어진 답('eye_ ей_color')을 스키마 키로 되돌린다(조용한 실종 차단)",
+          _sd["protagonist"].get("eye_color") == "brown eyes" and "eye_ ей_color" not in _sd["protagonist"],
+          str(_sd["protagonist"])[:70])
+    check("ASCII로 찢긴 키('eye_com_color')도 가장 가까운 스키마 키로 접는다",
+          CI._fold_key("eye_com_color", CI._EXTRACT_KEYSETS["protagonist"]) == "eye_color",
+          CI._fold_key("eye_com_color", CI._EXTRACT_KEYSETS["protagonist"]))
+    # 값 안의 곡선 따옴표/줄임표는 **건드리면 안 된다** — 예전 파서가 살아있던 값을 죽였다(실측 EP05)
+    _q = CI.extract_json_obj_checked('{"units": [{"at": "“하아, 하아… 소타 님, 빨리 와주세요….”",'
+                                     ' "kind": "대사"}]}')[0]
+    check("값 안의 “곡선 따옴표”와 줄임표는 그대로 둔다(직따옴표 치환이 JSON을 죽이던 실측 회귀)",
+          bool(_q.get("units")) and "하아" in _q["units"][0]["at"], str(_q)[:70])
+    _tags = CI.extract_json_obj_checked('{"stats":{"M":5,"L":3,"A":3,"O":3,"I:4,"S:4,"D":2},'
+                                        '"face":"soft smile, calm"}')
+    check("렌더 태그 생성의 닫는 따옴표 실종(I:4 → I\":4)도 복구한다(2026-09-10 15:36:43 실측 — 예전은 fallback 태그)",
+          _tags[0].get("stats", {}).get("I") == 4 and _tags[0].get("face") == "soft smile, calm",
+          _tags[1][:60] or str(_tags[0])[:60])
+
+    check("구조 자리의 이상 문자(쉼표 자리를 삼킨 U+2024)는 여전히 고친다",
+          CI.extract_json_obj_checked('{"a": "x"\u2024 "b": "y"}')[0] == {"a": "x", "b": "y"}, "")
+    # 배열 안에 키 없이 툭 던진 본문 문장(실측 EP05) / 객체 키 자리의 비문(실측 EP08·EP10)
+    _bare = CI.extract_json_obj_checked('{ "units": [\n   {\n     "at": "첫 문장입니다.",\n     "kind": "행동"\n   },\n'
+                                        '   며칠 전부터 시작된 여운이 가시지 않은 듯, 그녀는 몽롱했다.\n   {\n'
+                                        '     "at": "둘째 문장입니다.",\n     "kind": "대사"\n   }\n ] }')[0]
+    check("배열 안에 키 없이 던져진 본문 문장은 {'at': …}로 감싼다(앵커라 지우면 컷이 사라진다)",
+          len(_bare.get("units") or []) == 3 and "몽롱" in str(_bare["units"][1]), str(_bare)[:90])
+    _junk = CI.extract_json_obj_checked('{ "units": [ { "at": "문장입니다.", "kind": "행동",\n     을",\n'
+                                        '     "cuts": 1 } ] }')[0]
+    check("객체 키 자리에 깨져 나온 비문 줄(을+따옴표)은 버리고 나머지를 살린다",
+          bool(_junk.get("units")) and _junk["units"][0]["kind"] == "행동", str(_junk)[:70])
+    # 스키마: 항목 1:1 모드(기본)에서는 'cuts'를 애초에 부탁하지 않는다 — 취약한 자리를 없앤다
+    _keep_item = getattr(config, "comic_item_cuts", True)
+    config.comic_item_cuts = True
+    _p_item = CI.build_extract_prompt("본문입니다." * 30, "시트", 1, need_segments=False)
+    config.comic_item_cuts = False
+    _p_event = CI.build_extract_prompt("본문입니다." * 30, "시트", 1, need_segments=False)
+    config.comic_item_cuts = _keep_item
+    check("항목 1:1 모드(기본) 추출 프롬프트는 'cuts' 키를 부탁하지 않는다(항상 1이라 값도 버린다)",
+          '"units"' in _p_item and "cuts" not in _p_item.split('"units"')[1].split("]")[0]
+          and "두 키만" in _p_item, _p_item.split('"units"')[1][:80])
+    check("사건 모드(--no-item-cuts)는 'cuts'를 부탁하되 생략을 허용한다",
+          "cuts" in _p_event and "빼도 된다" in _p_event, "")
+    check("'cuts'가 없는 유닛도 컷 수를 자체 판정으로 채운다(스키마 제거로 정보 손실 없음)",
+          [u["cuts"] for u in CI.normalize_units([{"at": "그는 그녀의 손을 잡았다.", "kind": "행동"}])] == [1]
+          if not _keep_item else CI.normalize_units([{"at": "그는 그녀의 손을 잡았다."}])[0]["cuts"] >= 1,
+          str(CI.normalize_units([{"at": "그는 그녀의 손을 잡았다."}]))[:60])
+
+
+    # ── ⑯ [2026-09-10] --special 10회 실행 분석으로 남긴 6가지 (2·5·6·7 항목)
+    _rs16 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("회차 실패·게이트 중단이 콘솔이 아니라 error.log에도 남는다(perr)",
+          "def perr(" in _rs16 and _rs16.count("perr(f\"[오류] {e}\")") == 2, str(_rs16.count("perr(")))
+    check("스킵한 회차는 산출물에 사유 메모를 남기고 성공하면 지운다(파일 없는 회차의 '면책 vs 미실행')",
+          "_skip_note(" in _rs16 and "episode_{ep_num:02d}_SKIPPED.txt" in _rs16
+          and "os.remove(_skip_f)" in _rs16, "")
+    check("전 회차 요약이 완성/스킵 회차를 번호로 세어 알려준다",
+          "완성 {len(done)}회차" in _rs16 and "스킵된 회차" in _rs16, "")
+    check("추출이 통째로 실패해도 실패 사유를 체크포인트에 남긴다(재실행이 0부터 시작하지 않는다)",
+          callable(CI.save_extract_failure) and callable(CI.load_extract_record)
+          and "save_extract_failure(_xkey" in _rs16, "")
+    _k16 = CI.extract_key("본문 16", "시트", 16, "plain")
+    _cache16 = os.path.join(_mkdtemp_rl(prefix="selftest_sk_"), "ex16.yaml")
+    _keep_cache = CI.EXTRACT_CACHE
+    try:
+        CI.EXTRACT_CACHE = _cache16
+        CI.save_extract_failure(_k16, "추출 JSON 파싱 실패(2회 시도)")
+        _rec16 = CI.load_extract_record(_k16)
+        check("실패 기록을 같은 원고 지문으로 되 읽는다(다음 실행이 안내할 수 있게)",
+              bool(_rec16.get("failed")) and "2회" in _rec16["failed"][-1], str(_rec16)[:80])
+        _k16c = CI.extract_key("본문 16c", "시트", 16, "plain")
+        CI.save_extract_checkpoint(_k16c, {"rating": "explicit"}, ["units"],
+                                   source=CI._src_note("inputs/ep90_deadbeef.txt", "sheet.json"))
+        _rec16b = CI.load_extract_record(_k16c)
+        check("체크포인트에 '어느 파일의 회차 몇'이었는지 남는다(책장 안에 같은 본문이 많고 원고 지문은 소실된다)",
+              isinstance(_rec16b.get("source"), dict)
+              and _rec16b["source"].get("episode") == "ep90_deadbeef.txt", str(_rec16b.get("source"))[:70])
+        CI.save_extract_failure(_k16c, "실패 하나")
+        CI.save_extract_checkpoint(_k16c, {"rating": "explicit"})
+        check("성공 체크포인트를 쓰는 순간 지난 실패 기록이 사라지지 않는다(원인 조율의 실마리)",
+              len(CI.load_extract_record(_k16c).get("failed") or []) == 1
+              and CI.load_extract_record(_k16c)["source"].get("episode") == "ep90_deadbeef.txt",
+              str(CI.load_extract_record(_k16c))[:90])
+        check("창 요약 로그는 .get 체인 — 로그 한 줄의 KeyError가 창 결과를 통째로 버리지 않는다",
+              "u['cuts']" not in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read()
+              and "u.get('cuts', 1)" in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read(), "")
+        check("렌더할 회차만 LLM을 내린다(dry-run에서 5초짜리 재기동을 반복하지 않는다)",
+              "if rendered and do_render:" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read(), "")
+        check("실패 기록은 체크포인트와 한 파일에 공존한다(부분 항목이 있으면 살린다)",
+            CI.load_extract_checkpoint(_k16) == {} and CI.save_extract_failure(_k16, "두 번째 사유")
+            and len(CI.load_extract_record(_k16).get("failed") or []) == 2,
+            str(CI.load_extract_record(_k16).get("failed"))[:90])
+    finally:
+        CI.EXTRACT_CACHE = _keep_cache
+    check("map-reduce 창이 빠지면 조용히 사건을 잃지 않고 알린다",
+          "개가 비었습니다" in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read(), "")
+
+    # ── 6) 동시 실행 로그 (selftest 서브프로세스가 살아있는 실행의 로그를 지운 실측)
+    import runlog as _RL16
+    _tmp16 = _mkdtemp_rl(prefix="selftest_runlog16_")
+    _cwd16 = os.getcwd()
+    try:
+        os.chdir(_tmp16)
+        os.makedirs("log", exist_ok=True)
+        _RL16.LOG_DIR, _RL16.ERROR_LOG, _RL16.LOCK = "log", os.path.join("log", "error.log"), \
+            os.path.join("log", ".run.lock")
+        open(os.path.join("log", "comic_gen.log"), "w", encoding="utf-8").write("살아있는 실행의 로그\n")
+        open(_RL16.LOCK, "w", encoding="utf-8").write('{"999998": "2026-09-10 13:35:06"}')   # 우리 PID 아님
+        os.kill = (lambda *a, **k: None) if not hasattr(os, "kill") else os.kill
+        _RL16._alive = lambda pid: True                      # 그 실행이 아직 도는 중이라고 가정
+        _RL16.start_run()
+        check("다른 실행이 아직 도는 중이면 본 로그를 **지우지 않고** 이어 쓴다(실측: selftest가 렌더 로그를 지웠다)",
+              "살아있는 실행의 로그" in open(os.path.join("log", "comic_gen.log"), encoding="utf-8").read(),
+              open(os.path.join("log", "comic_gen.log"), encoding="utf-8").read()[:40])
+        check("동시 실행을 error.log에 알린다(혼입된 로그를 해석할 실마리)",
+              "동시 실행 감지" in open(_RL16.ERROR_LOG, encoding="utf-8").read(), "")
+        _RL16.note("[PLOT_PROMPT] model=x, temp=0.80\n규칙: 예외를 허용한다", "COMIC")
+        _RL16.note("EP9 컷 스크립트가 필수 항목을 채우지 못했습니다", "COMIC")
+        _er16 = open(_RL16.ERROR_LOG, encoding="utf-8").read()
+        check("프롬프트 덤프는 에러가 아니다(실측: 에러 20건 중 13건이 [PLOT_PROMPT])",
+              "PLOT_PROMPT" not in _er16 and "필수 항목" in _er16, _er16[-80:].replace("\n", " "))
+        check("에러 줄에 pid를 남긴다(두 실행이 섞여도 귀속을 읽는다)",
+              "pid " in _er16, _er16[-70:].replace("\n", " "))
+    finally:
+        os.chdir(_cwd16)
+
+    # ── 3) 컷 상태 vs 레거시 clothes 우선순위 (실측: 컷의 옷 변화가 승계값에 지워졌다)
+    _cp2026 = [{"no": 1, "clothes": "school uniform", "state": {}},
+               {"no": 2, "clothes": "school uniform", "_clothes_prev": True,
+                "state": {"clothes": "wet dress"}},          # 이 컷이 실제로 입은 변화
+               {"no": 3, "clothes": "school uniform", "_clothes_prev": True, "state": {}}]
+    CG.fold_cut_state(_cp2026, 0)
+    check("직전 컷에서 **승계된** clothes는 상태 시트를 덮지 않는다(EP10 실측: 컷2의 젖은 원피스가 사라졌다)",
+          _cp2026[1]["_state"]["clothes"] == "wet dress" and _cp2026[2]["_state"]["clothes"] == "wet dress",
+          str([x["_state"]["clothes"] for x in _cp2026])[:80])
+    _cp2026b = [{"no": 1, "clothes": "school uniform", "state": {}},
+                {"no": 2, "clothes": "bikini", "state": {}}]  # 컷이 직접 쓴 clothes는 여전히 반영
+    CG.fold_cut_state(_cp2026b, 0)
+    check("컷이 직접 쓴 clothes는 여전히 상태에 반영된다(승계만 우선권이 떨어진다)",
+          _cp2026b[1]["_state"]["clothes"] == "bikini", str(_cp2026b[1]["_state"]["clothes"]))
+    check("_repair_panels가 승계한 clothes에 표시를 남긴다(위 판정의 근거)",
+          "_clothes_prev" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read(), "")
 
 
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.

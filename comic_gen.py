@@ -1091,8 +1091,10 @@ def fold_cut_state(panels, ep_idx: int = 0) -> dict:
             if v and v.lower() not in ("none", "null", "same", "유지", "변화없음"):
                 st[k] = v
         # 컷이 기존 필드(clothes/emotion)만 준 경우에도 연속 상태에 반영한다 — 두 갈래가 어긋나면 안 된다
+        # [2026-09-10] 단 ① 직전 컷에서 **승계된** clothes는 우선권이 없고(미언급 = 유지),
+        #   ② 상태 시트(state.clothes)가 이미 답을 줬으면 그 쪽이 정답이다(시트가 이 컷의 상태표).
         _c = str(p.get("clothes") or "").strip()
-        if _c:
+        if _c and not p.get("_clothes_prev") and not str(delta.get("clothes") or "").strip():
             st["clothes"] = _c
         _e = str(p.get("emotion") or "").strip()
         if _e:
@@ -1404,6 +1406,10 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
             _last_clothes = p["clothes"]
         elif _last_clothes:
             p["clothes"] = _last_clothes
+            # [2026-09-10] 승계일 뿐이다(이 컷이 옷을 갈아입은 것이 아니다). fold_cut_state는
+            #   이 표시가 있는 clothes를 '미언급'으로 취급한다 — 승계값이 상태 시트를 덮어서
+            #   컷이 실제로 입은 변화를 지워버렸다(EP10 실측: state의 'wet dress'가 사라졌다).
+            p["_clothes_prev"] = True
 
     # [2026-09-07] portrait 정책: face 컷은 정면 풀페이스 초상화 강제 —
     #   facing=front 고정, 측면/후면/POV 카메라는 close_up로 교체(LLU가 어기더라도 결정론 보정).
@@ -1715,10 +1721,18 @@ def fill_first_cut(panels, ep_num_1based, body: str = "", log_fn=None):
     miss = [k for k in STATE_REQUIRED_FIRST if not str(st.get(k) or "").strip()]
     if not miss:
         return 0
+    # [2026-09-10] --special EP09 실측: 이 프롬프트에 '영문 태그' 지시가 없어서 모델이 시트의
+    #   **한글 산문**("얇고 하얀 시폰 소재의 미니 드레스…")을 그대로 베꼈고, 한글 파기 규칙으로
+    #   답이 통째로 버려지고 → 컷2 clothes가 비어 → 엄격 게이트가 회차 전체를 죽였다(temp 0.1/0.0
+    #   두 번 다 바이트 단위로 같은 답). 그래서 ① 영문 태그를 못 박고 ② 영문 후보 태그를 근거로 함께 주었습니다.
+    _start_c = str(getattr(config, "clothes", "") or "").strip()
+    _start_f = str(getattr(config, "face_style", "") or "").strip()
     prompt = ("만화 1컷의 **시작 상태**만 정하는 일입니다. 이 컷은 회차가 **시작하는** 지점입니다. "
               "이 컷의 pose·지문에 나온 것만 근거로 쓰세요(가이드의 결말 복장·표정을 쓰면 안 됩니다).\n"
-              "**빈 문자열로 보내지 마세요** — 이 컷 지문에 의복이 안 나오면 캐릭터 설정의 **평상복** 태그를 쓰세요"
-              " (회차 중반 이후 복장 금지). 표정은 인물이 지금 어떤 얼굴인지 한 단어.\n\n"
+              "**값은 반드시 소문자 영문 태그** — 한글·산문으로 쓰면 태그로 못 써서 답을 버립니다.\n"
+              "**빈 문자열로 보내지 마세요** — 이 컷 지문에 의복이 안 나오면 아래 [회차 시작 후보] 태그를 "
+              "그대로 옮기세요(새 옷을 만들지 말고, 회차 중반 이후 복장도 금지). 표정은 한 단어.\n\n"
+              f"[회차 시작 후보 — 영문 태그] clothes: {_start_c or '(없음)'} / face: {_start_f or '(없음)'}\n\n"
               f"[컷 {first.get('no', '?')}의 근거]\n"
               f"pose: {str(first.get('pose') or '')}\n"
               f"지문: {str(first.get('caption_ko') or '')}\n"
@@ -1756,12 +1770,26 @@ def fill_first_cut(panels, ep_num_1based, body: str = "", log_fn=None):
             break
         if _try == 1:
             _clog(f"EP{ep_num_1based} 첫 컷 상태 확인 1회는 답을 읽지 못했습니다 → temperature 0.0으로 재시도")
+    # [2026-09-10] 답을 못 받은 항목은 **회차 시작 태그**로 메운다. 빈 상태로 두면 아래 일이 생긴다:
+    #   ① 렌더는 어차피 base_cut_state(= 회차 시작 복장·표정)를 쓴다(값이 같다는 뜻)
+    #   ② 그런데 엄격 게이트는 "비어 있어 회차 요약으로 대체"라고 회차를 통째로 죽인다(EP09 실측).
+    #   같은 값이라면 명시적으로 채우고 남기는 편이 정직하다.
+    _det = {"clothes": str(getattr(config, "clothes", "") or "").strip(),
+            "face": str(getattr(config, "face_style", "") or "").strip()}
+    _fb = []
+    for k in miss:
+        if not str(got.get(k) or "").strip() and _det.get(k):
+            got[k] = _det[k]
+            _fb.append(k)
     fixed = 0
     for k in miss:
         if got.get(k):
             st[k] = got[k]
             fixed += 1
     first["state"] = st
+    if _fb:
+        _clog(f"EP{ep_num_1based} 첫 컷 시작 상태 {', '.join(_fb)}는 답이 없어 회차 시작 태그로 두었습니다"
+              " — 렌더는 같은 값을 씁니다(회차 중반 복장이 아니라 시작 복장)")
     if fixed:
         _clog(f"EP{ep_num_1based} 첫 컷 시작 상태를 보충했습니다: "
               + ", ".join(f"{k}={st[k]}" for k in miss if st.get(k)))
@@ -1973,9 +2001,9 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
                                   else (1 if n_cut >= len(beats) else 0)),
                          variation=_var)
     if unit_w:
-        _clog(f"EP{ep_num_1based} 사건 {len(unit_w)}개(강한 사건 {sum(1 for w in unit_w if w > 1)}개 = 컷 2) "
-              f"→ 컷 예산 {sum(unit_w)} / 레이아웃 {n_cut}컷 — 배분 저울은 '글자 수'가 아니라 '일어난 사건'")
-    _clog(f"EP{ep_num_1based} 본문 {len(body)}자 → 목표 {target}컷 / 레이아웃 {n_cut}컷"
+        _clog(f"EP{ep_num_1based} 본문 항목 {len(unit_w)}개(강한 항목 {sum(1 for w in unit_w if w > 1)}개 = 컷 2) "
+              f"→ 만들 컷 {sum(unit_w)} / 페이지 슬롯 {n_cut} — 배분 저울은 '글자 수'가 아니라 '일어난 사건'")
+    _clog(f"EP{ep_num_1based} 본문 {len(body)}자 → 만들 컷 {target} / 페이지 슬롯 {n_cut}"
           + (f" ({n_pages}페이지 {[pl['template_id'] for pl in page_plans]})" if page_plans else " (자동 레이아웃)")
           + (f" → 장면 {len(beats)}개 {quotas} (기승전결 막 분할: "
              + "".join(_SITUATIONS[a] for a in sorted(set(beat_acts)) if a < len(_SITUATIONS)) + ")")
@@ -2077,7 +2105,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         _fill_chatty_narration(panels, beats, quotas, notes)
     if n_cut < target:
         _cap = int(getattr(config, "comic_max_pages", MAX_PAGES_AUTO) or MAX_PAGES_AUTO)
-        notes.append(f"본문 {len(body)}자 → 목표 {target}컷, 레이아웃 {n_cut}컷"
+        notes.append(f"본문 {len(body)}자 → 만들 컷 {target}, 페이지 슬롯 {n_cut}"
                      + (f" — 페이지 상한 {max(1, _cap)}에 닿아 본문 일부가 압축됐다(--max-pages 상향 권장)"
                         if n_pages >= max(1, _cap) else f" — 레이아웃이 {n_pages}페이지 {n_cut}컷으로 목표를 담았다"))
     _prob = validate_panel_script(panels)

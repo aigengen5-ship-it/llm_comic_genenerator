@@ -184,6 +184,47 @@ def p(msg: str = ""):
     print(msg, flush=True)
 
 
+def perr(msg: str = ""):
+    """콘솔 + **log/error.log** 둘 다 남긴다.
+
+    run_comic 자기가 판단한 실패(추출 실패·엄격 게이트 중단·회차 스킵)는 예전에 stdout에만
+    남았습니다. 실측: EP09는 컷 스크립트 게이트로 죽었는데 로그에는 13:39:52 → 13:40:19로
+    그냥 시간이 건너뛰었고, 산출물에는 episode_09가 없어서 '면책'인지 '미실행'인지 읽을 수 없었다.
+    """
+    try:
+        runlog.note(msg, "RUN")
+    except Exception:
+        pass
+    p(msg)
+
+
+# 실패 코드 → 사람이 읽는 사유 (산출물 옆 스킵 메모의 내용)
+_RC_WHY = {1: "페이지 0장(렌더는 했는데 합성된 페이지가 없음)",
+           2: "추출 실패 또는 컷 스크립트가 필수 상태를 채우지 못해 렌더 전에 중단",
+           3: "프리플레이트(ollama/ComfyUI/폰트 등) 실패",
+           4: "dry-run 태그 초기화 실패"}
+
+
+def _skip_note(ep_num: int, ep_path: str, rc: int) -> str:
+    """스킵한 회차는 산출물 디렉터리에 사유를 남긴다(파일 없는 회차는 원인 찾기가 제일 어려웠다)"""
+    try:
+        d = CG.comic_out_dir()
+        os.makedirs(d, exist_ok=True)
+        f = os.path.join(d, f"episode_{ep_num:02d}_SKIPPED.txt")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("\n".join([
+                f"EP{ep_num:02d} 스킵 — rc={rc} · " + _RC_WHY.get(rc, "알 수 없는 사유"),
+                "시각: " + time.strftime("%Y-%m-%d %H:%M:%S"),
+                "원고: " + str(ep_path),
+                "이 회차는 페이지를 만들지 못했습니다. 사유는 log/error.log(pid 포함 줄)와 "
+                "log/comic_input.log·log/comic_gen.log에 있습니다.",
+                "재시도: 같은 원고를 다시 돌리면 추출 체크포인트(state/extract_cache.yaml)의 빈 칸만 채웁니다.",
+            ]) + "\n")
+        return f
+    except Exception:
+        return ""
+
+
 def _tcp(host, port, timeout=2.0) -> bool:
     try:
         with socket.create_connection((str(host), int(port)), timeout=timeout):
@@ -471,6 +512,13 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     ep_text, sheet_text = inp["episode_text"], inp["sheet_text"]
     if inp["format"] != "plain" and inp["ep_num"] > 1 and ep_num <= 1:
         ep_num = inp["ep_num"]                          # 파일명의 회차 번호 존중 (--ep 2처럼 명시하면 이긴다)
+    # 회차 시작 전에 book 번호를 박는다(이 회차가 죽어도 스킵 메모가 올바른 book에 떨어지도록)
+    config.comic_book_num = max(0, int(args.book or 0))
+    _xkey = CI.extract_key(ep_text, sheet_text, ep_num=ep_num, mode=inp["format"])
+    _xsrc = CI._src_note(ep_path, sheet_path)          # 체크포인트에 어느 파일이었는지 적어 둔다
+    _prev_fail = (CI.load_extract_record(_xkey) or {}).get("failed") or []
+    if _prev_fail and not getattr(args, "fresh_extract", False):
+        p(f"  ○ 지난 실행에서 이 원고의 추출이 실패했습니다: {_prev_fail[-1][:90]}")
     data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
                       need_segments=not inp["segments"])   # 막 앵커를 파서가 확보했으면 LLM에게 시키지 않는다
     if not data and args.start_llm:
@@ -481,12 +529,14 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
                 data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
                                   need_segments=not inp["segments"])
     if not data:
-        p("✗ 필드 추출 실패 — LLM(textLLM) 상태와 plot.json을 확인하세요. 상세: log/comic_input.log")
+        perr("✗ 필드 추출 실패 — LLM(textLLM) 상태와 plot.json을 확인하세요. 상세: log/comic_input.log")
+        # [2026-09-10] 예전은 여기서 그냥 나가 체크포인트가 없었습니다(재실행이 0부터 시작).
+        CI.save_extract_failure(_xkey, "추출 JSON 파싱 실패(2회 시도) — 항목 원고를 더 잘게 나눠 주세요",
+                                source=_xsrc)
         return 2
     # [2026-09-10] 초기 추출이 반쯤 깨졌을 때 회차 전체를 다시 물어먹지 않는다 —
     #   ① 같은 원고의 지난 체크포인트에서 빈 칸만 이어받고 ② 빈 항목만 다시 묻고
     #   ③ 그래도 모자라면 캐릭터 설정(공식 태그·직업)으로 추론해 메운다(로그에 '추론' 명시).
-    _xkey = CI.extract_key(ep_text, sheet_text, ep_num=ep_num, mode=inp["format"])
     _cached = {} if getattr(args, "fresh_extract", False) else CI.load_extract_checkpoint(_xkey)
     if _cached:
         data, _cf = CI.merge_extract_cached(data, _cached)
@@ -505,8 +555,9 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         _miss = CI.missing_extract_fields(data)
     if _miss:
         p(f"  ✗ 여전히 빈 핵심 항목 {len(_miss)}개: {', '.join(_miss)}")
-        p(f"     체크포인트를 남깁니다({CI.EXTRACT_CACHE}) — 같은 원고를 다시 돌리면 이 항목만 채웁니다.")
-    CI.save_extract_checkpoint(_xkey, data, _miss)
+        p(f"     체크포인트를 남깁니다({CI.EXTRACT_CACHE}) — 같은 원고를 다시 돌리면 이 항목만 채웁니다."
+          + (f" (파일: {_xsrc.get('episode')})" if _xsrc.get("episode") else ""))
+    CI.save_extract_checkpoint(_xkey, data, _miss, source=_xsrc)
     CI.apply_to_config(data, ep_text, sheet_text, ep_num=ep_num,
                        panels_per_page=args.panels_per_page, book_num=args.book,
                        total_episodes=total_eps, overrides=inp["overrides"],
@@ -533,7 +584,7 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
            or (getattr(config, "ep_action_units", {}) or {}).get(str(ep_num)) or [])
     if _u0:                                   # 저울은 항목 수 — 글자 수 예산을 여기서 고친다
         tgt = max(tgt, sum(int(u.get("cuts") or 1) for u in _u0))
-    p(f"\n본문 {len(ep_text)}자 → 컷 예산 {tgt}컷 ({('화면 항목 ' + str(len(_u0)) + '개(항목 1 = 컷 1)') if _u0 else ('1컷=' + str(config.comic_chars_per_panel) + '자')}, "
+    p(f"\n본문 {len(ep_text)}자 → 만들 컷 {tgt} ({('본문 항목 ' + str(len(_u0)) + '개(항목 1 = 컷 1)') if _u0 else ('1컷=' + str(config.comic_chars_per_panel) + '자')}, "
       f"상한 {config.comic_max_panels or '무제한'}, 페이지 {page_mode})")
 
     idx = max(0, ep_num - 1)
@@ -563,7 +614,7 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         try:
             script = CG.request_panel_script(ep_num, max(1, int(config.total_episodes)), client=client)
         except CG.PanelScriptError as e:
-            p(f"[오류] {e}")
+            perr(f"[오류] {e}")
             p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다. 원고는 그대로 두고, ") 
             p("  --no-strict-state로 경고만 켜고 진행하거나 장면을 조금 더 잘게 나눠 주세요.")
             return 2
@@ -627,7 +678,7 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     try:
         meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True)
     except CG.PanelScriptError as e:
-        p(f"[오류] {e}")
+        perr(f"[오류] {e}")
         p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다(렌더는 시작되지 않았습니다).")
         p("  --no-strict-state로 경고만 켜고 진행하거나, 장면을 조금 더 잘게 나눠 주세요.")
         return 2
@@ -979,6 +1030,7 @@ def main() -> int:
       + (" · --special(local progress/ 포맷)" if args.special else ""))
 
     rc_all = 0
+    done, skipped = [], []            # 전 회차 요약용 (완성/스킵)
     for k, (ep_num, ep_path, sheet_path) in enumerate(jobs, 1):
         if len(jobs) > 1:
             p(f"\n{'#' * 68}\n#  EP{ep_num:02d}  ({k}/{len(jobs)})  {os.path.basename(ep_path)}\n{'#' * 68}")
@@ -987,12 +1039,31 @@ def main() -> int:
         except KeyboardInterrupt:
             p("  중단(Ctrl-C) — 남은 회차를 접습니다")
             return 130
+        # 회차가 끝난 뒤에 경로를 계산한다 — book 번호는 회차 안에서 확정되므로 그 전엔 모른다
+        _skip_f = os.path.join(CG.comic_out_dir(), f"episode_{ep_num:02d}_SKIPPED.txt")
         if rc:
             rc_all = rc_all or rc
-            p(f"  ✗ EP{ep_num:02d} 실패(rc={rc}) — 다음 회차는 계속 시도합니다")
+            perr(f"  ✗ EP{ep_num:02d} 실패(rc={rc} · {_RC_WHY.get(rc, '알 수 없음')}) — 다음 회차는 계속 시도합니다")
+            _sn = _skip_note(ep_num, ep_path, rc)
+            if _sn:
+                p(f"  스킵 메모: {os.path.relpath(_sn)}")
+            skipped.append((ep_num, rc))
+        else:
+            done.append(ep_num)
+            if os.path.exists(_skip_f):                   # 이번 회차는 성공 — 지난 스킵 메모는 치웁니다
+                try:
+                    os.remove(_skip_f)
+                except Exception:
+                    pass
     if len(jobs) > 1:
         p(f"\n===== 전 회차 종료 ({time.time() - t0:.1f}s) · {len(jobs)}건 · "
           f"{'전부 성공' if not rc_all else f'실패 rc={rc_all}'} =====")
+        p(f"  완성 {len(done)}회차 {('· ' + ', '.join('EP%02d' % e for e in done)) if done else ''}"
+          + (f" / 스킵 {len(skipped)}회차 " + ", ".join("EP%02d(rc=%d)" % (e, r) for e, r in skipped)
+             if skipped else ""))
+        if skipped:
+            perr("  ✗ 스킵된 회차: " + ", ".join("EP%02d(%s)" % (e, _RC_WHY.get(r, r)) for e, r in skipped)
+                 + f" — 사유는 {runlog.ERROR_LOG}와 각 episode_NN_SKIPPED.txt")
     return rc_all
 
 

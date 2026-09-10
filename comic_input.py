@@ -34,6 +34,7 @@ import os
 import zlib
 import re
 import time
+import difflib
 import hashlib
 
 import config
@@ -352,18 +353,87 @@ def split_for_cuts(text: str, n: int = 1) -> list:
     return chunks[:n]
 
 
+# ------------------------------------------------------------------ 키 이름 접기 (2026-09-10)
+# [2026-09-10] Q4 디코딩 사고는 **키 이름을 안에서** 찢기도 한다. 이 경우 JSON은 완벽히 parse된다.
+#   실측(state/extract_cache.yaml): "eye_ ей_color": "brown eyes" / "eye_com_color": "brown eyes"
+#   → 파서는 성공했는데 eye_color가 없는 답이 된다. 그래서 "빈 핵심 항목"으로 취급돼 추가 LLM 호출을
+#   다시 하고, 엉뚱한 이름의 키는 체크포인트에 영구히 남는다. 파서가 웃으면서 넘기는 실패가 제일 위험하다.
+#   → 스키마 키 이름으로 되돌린다. (json_soft_fix와 달리 **parse 성공 경로**에서 동작한다.)
+_EXTRACT_KEYSETS = {
+    "_top": ("protagonist", "partner", "guides", "segments", "units", "actions", "rating"),
+    "protagonist": ("name", "sex", "hair_color", "hair_style", "eye_color", "skin_color",
+                    "face_style", "clothes", "body_shape", "job", "breasts_size", "hip_size"),
+    "partner": ("name", "sex", "clothes"),
+    "guides": ("protagonist", "partner", "sub"),
+}
+UNIT_KEYS = ("at", "kind", "cuts", "anchor", "text", "device", "panels")
+
+
+def _fold_key(key, allowed):
+    """훼손된 키 이름 → 스키마 키 (실측: 'eye_ ей_color' / 'eye_com_color' / 'ncuts') 아니면 ''"""
+    k = str(key or "").strip().lower()
+    if not k or k in allowed:
+        return ""
+    clean = re.sub(r"[^a-z_]", "", k)                    # 비ASCII·공백 제거 ('eye_ ей_color' → 'eyecolor')
+    if clean in allowed:
+        return clean
+    for a in allowed:                                    # 조각이 붙어 깨진 경우 ('ncuts' → 'cuts')
+        if a and (a in clean or clean in a) and min(len(a), len(clean)) >= 3:
+            return a
+    near = difflib.get_close_matches(clean, list(allowed), n=1, cutoff=0.62)
+    return near[0] if near else ""
+
+
+def _fold_dict(d, allowed, where, log):
+    """dict 한 개의 키를 스키마로 접는다 — 값은 살리고 왜키는 버린다(이미 값이 있으면 접지 않는다)"""
+    if not isinstance(d, dict):
+        return d
+    out = {}
+    for k, v in (d or {}).items():
+        tgt = _fold_key(k, allowed)
+        if tgt and tgt not in d:
+            out[tgt] = v
+            log.append((where, str(k), tgt))
+        elif tgt and out.get(tgt) in ("", None, -1, [], {}):
+            out[tgt] = v
+            log.append((where, str(k), tgt))
+        else:
+            out[k] = v
+    return out
+
+
+def fold_extract_keys(data):
+    """추출 JSON 전역(주인공/상대방/가이드/units)의 키를 스키마로 접는다 → (data, [(곳, 옛키, 새키)])"""
+    log = []
+    if not isinstance(data, dict):
+        return data, log
+    out = _fold_dict(data, _EXTRACT_KEYSETS["_top"], "root", log)
+    for sec in ("protagonist", "partner", "guides"):
+        if isinstance(out.get(sec), dict):
+            out[sec] = _fold_dict(out[sec], _EXTRACT_KEYSETS[sec], sec, log)
+    if isinstance(out.get("units"), list):
+        out["units"] = [_fold_dict(u, UNIT_KEYS, "units", log) if isinstance(u, dict) else u
+                        for u in out["units"]]
+    return out, log
+
+
 def normalize_units(raw, max_units: int = MAX_UNITS, strong_weight: int = 2) -> list:
-    """LLM이 나눈 액션 유닛 목록을 [{at, cuts}]로 정규화한다.
+    """LLM이 나눈 본문 항목 목록을 [{at, cuts, kind}]로 정규화한다 (units가 지나는 유일한 관문).
 
     받는 형태는 둘 다 허용한다(26B Q4는 객체를 깨뜨린다):
       {"at": "사건 시작 문장(본문 복사)", "cuts": 2}   ← 권장: 나누는 판단과 컷 수를 LLM이 한다
-      "사건 시작 문장(본문 복사)"                       ← 컷 수는 our 큐 판정(폴백)
+      "사건 시작 문장(본문 복사)"                       ← 컷 수는 코드가 문장에서 판정(폴백)
+
+    항목 1:1 모드(기본, `comic_item_cuts`)에서는 `cuts`를 **항상 1로 고박**한다 — 프롬프트도 그
+    키를 부탁하지 않는다(2026-09-10: 값이 항상 1인 자리가 디코딩 사고 1순위였다).
     """
     item = _item_mode()
     if item:
         max_units = max(int(max_units or 0), ITEMS_MAX)
+    # [2026-09-10] 키 이름 훼손("ncuts" 등)도 여기서 접는다 — normalize_units가 units의 유일한 관문이다
+    raw = [_fold_dict(u, UNIT_KEYS, "units", []) if isinstance(u, dict) else u for u in (raw or [])]
     out = []
-    for u in (raw or []):
+    for u in raw:
         if isinstance(u, dict):
             at = re.sub(r"\s+", " ", str(u.get("at") or u.get("anchor") or u.get("text") or ""))
             kind = re.sub(r"\s+", "", str(u.get("kind") or u.get("device") or "")).strip()
@@ -543,20 +613,27 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
                  if (_pn or _pn2) else "")
     if _item_mode():
         # [2026-09-09] 항목 1:1 모드 (--item-cuts 기본 켬) — 항목 하나가 컷 하나가 된다.
+        # [2026-09-10] 'cuts'를 스키마에서 **뺐다** — 항목 모드는 값이 항상 1이고 코드도 버리는데
+        #   (--item-cuts 실측: normalize_units가 1로 고정), 그 토큰 자리에서 Q4 디코딩이 회차당
+        #   4~24번 반복해 깨졌다. 10회차 중 5회차가 '"cuts"' 자리 하나로 통째로 버려졌다
+        #   (log/error.log 13:28:58·13:37:14·13:37:38·13:38:03·13:38:29).취약한 자리를 없앤다.
         unit_schema = ('"units": [{"at": "화면 항목이 시작하는 문장을 본문에서 그대로 복사", '
-                       '"kind": "\ud589\ub3d9|\ub300\uc0ac|\uc18d\ub9c8\uc74c", "cuts": 1}],')
+                       '"kind": "\ud589\ub3d9|\ub300\uc0ac|\uc18d\ub9c8\uc74c"}],')
         unit_rule = ("6-b. units는 본문을 **일어난 시간 순서대로 화면 항목 하나씩** 나눈 목록이다 — "
                      "항목 하나가 컷 하나가 된다. 항목은 셋 중 하나: "
                      "**\ud589\ub3d9**(무엇을 했다) / **\ub300\uc0ac**(누가 무엇을 말했다) / **\uc18d\ub9c8\uc74c**(누가 무엇을 생각했다).\n"
-                     "   'at'에는 그 항목이 시작하는 문장을 본문에서 그대로 복사(의역 금지), 'kind'는 위 셋 중 하나, "
-                     "'cuts'는 항상 1로 둔다. 인사 몇 마디 같은 사소한 흐름은 한 항목으로 합치고, "
+                     "   'at'에는 그 항목이 시작하는 문장을 본문에서 그대로 복사(의역 금지), 'kind'는 위 셋 중 하나만 쓴다.\n"
+                     "   항목에는 'at'·'kind' **두 키만** 쓴다('cuts' 같은 키를 넣지 않는다 — 컷 수는 프로그램이 정한다).\n"
+                     "   인사 몇 마디 같은 사소한 흐름은 한 항목으로 합치고, "
                      "행동\u00b7대사\u00b7속마음이 교차하는 흐름은 쪼개서 그대로 남긴다. 총 4~24\u1110, \uc77c\uc5b4\ub09c \uc21c\uc11c\ub300\ub85c.")
     else:
+            # 사건 모드만 'cuts'를 부탁한다(1~2를 LLM이 고른다). 못 적으면 빼도 된다 — 프로그램이 1로 둔다.
             unit_schema = '"units": [{"at": "사건이 시작하는 문장을 본문에서 그대로 복사", "cuts": 1}],'
             unit_rule = ("6-b. units는 본문을 **사건(액션) 단위로 나눈 목록**이다 — 글자 수가 아니라 '누가 무엇을 했나'로 자른다.\n"
                          "   한 유닛 = 사건 하나(이동·호칭·대사만 있는 장면은 앞 유닛에 합친다). 'at'은 그 사건이 시작하는\n"
                          "   문장을 본문에서 그대로 복사(의역 금지), 'cuts'는 그 사건을 그릴 컷 수(평범한 사건 1,\n"
-                         "   신체 접촉·관계 변화·클라이맥스는 2). 총 4~12개, 일어난 순서대로.")
+                         "   신체 접촉·관계 변화·클라이맥스는 2). **모르겠으면 'cuts' 키를 아예 빼도 된다**(1로 둔다).\n"
+                         "   총 4~12개, 일어난 순서대로.")
     rule6 = ("6. segments는 기/승/전/결 부분의 **첫 문장을 본문에서一字不사본**(의역/요약을 넣으면 앵커 매칭이\n"
              "   깨져 장면 분할이 사라진다). 문장이 길면 **앞 40자만 잘라 복사해도 된다**(부분 복사 OK, 총 4개).\n"
              "   본문에 뚜렷한 4부 구조가 없으면 빈 배열.\n"
@@ -643,20 +720,88 @@ ODD_TOKEN_CHARS = "\u2024\u2025\u2026\u30fb\u00b7"                       # 키 �
 def json_soft_fix(text: str) -> str:
     """관대한 JSON 복구 — 파싱이 실패했을 때만 쓴다(성공한 응답은 절대 이걸 거치지 않는다)."""
     t = str(text or "")
-    for _q in _QUOTE_LIKE:
-        t = t.replace(_q, '"')
+    # [2026-09-10] 따옴표류 치환은 **키 자리만** 한다. 값 안의 “한국어 인용문”을 직따옴표로 바꾸면
+    #   "“하아, 하아…”" 가 ""하아, 하아…"" 가 되어 **살아있던 JSON을 이 파서가 죽였다**(실측 EP05 응답).
+    #   값 안의 곡선 따옴표는 JSON에서 그냥 문자다 — 그대로 두는 편이 언제나 안전하다.
+    _ql = "[" + _QUOTE_LIKE + "]"
+    t = re.sub(r'([\{\[,]\s*)' + _ql, r'\1"', t)                    # 키를 여는 자리
+    t = re.sub(_ql + r'(\s*:)', r'"\1', t)                          # 키를 닫는 자리
+    t = re.sub(r'"\s*' + _ql + r'\s*$', '"', t, flags=re.M)          # 값 끝에 따라온 따옴표류
     t = re.sub(r"([{\[,])\s*[" + ODD_TOKEN_CHARS + r"]+", r"\1", t)                 # 키 앞 이상 문자 제거
-    # 이상 문자가 '쉼표 자리'에 들어온 경우(실측: "blushing"․ "makeup": )도 쉼표로 되돌린다
-    # 이상 문자가 ',' 자리에 온 경우(실측 두 갈래) — 따옴표가 열려 있으면 문자열을 닫고 쉼표를,',
-    #   닫혀 있으면 쉼표만','补는다.
+    # 이상 문자가 '쉼표 자리'에 들어온 경우(실측: "blushing"․ "makeup": )도 쉼표로 되돌린다 —
+    #   따옴표가 열려 있으면 문자열을 닫고 쉼표를, 닫혀 있으면 쉼표만 보탠다.
+    # [2026-09-10] 단, **구조 자리에서만** 고친다. 쉼표가 깨진 자리의 뒤에는 반드시 `"키":` 또는 요소
+    #   구분(`, ] }`)이 온다. 값 안의 줄임표("하아… 소타 님….")는 정당한 내용이라 그대로 둔다 —
+    #   예전처럼 무조건 고치면 살아있던 값이 죽었다(실측 EP05: "“하아, 하아… 소타 님…" → ""하아, 하아",소타…).
     for _m in reversed(list(re.finditer(r'[\u2024\u2025\u2026\u00b7\u30fb]+', t))):
+        if not re.match(r'\s*(?:"[^"\n]{1,40}"\s*[:,\]\}]|[}\]])', t[_m.end():_m.end() + 80]):
+            continue
         _open = t[:_m.start()].count('"') % 2
         t = t[:_m.start()] + ('",' if _open else ',') + t[_m.end():].lstrip()
     t = re.sub(r'([{\[,]\s*)([A-Za-z_\u00c0-\u318f][^"\n:]*?)(\s*":)', r'\1"\2\3', t)  # 따옴표 없는 키 감싸기
+    # [2026-09-10] --special 실측 3종 — **키 자리** 이물질은 위 규칙이 못 잡는다(따옴표가 다른 글자로 바뀐다).
+    #   `*cuts*: 1`(마크다운 강조) · ` উপস্থিত cuts: 1`(벵골·태국) · `ềncuts": 1`(베트남)
+    #   → 셋 다 '"cuts": 1' 자리에서 재현됐다(EP02·05~08이 이 한 자리로 버려졌다). 키 이름은 여기서 살리고,
+    #   스키마와 다른 이름(ncuts → cuts)은 접는 단추 fold_extract_keys가 따로 고친다.
+    #   모두 **행 맨 앞(키 자리)**만 고친다 — 문자열 값은 절대 건드리지 않는다.
+    t = re.sub(r'(?m)^(\s*)[*_~`]+([A-Za-z_][A-Za-z0-9_ ]{0,40})[*_~`]+(\s*):', r'\1"\2"\3:', t)       # *cuts*:
+    t = re.sub(r'(?m)^(\s*)[^\x00-\x7F]{1,8}\s*([A-Za-z_][A-Za-z0-9_ ]{0,40})"(\s*):', r'\1"\2"\3:', t)    # ềncuts":
+    t = re.sub(r'(?m)^(\s*)[^\x00-\x7F]{1,8}\s*([A-Za-z_][A-Za-z0-9_ ]{0,40})(\s*):', r'\1"\2"\3:', t)     # উপস্থিত cuts:
+    t = re.sub(r'(?m)^(\s*)([A-Za-z_][A-Za-z0-9_ ]{0,40})"(\s*):', r'\1"\2"\3:', t)                    # 열림 따옴표 실종
+    t = re.sub(r'(?m)^(\s*)([A-Za-z_][A-Za-z0-9_ ]{0,40})(\s*):', r'\1"\2"\3:', t)                     # mini: [  (따옴표 없는 키)
+    t = re.sub(r'([{\[,]\s*)"([A-Za-z_][A-Za-z0-9_]{0,24})(:)', r'\1"\2"\3', t)                       # "I:4 → "I":4 (닫는 따옴표 실종)
+    t = re.sub(r'(?m)^(\s*)[*\u2022\u00b7]+(?=\s*")', r'\1', t)                                        # * "문장",  (마크다운 총알)
     # 키 앞에 섞여 들어온 홀 글자(실측: ...,\n\ub7ec  "background": "shopping mall") — Q4 디코딩 사고
     t = re.sub(r'(?m)^(\s*)[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3040-\u30ff]{1,3}\s+(?=")', r"\1", t)
     t = re.sub(r",\s*([}\]])", r"\1", t)                                             # trailing comma
-    return t
+    return _repair_lines(t)
+
+
+def _repair_lines(text: str) -> str:
+    """줄 단위 구조 복구(2026-09-10 --special 실측 3가지). 문자열 **밖**에서만 판단한다.
+
+      ① 배열 안에 키 없이 던져진 본문 문장   → {"at": "…"} 로 감싼다 (unit 객체를 씌우다 놓친 형태)
+      ② 객체 키 자리에 혼자 따옴표만 있는 줄  → 버린다   ("kind": "행동", 아래  "유즈키는 기어갔다.",)
+      ③ 객체 키 자리의 비문 줄(키 자체가 깨짐) → 버린다   (…  "kind": "행동",\n    을",\n    "cuts": 1)
+
+    ①의 문장은 본문 앵커('at')라 지우면 그 장면 컷이 통째로 사라진다 → 감싸는 편이 정답이고,
+    본문에 없는 문장이면 anchor_units가 조용히 버린다. ②③은 이미 값이 다른 필드에 있으니 버려도 정보 loss가 없다.
+    """
+    lines = str(text or "").split("\n")
+    inside, stack, drop = False, [], []
+    for i, ln in enumerate(lines):
+        was_inside, esc = inside, False
+        for ch in ln:
+            if esc:
+                esc = False
+                continue
+            if ch == "\\":
+                esc = True
+            elif ch == '"':
+                inside = not inside
+            elif not inside and ch in "{[":
+                stack.append(ch)
+            elif not inside and ch in "}]":
+                if stack:
+                    stack.pop()
+        if was_inside:
+            continue
+        s = ln.strip()
+        if not s or s[0].isdigit():
+            continue
+        top = stack[-1] if stack else ""
+        if top == "{":                                    # 키 자리다 — 키가 아니면 버린다
+            if ":" not in s and not re.fullmatch(r"[{}\[\]},\s]*", s):   # `{` `}` `],` 같은 마감/개시 줄은 예외
+                drop.append(i)
+            continue
+        if top == "[" and not s[0] in '"{}[]-' and ":" not in s and 3 <= len(s) <= 400:
+            prev = next((lines[k].strip() for k in range(i - 1, -1, -1)), "")
+            nxt = next((lines[k].strip() for k in range(i + 1, len(lines))), "")
+            if prev.endswith(("},", "],", "[", "{")) and (nxt.startswith("{") or nxt.startswith("]")):
+                lines[i] = '   {"at": "%s"},' % s.replace('"', '\\\"')
+    for i in reversed(drop):
+        del lines[i]
+    return "\n".join(lines)
 
 
 def _extract_json_obj(text: str) -> dict:
@@ -752,6 +897,12 @@ def _clean_tag(v: str) -> str:
 
 def _normalize_extract(data: dict) -> dict:
     """LLM 원시 JSON 1창 분량 → 스키마 검증/보정"""
+    # [2026-09-10] parse는 성공했는데 키 이름만 깨진 답("eye_ ей_color")을 여기서 바로잡는다.
+    #   이걸 놓으면 필드가 빈 줄 알리고 LLM을 한 번 더 부르고, 왜키는 체크포인트에 남는다.
+    data, _folded = fold_extract_keys(data)
+    if _folded:
+        clog("추출 키 이름 접기: " + ", ".join(f"{w}.`{o}`→{n}" for w, o, n in _folded[:6])
+             + (" 외" if len(_folded) > 6 else ""))
     proto = dict(data.get("protagonist") or {})
     part = dict(data.get("partner") or {})
     for k in APPEARANCE_KEYS:
@@ -926,7 +1077,17 @@ def optional_extract_fields(data) -> list:
     return [p for p in EXTRACT_OPTIONAL if _is_empty(_dig(d, p))]
 
 
-def save_extract_checkpoint(key: str, data, missing=None) -> str:
+def _src_note(ep_path: str = "", sheet_path: str = "") -> dict:
+    """체크포인트에 '어느 파일의 회차 몇'이었는지 적어 둔다(2026-09-10).
+
+    `--special`의 본문은 다른 repo의 `progress/`에 있어 지문이 사라지면 대조 자체가 어렵고,
+    생성기 특성상 책장 안의 다른 회차와 본문이 같을 수 있어 파일 이름 없이는 특정할 수 없었다.
+    """
+    return {"episode": os.path.basename(str(ep_path or "")),
+            "sheet": os.path.basename(str(sheet_path or ""))} or {}
+
+
+def save_extract_checkpoint(key: str, data, missing=None, source=None) -> str:
     """채운 값을 YAML로 남긴다 — 다음 실행은 **빈 칸만** 다시 묻는다(merge는 빈 칸만 채운다)."""
     try:
         import yaml
@@ -942,6 +1103,8 @@ def save_extract_checkpoint(key: str, data, missing=None) -> str:
 
         payload = {"key": key, "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "missing": list(missing or []), "data": _prune(d)}
+        if source:
+            payload["source"] = source
         old = {}
         if os.path.exists(EXTRACT_CACHE):
             try:
@@ -949,13 +1112,62 @@ def save_extract_checkpoint(key: str, data, missing=None) -> str:
             except Exception:
                 old = {}
         allruns = old.get("runs") if isinstance(old.get("runs"), dict) else {}
+        prev = allruns.get(key) or {}
+        # 실패 이력과 파일 정보를 **덮어쓰지 않는다** — 성공 체크포인트를 쓰는 순간 지난 실패
+        #   기록이 사라지면(실측으로 이 줄이 그랬다) 다음에 또 실패했을 때 원인을 조율 수 없다.
+        payload["failed"] = list(prev.get("failed") or [])
+        payload["source"] = source or prev.get("source") or {}
         allruns[key] = payload
         with open(EXTRACT_CACHE, "w", encoding="utf-8") as f:
-            yaml.safe_dump({"runs": allruns}, f, allow_unicode=True, sort_keys=False)
+            yaml.safe_dump({**old, "runs": allruns}, f, allow_unicode=True, sort_keys=False)   # 다른 최상위 키 보존
         return EXTRACT_CACHE
     except Exception as e:
         clog(f"추출 체크포인트 저장 실패: {e}")
         return ""
+
+
+def save_extract_failure(key: str, reason: str, data=None, source=None) -> str:
+    """추출이 **아무것도** 못 얻어왔을 때도 이력을 남긴다(2026-09-10).
+
+    예전은 `if not data: return 2`로 끝나 체크포인트를 쓰지 않아, 같은 원고를 다시 돌리면
+    아무 힌트 없이 처음부터 다시 물었습니다. 이번 실패 사유를 남겨 다음 실행이 알아보고
+    안내하도록 합니다(부분 항목이 이미 있으면 그것도 함께 보관합니다).
+    """
+    try:
+        import yaml
+        os.makedirs(os.path.dirname(EXTRACT_CACHE) or ".", exist_ok=True)
+        old = {}
+        if os.path.exists(EXTRACT_CACHE):
+            try:
+                old = yaml.safe_load(open(EXTRACT_CACHE, encoding="utf-8").read()) or {}
+            except Exception:
+                old = {}
+        runs = old.get("runs") if isinstance(old.get("runs"), dict) else {}
+        prev = runs.get(key) or {}
+        runs[key] = {"key": key, "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                     "source": source or prev.get("source") or {},
+                     "missing": list(prev.get("missing") or []),
+                     "failed": (list(prev.get("failed") or []) + [str(reason)[:200]])[-5:],
+                     "data": data if isinstance(data, dict) else (prev.get("data") or {})}
+        with open(EXTRACT_CACHE, "w", encoding="utf-8") as f:
+            yaml.safe_dump({**old, "runs": runs}, f, allow_unicode=True, sort_keys=False)
+        return EXTRACT_CACHE
+    except Exception as e:
+        clog(f"추출 실패 기록 저장 실패: {e}")
+        return ""
+
+
+def load_extract_record(key: str) -> dict:
+    """체크포인트 원레코드 — {"data":…, "missing":…, "failed":[…]} (없으면 {})"""
+    try:
+        import yaml
+        if not key or not os.path.exists(EXTRACT_CACHE):
+            return {}
+        y = yaml.safe_load(open(EXTRACT_CACHE, encoding="utf-8").read()) or {}
+        rec = (y.get("runs") or {}).get(key)
+        return rec if isinstance(rec, dict) else {}
+    except Exception:
+        return {}
 
 
 def load_extract_checkpoint(key: str) -> dict:
@@ -1123,23 +1335,30 @@ def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,
         if d:
             parts.append(d)
             if len(windows) > 1:
+                # .get 체인 — 이 로그 한 줄이 KeyError로 창 결과를 통째로 버리면(실측 사고 유형) 손해다
+                _g = ((d.get("guides") or {}).get("protagonist") or [])
+                _u = d.get("units") or []
                 clog(f"추출 창 {wi}/{len(windows)} ({len(w)}자): "
-                     f"가이드 {len(d['guides']['protagonist'])}줄 · 사건 {len(d.get('units') or [])}개"
-                     f"(컷 {sum(u['cuts'] for u in (d.get('units') or []))}) · 행동 {d['actions']} · "
-                     f"rating={d['rating'] or '(자동)'}")
+                     f"본문 항목 {len(_u)}개(만들 컷 {sum(int(u.get('cuts', 1) or 1) for u in _u)}) · "
+                     f"가이드 {len(_g)}줄 · 행동 {d.get('actions')} · rating={d.get('rating') or '(자동)'}")
     if not parts:
         return {}
     data = parts[0] if len(parts) == 1 else _merge_extracts(parts)
     data["windows"] = len(windows)
+    if len(parts) < len(windows):
+        # [2026-09-10] 실패한 창.units는 배분 저울에서 **조용히 빠진다** — 컷이 그 장면을 놓친다
+        clog(f"⚠ 추출 창 {len(windows)}개 중 {len(windows) - len(parts)}개가 비었습니다"
+             f" — 그 창 사건은 컷 배분에서 빠집니다(본문을 조금 더 잘게 나눠 주세요)")
+        data["windows_missing"] = len(windows) - len(parts)
     proto = data.get("protagonist") or {}
     missing = [k for k in ("name", "hair_color", "clothes", "body_shape") if not proto.get(k)]
     if missing:
         clog(f"⚠ 추출 결과 필수 태그 누락: {missing} (렌더 필수 검증 실패 가능)")
+    _g, _u = ((data.get("guides") or {}).get("protagonist") or []), (data.get("units") or [])
     clog(f"추출 완료({len(windows)}창 병합): {proto.get('name')}/{proto.get('sex')} · "
          f"상대방 {(data.get('partner') or {}).get('name')} · "
-         f"가이드 {len(data['guides']['protagonist'])}줄 · 사건 {len(data.get('units') or [])}개"
-         f"(컷 {sum(u['cuts'] for u in (data.get('units') or []))}) · 행동 {data['actions']} · "
-         f"rating={data['rating'] or '(자동)'}")
+         f"본문 항목 {len(_u)}개(만들 컷 {sum(int(u.get('cuts', 1) or 1) for u in _u)}) · "
+         f"가이드 {len(_g)}줄 · 행동 {data.get('actions')} · rating={data.get('rating') or '(자동)'}")
     return data
 
 
@@ -1308,8 +1527,9 @@ def load_inputs(episode_path: str, sheet_path: str = "", special=None) -> dict:
     sheet = strip_markdown(info.get("sheet_text") or "")
     for n in info.get("notes") or []:
         clog(f"⚠ 어댑터: {n}")
+    _loss = (100.0 * (1 - len(body) / len(ep_raw))) if len(ep_raw) else 0.0
     clog(f"입력[progress]: {os.path.basename(episode_path)} → 본문 {len(body)}자"
-         f"(원문 {len(ep_raw)}자) / 시트 {len(sheet)}자 / 막 앵커 {len(info.get('segments') or [])}개"
+         f"(원문 {len(ep_raw)}자, 어댑터 정리 {-_loss:.0f}%) / 시트 {len(sheet)}자 / 막 앵커 {len(info.get('segments') or [])}개"
          f" / 시트 우선주입 {sorted(((info.get('overrides') or {}).get('protagonist') or {}).keys())}")
     return {"episode_text": body, "sheet_text": sheet,
             "segments": list(info.get("segments") or []),

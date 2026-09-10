@@ -25,7 +25,7 @@
  [D] LLM#2 회차 태그 : face/exposure/background/표정 풀 … (렌더용)           anima_gen.init_anima_tags (1170)
         │
         ▼
- [E] 컷 예산 + 페이지 레이아웃(템플릿 34종, 재추첨)                            comic_gen.plan_pages_layout (283)
+ [E] 만들 컷(예산) + 페이지 레이아웃(템플릿 34종, 재추첨)                            comic_gen.plan_pages_layout (283)
         │
         ▼
  [F] 장면 분할 : 항목 앵커를 본문에서 문자열로 찾아 자르기                    comic_input.split_acts_by_units (393)
@@ -53,16 +53,17 @@
 
 | 순서 | 하는 일 | 코드 |
 |---|---|---|
-| 0 | `runlog.start_run()` — 본 로그 3종 + tag_out을 **초기에 초기화**, `log/error.log`에 실행 구분자 (`--keep-logs`로 유지) |
+| 0 | `runlog.start_run()` — 본 로그 5종 + tag_out을 **초기에 초기화**, `log/error.log`에 `===== RUN … pid=NNN =====` 구분자. `log/.run.lock`에 살아있는 PID가 있으면 **초기화를 생략하고 이어 씁니다**(동시 실행 보호, `--keep-logs`로도 유지) | `runlog.py`, `run_comic.py:777` |
 | 1 | 인자 파싱 + 스위치 배선(모든 `--no-*`는 이 자리에서 `config`에 반영) | `run_comic.py:758~` |
 | 2 | `local_settings.yaml` 적용 (우선순위: **CLI > env > local_settings > 코드 기본값**) | `config.apply_local_settings()` |
 | 3 | 프리플라이트 화면: config 필수 10필드, 폰트 누락, ComfyUI/ollama 포트, 컷 배분 변동, 수다장이, 이름 고정 | `run_comic.py:378~` |
 | 4 | 입력 로딩(본문/시트) | `:469` |
 | 5 | **LLM#1 추출** (실패 시 1회 재시도) | `:473`, `:480` |
-| 6 | 컷 예산 어림 계산·출력 (`본문 N자 → 컷 예산 M컷`) | `:503` |
+| 6 | 만들 컷 어림 계산·출력 (`본문 N자 → 만들 컷 M컷`) | `:503` |
 | 7 | (렌더 시) ComfyUI 기동 시도 | `:518` |
 | 8 | `--dry-run`이면: 태그 초기화 + 컷 스크립트 + 화면 텍스트 미리보기 후 종료 | `:528~` |
 | 9 | 렌더 경로: 태그 초기화 → 컷 스크립트 → gloss → `comic_gen_episode`(렌더+합성) | `:529`, `:534`, `:569`, `:592` |
+| 10 | (여러 회차) 실패한 회차는 `comic/bookNNN/episode_NN_SKIPPED.txt`에 사유를 남기고 다음 회차로 계속, 마지막에 `완성/스킵` 번호 요약 | `run_comic._skip_note`, `_RC_WHY` |
 
 중요한 설계 판단 두 개:
 - **프롬프트 조립은 렌더 루프 밖에서 끝낸다** (`comic_gen.py:2311` 부근 주석). 16GB VRAM에서 렌더 도중 17GB 모델이 다시 올라가면 컷 전량이 NaN(검정 이미지)이 됐다.
@@ -87,6 +88,8 @@
 | 3 | `comic_gen.py:1625` (장면 루프 안) | 장면 본문 → **컷 스크립트 JSON** | **장면당 1회** (장면 = 항목 ≤6개 묶음, 본문 ≤1800자) | `call_openai_for_text`, `reasoning_effort="low"`, `enable_thinking=False` | 컷 배열(pose/camera/position/caption_ko/lines/clothes/climax…) | 장면당 `retry`회 재시도 → 여전히 미달이면 남은 컷을 **침묵 컷**으로 채움(`notes`에 기록) |
 
 **재시도 요약(2026-09-09)** — 트랜스포트 재시도(`max_retries=3`)와 별개로, **JSON 파싱 실패**에도 재시도합니다: 추출 2회(2회는 `temperature=0.0`) · 태그 생성 2회(`_retry` 라벨) · 컷 스크립트 장면당 2회(`retry=2`). 그래도 모자라면 컷 스크립트는 침묵 컷/`PanelScriptError`, 태그는 결정론 fallback.
+
+**디코딩 사고는 재시도로 안 잡힌다(2026-09-10 실측)** — 온도를 0.0으로 내려도 **같은 자리에서 같은 글자로** 깨졌다(EP05 1회 char 1024 → 2회 char 1070, EP09 첫 컷 답변은 temp 0.1/0.0에서 바이트 단위 동일). 그래서 재시도는 '모델이 문장을 써 버린' 경우만 구하고, 자리 고장은 파서가 잡는다: ① `cuts`를 요청에서 제거 ② `json_soft_fix`가 키 자리 이물질·비문 줄 복구 ③ `fold_extract_keys`가 찢긴 키 이름을 스키마 키로 반환(파싱은 성공했으나 필드가 실종되는 조용한 실패). 실측 회귀는 selftest ⑮ 항목에 고정.
 | 4 | `comic_gen.py:1792` (`request_ko_glossary`) | 컷에 남는 **한글 조각 → 영문 태그** 번역 | EP당 1회 (frag가 있을 때만) | `call_openai_for_plot`, `temperature=0.0`, `repeat_penalty=1.0` | `{"한글": "english tag"}` | gloss 없이 진행 → `sanitize_english`가 남은 한글을 지움 |
 | 5 | `comic_gen.py:1999` (`_llm_compose_panel_prompt`) | **POV / multi 컷만** 태그 블록 → 자연어 이미지 프롬프트 재작성 | 해당 컷당 1회 | `call_openai_for_text`, system = `data_comfyui/prompt_pov.md` / `prompt_multi.md` | `##PROMPT##` 사이에 완성 프롬프트 | 없으면 결정론 `flatten_tag_block`으로 조립 (에이전트가 재작성한 것처럼 보이나 실제로는 예외 경로만 LLM) |
 | + | `--chatty`일 때만 (`comic_gen.py:1407` → `_fill_chatty_narration`) | 지문 비어 있는 컷의 하단 설명 작문 | EP당 1회 (빈 컷이 있을 때만) | `call_openai_for_text`, `temperature=0.7` | 문자열 배열 | 장면 본문의 남은 문장 → 짧은 기본 문장 순으로 메움 |
@@ -106,7 +109,7 @@
 |---|---|
 | 사건의 경계, 항목의 종류(kind), 문장 복사(`at`) | 항목이 본문의 **몇 번째 문자**에서 시작하는지(문자열 일치로 앵커) |
 | 컷의 pose 영문 문장, 대사/속마음 내용, 표정 감정 | 컷 **수**, 페이지·행·열 구성, 컷별 장치(행동/대사/속마음), 크롭, 풍선 자리 |
-| --item-cuts off일 때만: 사건당 컷 수(1~2) | --item-cuts(기본)에서는 컷 수 = 항목 수, `cuts`는 강제로 1 |
+| --item-cuts off일 때만: 사건당 컷 수(1~2, 생략 가능) | --item-cuts(기본)에서는 컷 수 = 항목 수 — `cuts` 키를 부탁하지도 않고 받아도 1로 고정 |
 
 ---
 
@@ -115,13 +118,15 @@
 ### 3.1 [C] 추출 — `comic_input.extract` (807) / `_extract_once` (790)
 - 프롬프트는 `에피소드 전문 + 시트 + 규칙 블록`. 본문은 §2-1 예산만큼만 넣습니다.
 - 요구 항목: `guides`(기승전결 4문장), `segments`(각 막 첫 문장 복사 — 길면 앞 40자), `units`.
-- **항목 1:1 모드**(기본 켬, `config.comic_item_cuts`): `units = [{at: "문장 복사", kind: "행동|대사|속마음", cuts: 1}]`, 항목 상한 24 (`ITEMS_MAX`).
-  `--no-item-cuts`면 사건 단위(`cuts` 1~2 허용, 상한 14 = `MAX_UNITS`).
+- **항목 1:1 모드**(기본 켬, `config.comic_item_cuts`): `units = [{at: "문장 복사", kind: "행동|대사|속마음"}]`, 항목 상한 24 (`ITEMS_MAX`).
+  `cuts`는 **프롬프트에 없다**(2026-09-10) — 값이 항상 1이고 `normalize_units`도 그 값을 버리는데,
+  Q4 디코딩이 정확히 그 자리에서 회차당 4~24번 깨졌다(`--special` 10화 중 5화 실패).
+  `--no-item-cuts`면 사건 단위(`cuts` 1~2 허용, 단 '모르면 생략' — 없으면 `action_weight` 판정, 상한 14 = `MAX_UNITS`).
 - 이름 고정: `--name/--name2`(또는 local `name/partner_name`, env `COMIC_PIN_NAME`)이 있으면 추출 결과가 그 이름을 강제로 따릅니다. 시트의 `#캐릭터 태그#`는 렌더 전용이고 화면 이름과 분리됩니다.
 - 결과는 `config.ep_action_units[EP] = units`로 보관 (`comic_input.py:891`). 디스크 캐시는 없습니다(재실행 시 재호출).
 
-### 3.2 [E] 컷 예산과 페이지 레이아웃 — `plan_pages_layout` (283)
-1. 컷 예산 순서: 항목/사건 가중치 합(`target_panels_from_weights`, 440) → 없으면 글자 수(`target_panels`, 455). **항목 저울은 막 분할과 독립**이다 — `ep_beat_segments` 앵커가 깨져 막이 1개라도 `split_acts_by_units([body], units)`로 항목 수를 지킨다(`request_panel_script`의 `else` 분기, `comic_gen.py:1597` 부근). 하한은 `MIN_PANELS_AUTO=6`과 `막당 2컷`.
+### 3.2 [E] 만들 컷(예산)과 페이지 레이아웃 — `plan_pages_layout` (283)
+1. 만들 컷(예산) 순서: 항목/사건 가중치 합(`target_panels_from_weights`, 440) → 없으면 글자 수(`target_panels`, 455). **항목 저울은 막 분할과 독립**이다 — `ep_beat_segments` 앵커가 깨져 막이 1개라도 `split_acts_by_units([body], units)`로 항목 수를 지킨다(`request_panel_script`의 `else` 분기, `comic_gen.py:1597` 부근). 하한은 `MIN_PANELS_AUTO=6`과 `막당 2컷`.
 2. 페이지 수 어림 = 목표 컷 수 ÷ 템플릿 평균 슬롯(4.82) ± 범위(−2 ~ +3).
 3. **페이지 수 × 레이아웃 재추첨**(`comic_layout_rolls=10`, `plan_pages(…, salt)`): 목표 컷 수에 가장 가까운 구성을 고르고, **모자란 쪽은 2.2배 벌점**(장면 압축이 컷 여유보다 나쁘다는 판단).
 4. 템플릿 34종(`data/cut.yaml`)에서 **회차 안 재사용 추첨**(같은 회차에서 같은 템플릿 중복 금지) + **첫 페이지는 "첫 행만 전폭"인 믹스 템플릿 우대** + 전폭 비중 상한 `comic_wide_share_max=0.5`.
@@ -226,6 +231,12 @@
 | LLM이 JSON을 깨뜨림 | ① 관대한 파서(`json_soft_fix`) ② 객체 단위 구제(`_salvage_objects`) ③ 재시도(추출 2회·태그 2회·컷 스크립트 장면당 2회) ④ 그래도 모자라면 침묵 컷/에러 | `comic_input._extract_once`, `anima_gen._generate_tags_via_llm`, `request_panel_script(retry=2)` | — 에러·경고는 `log/error.log`에 복제(실행 구분자 포함)
 | 키 앞에 홀 글자(러 / U+2024)가 섞여 배열째 파싱 실패(실측) | `json_soft_fix`가 잡문자·이상 따옴표 정리 → 실패 시 `_salvage_objects`가 짝 맞는 `{}`만 주워拾음(부분 손실 < 전량 손실) | `comic_input.json_soft_fix`, `comic_gen._salvage_objects` |
 | 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |
+| 컷이 **직접 입은** 옷이 아니라 직전 컷에서 **승계된** `clothes`가 상태 시트를 덮어 컷의 옷 변화가 사라짐(실측 EP10) | 승계분에는 `_clothes_prev` 표시 → 우선순위 `state 시트 > 컷이 직접 쓴 clothes > 승계(무시)` | `comic_gen._repair_panels`, `comic_gen.fold_cut_state` |
+| 첫 컷 보충답이 한글/산문 → 태그로 못 써 버리고 → 게이트가 회차를 통째로 죽임(실측 EP09) | 프롬프트에 '소문자 영문 태그' 지시 + `[회차 시작 후보]` 영문 태그를 근거로 제공 → 답이 unusable이면 회차 시작 태그로 명시 보충 | `comic_gen.fill_first_cut` |
+| 회차가 사라졌는데 로그에 흔적이 없다(콘솔 전용) | `run_comic.perr()`로 error.log 복제 + `episode_NN_SKIPPED.txt` + 전 회차 `완성/스킵` 요약 | `run_comic.perr`, `_skip_note` |
+| 추출이 통째로 실패하면 체크포인트가 없어 재실행이 0부터 | 실패 사유를 같은 원고 지문 레코드에 남긴다(`failed`, `source`) — 다음 실행이 먼저 알려준다 | `comic_input.save_extract_failure`, `load_extract_record` |
+| 동시 실행(selftest 서브프로세스)이 살아있는 실행의 본 로그를 지움 | `log/.run.lock`(PID) — 살아있는 PID가 있으면 초기화 생략, error.log 줄에 `[pid NNN]` | `runlog.start_run`, `runlog.note` |
+| error.log의 '에러'가 절반이 프롬프트 덤프(실측 20건 중 13건) | 덤프 헤더(`[PLOT_PROMPT]` 등)는 복제 대상에서 제외 | `runlog.NOT_ERRORS` |
 | 규칙이 잘려 LLM이 규칙 일부를 못 봄(실측: `{pose_policy}`가 3-c 아래로 밀림) | 규칙 3 → 그 뒷줄 → 3-b/3-c 순으로 배치 고정 | `comic_gen.build_panel_script_prompt` |
 | 키 앞 `"`가 U+2024 같은 유니코드로 디코딩됨(실측) | `json_soft_fix`(따옴표류 정규화·잡문자 제거·키 감싸기) — **정상 응답은 이 복구기를 거치지 않음**, 실패 시 오류 위치를 로그에 남김 | `comic_input.json_soft_fix`, `extract_json_obj_checked` |
 | 사건 병합으로 스토리 압축 | 병합 시 컷 수 **합**, 레이아웃 목표 컷 수 재추첨 | `split_acts_by_units`, `plan_pages_layout` |
@@ -254,7 +265,10 @@
 | 크롭 | 세로 가운데(전폭에서 얼굴 보존 51%) | **얼굴 앵커/8% 폴백**(79~98%) |
 | 템플릿 | 14종, 페이지마다 독립 추첨 | **34종, 회차 안 재사용**, 전폭 비중 0.5 상한 |
 | 정제 로그 | 컷마다 1,557줄 | 회차 끝 **1줄** |
-| selftest | — | **PASS 416 / FAIL 0** |
+| selftest | — | **PASS 520 / FAIL 0** |
+| 추출 스키마 `cuts` | 항목 모드에서 항상 1·값은 코드 폐기·**디코딩 사고 1순위 자리** | 프롬프트에서 제거(파서·키 접기는 2차 방어) |
+| 실행 로그 | append → 초기화 없음, 동시 실행 혼입, 덤프가 에러로 복제 | 초기화 + PID 락 + `[pid]` 줄 + 덤프 제외 |
+| 회차 실패 가시성 | stdout만, 산출물 구멍 방치 | error.log 복제 + `episode_NN_SKIPPED.txt` + 완성/스킵 요약 |
 
 ---
 
@@ -278,7 +292,7 @@
 
 **확인 질문 (직접 돌려볼 것)**
 ```bash
-venv/bin/python selftest.py                                   # PASS 416 / FAIL 0
+venv/bin/python selftest.py                                   # PASS 520 / FAIL 0
 venv/bin/python run_comic.py --episode inputs/ep90_deadbeef.txt --ep 1 --total-episodes 3 --dry-run
 venv/bin/python run_comic.py --episode inputs/ep90_deadbeef.txt --ep 1 --no-item-cuts --dry-run   # 회귀 비교
 tail -80 log/comic_gen.log | grep -E "화면 장치|컷 스크립트 완성|프롬프트 정제"

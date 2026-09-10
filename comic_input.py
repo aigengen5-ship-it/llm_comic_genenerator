@@ -33,8 +33,11 @@ import json
 import os
 import zlib
 import re
+import time
+import hashlib
 
 import config
+import runlog
 import anima_gen
 from openAPI_control import call_openai_for_text, OLLAMA_DEFAULT_NUM_CTX
 
@@ -75,6 +78,7 @@ _LOG_FILE = os.path.join(_LOG_DIR, "comic_input.log")
 
 
 def clog(msg: str):
+    runlog.note(msg, "INPUT")
     try:
         os.makedirs(_LOG_DIR, exist_ok=True)
         with open(_LOG_FILE, "a", encoding="utf-8") as f:
@@ -847,6 +851,229 @@ def _merge_extracts(parts: list) -> dict:
     base["units"] = _u[:MAX_UNITS]
     base["rating"] = rating
     return base
+
+
+# ── 추출 체크포인트 (2026-09-10) ─────────────────────────────────────────────
+# 초기 JSON 파싱이 깨지면(특수/일반 모드 모두) 회차 전체를 다시 물어먹는 것이 비싸다.
+#   ① 채운 값은 state/extract_cache.yaml에 저장하고 다음 실행에서 **빈 칸만** 이어받는다.
+#   ② 그래도 빈 항목은 본문·시트를 주고 **그 키만** 따로 다시 묻는다.
+#   ③ 그것도 실패하면 최후로 **캐릭터 설정(직업·공식 캐릭터 태그)**으로 추론해 메운다 —
+#      단 '추론'이라 로그에 남긴다. 직업으로 컷 1 복장을 지어내는 것은 본문 근거가 아니라
+#      회차 상태 오염과 같은 종류의 사고라, 마지막 안전판으로만 쓴다.
+EXTRACT_CACHE = os.path.join("state", "extract_cache.yaml")
+
+# 비면 안 되는 핵심 항목 (빈 채로 진행하면 태그·컷이 회차 설정으로 대체된다)
+EXTRACT_REQUIRED = (
+    "protagonist.name", "protagonist.sex", "protagonist.hair_color", "protagonist.hair_style",
+    "protagonist.eye_color", "protagonist.skin_color", "protagonist.clothes",
+    "protagonist.face_style", "protagonist.body_shape", "guides.protagonist", "rating",
+)
+# 있으면 좋은 항목 (없어도 결정론 경로로 버틴다)
+EXTRACT_OPTIONAL = ("protagonist.job", "protagonist.breasts_size", "protagonist.hip_size",
+                    "partner.name", "partner.clothes", "guides.partner", "actions", "units", "segments")
+
+
+def extract_key(episode_text: str, sheet_text: str, ep_num: int = 1, mode: str = "plain") -> str:
+    """입력(본문+시트+회차+모드) 지문 — 원고를 고르면 체크포인트는 자동 폐기(키가 바뀐다)."""
+    h = hashlib.sha1()
+    h.update(str(episode_text or "").encode("utf-8", "ignore"))
+    h.update(b"\x00")
+    h.update(str(sheet_text or "").encode("utf-8", "ignore"))
+    h.update(f"\x00{int(ep_num)}|{mode}".encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def _dig(d, path: str):
+    cur = d
+    for k in path.split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        elif isinstance(cur, list) and k.isdigit() and int(k) < len(cur):
+            cur = cur[int(k)]
+        else:
+            return None
+    return cur
+
+
+def _put(d: dict, path: str, val):
+    keys = path.split(".")
+    cur = d
+    for k in keys[:-1]:
+        if not isinstance(cur.get(k), dict):
+            cur[k] = {}
+        cur = cur[k]
+    cur[keys[-1]] = val
+
+
+def _is_empty(v) -> bool:
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return True
+    if isinstance(v, (list, tuple)):
+        return not [x for x in v if str(x or "").strip()]
+    if isinstance(v, dict):
+        return not any(not _is_empty(x) for x in v.values())
+    return False
+
+
+def missing_extract_fields(data) -> list:
+    """핵심 항목 중 비어 있는 것 (dotted path 리스트) — 다음 실행이 채워야 할 목록."""
+    d = data if isinstance(data, dict) else {}
+    return [p for p in EXTRACT_REQUIRED if _is_empty(_dig(d, p))]
+
+
+def optional_extract_fields(data) -> list:
+    d = data if isinstance(data, dict) else {}
+    return [p for p in EXTRACT_OPTIONAL if _is_empty(_dig(d, p))]
+
+
+def save_extract_checkpoint(key: str, data, missing=None) -> str:
+    """채운 값을 YAML로 남긴다 — 다음 실행은 **빈 칸만** 다시 묻는다(merge는 빈 칸만 채운다)."""
+    try:
+        import yaml
+        os.makedirs(os.path.dirname(EXTRACT_CACHE) or ".", exist_ok=True)
+        d = data if isinstance(data, dict) else {}
+
+        def _prune(x):
+            if isinstance(x, dict):
+                return {k: _prune(v) for k, v in x.items() if not _is_empty(_prune(v)) or not isinstance(v, (dict, list))}
+            if isinstance(x, list):
+                return [ _prune(v) for v in x]
+            return x
+
+        payload = {"key": key, "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                   "missing": list(missing or []), "data": _prune(d)}
+        old = {}
+        if os.path.exists(EXTRACT_CACHE):
+            try:
+                old = yaml.safe_load(open(EXTRACT_CACHE, encoding="utf-8").read()) or {}
+            except Exception:
+                old = {}
+        allruns = old.get("runs") if isinstance(old.get("runs"), dict) else {}
+        allruns[key] = payload
+        with open(EXTRACT_CACHE, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"runs": allruns}, f, allow_unicode=True, sort_keys=False)
+        return EXTRACT_CACHE
+    except Exception as e:
+        clog(f"추출 체크포인트 저장 실패: {e}")
+        return ""
+
+
+def load_extract_checkpoint(key: str) -> dict:
+    """같은 입력 지문의 체크포인트 (없으면 {})"""
+    try:
+        import yaml
+        if not key or not os.path.exists(EXTRACT_CACHE):
+            return {}
+        y = yaml.safe_load(open(EXTRACT_CACHE, encoding="utf-8").read()) or {}
+        run = (y.get("runs") or {}).get(key) or {}
+        d = run.get("data")
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def merge_extract_cached(data, cached) -> tuple:
+    """빈 칸만 캐시로 메운다(이번 실행이 얻은 값을 덮지 않는다). → (data, 채운 경로)"""
+    d = data if isinstance(data, dict) else {}
+    filled = []
+    for path in list(EXTRACT_REQUIRED) + list(EXTRACT_OPTIONAL):
+        if _is_empty(_dig(d, path)) and not _is_empty(_dig(cached or {}, path)):
+            _put(d, path, _dig(cached, path))
+            filled.append(path)
+    return d, filled
+
+
+def fill_missing_extract(data, missing, episode_text: str, sheet_text: str, ep_num: int = 1,
+                         attempts: int = 2) -> tuple:
+    """빈 핵심 항목만 따로 LLM에 다시 묻는다 (전체 재추출보다 훨씬 싼 호출)."""
+    d = data if isinstance(data, dict) else {}
+    miss = list(missing or [])
+    if not miss or not str(episode_text or "").strip():
+        return d, miss
+    body = str(episode_text or "")[:2400]
+    for k in range(1, max(1, int(attempts)) + 1):
+        prompt = ("평문 원고를 구조화하는 일입니다. **아래 빈 항목만** 채워 부분 JSON으로 돌려주세요.\n"
+                  "외모·복장은 소문자 영문 danbooru 태그, 그 외는 한국어. 없는 정보는 지어내지 말고 빈 문자열.\n\n"
+                  f"[채울 항목] {', '.join(miss)}\n"
+                  '형식 예: {"protagonist": {"clothes": "school uniform"}, "rating": "safe"}\n\n'
+                  f"[캐릭터 시트]\n{str(sheet_text or '')[:900]}\n\n[에피소드 본문]\n{body}")
+        try:
+            raw, _ = call_openai_for_text(prompt, messages=None, log_fn=clog,
+                                          temperature=0.2 if k == 1 else 0.0, repeat_penalty=1.05)
+        except Exception as e:
+            clog(f"빈 항목 보충 {k}회 호출 실패: {e}")
+            continue
+        got, _err = extract_json_obj_checked(raw or "")
+        got = got if isinstance(got, dict) else {}
+        n = 0
+        for path in miss:
+            v = _dig(got, path)
+            if not _is_empty(v) and _is_empty(_dig(d, path)):
+                _put(d, path, v)
+                n += 1
+        if n:
+            clog(f"빈 항목 보충 {k}회: {n}개 채움")
+            break
+        if k < int(attempts):
+            clog(f"빈 항목 보충 {k}회는 건질 게 없습니다 → 재시도")
+    return d, [p for p in EXTRACT_REQUIRED if _is_empty(_dig(d, p))]
+
+
+# 추론 안전판: 공식 캐릭터 태그(#…#)는 '이 캐릭터의 평소 디자인'이므로 본문에 없는 외모·복장을
+#   메우는 정당한 근거다. 회차 태그(회차 중반 이후 상태 포함)와 혼동하지 말 것.
+_TRIGGER_BAGS = {
+    "protagonist.clothes": ("uniform", "school uniform", "dress", "shirt", "blouse", "skirt", "jacket",
+                            "coat", "suit", "tie", "bra", "panties", "swimsuit", "kimono", "apron",
+                            "sweater", "jeans", "pants", "sailor", "gloves", "boots", "heels"),
+    "protagonist.hair_style": ("hair,", " hair", "ponytail", "braid", "bangs", "bun"),
+    "protagonist.hair_color": ("hair",),
+    "protagonist.eye_color": ("eyes", "eye color"),
+    "protagonist.skin_color": ("skin",),
+    "protagonist.body_shape": ("body", "breasts", "hips", "loli", "child", "slim", "petite"),
+}
+
+
+def infer_missing_from_profile(data, missing=None) -> tuple:
+    """최후 안전판 — 공식 캐릭터 태그·직업으로 빈 외모/수위 항목을 메운다 (로그에 '추론' 명시)."""
+    d = data if isinstance(data, dict) else {}
+    miss = list(missing if missing is not None else EXTRACT_REQUIRED)
+    _ct = getattr(config, "char_tags", []) or []
+    trig = ", ".join([", ".join(str(x) for x in _ct) if isinstance(_ct, (list, tuple)) else str(_ct)])
+    bag = [t.strip().lower() for t in re.split(r"[,\n]", trig) if t.strip()]
+    job = str(_dig(d, "protagonist.job") or getattr(config, "job", "") or "")
+    filled = []
+
+    def _pick(path, pred):
+        if _is_empty(_dig(d, path)):
+            hits = [t for t in bag if pred(t)]
+            if path == "protagonist.clothes" and job:
+                # 직업이 있으면 직업 복장을 먼저 시도(실측: '경찰' → police uniform 식으로 붙는다)
+                jmap = {"경찰": "police uniform", "교사": "teacher outfit", "의사": "nurse uniform",
+                        "간호사": "nurse uniform", "성우": "casual clothes", "점원": "store clerk uniform",
+                        "학생": "school uniform", "형사": "suit", "변호사": "suit", "바리스타": "apron"}
+                for k, v in jmap.items():
+                    if k in job:
+                        hits = [v] + hits
+                        break
+            if hits:
+                _put(d, path, ", ".join(hits[:3]))
+                filled.append(path)
+
+    for path, keys in _TRIGGER_BAGS.items():
+        _pick(path, lambda t, keys=keys: any(k in t for k in keys))
+    if "protagonist.face_style" in miss and _is_empty(_dig(d, "protagonist.face_style")):
+        _put(d, "protagonist.face_style", "neutral expression")     # '지금'을 모르면 중립(아헤가오 금지)
+        filled.append("protagonist.face_style")
+    if "protagonist.sex" in miss and _is_empty(_dig(d, "protagonist.sex")):
+        _put(d, "protagonist.sex", "female")                        # 파서 규칙과 같은 기본값
+        filled.append("protagonist.sex")
+    if "rating" in miss and _is_empty(_dig(d, "rating")):
+        _put(d, "rating", "safe")                                   # 기본 수위
+        filled.append("rating")
+    if filled:
+        clog("캐릭터 설정(공식 태그·직업)으로 추론해 메운 항목: " + ", ".join(filled)
+             + " — 본문 근거가 아니므로 확인이 필요합니다")
+    return d, filled
 
 
 def _extract_once(episode_text: str, sheet_text: str, ep_num: int, log_fn=None,

@@ -37,3 +37,7 @@ inputs/sheet_*.txt
 
 # [2026-09-09] 얼굴 검출 모델(옵션, --get-face-model로 받음)
 data/models/
+
+# 실행 산물 (기계별 상태 — 커밋하지 않음)
+state/last_run.json
+state/extract_cache.yaml

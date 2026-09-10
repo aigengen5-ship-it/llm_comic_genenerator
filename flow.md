@@ -53,6 +53,7 @@
 
 | 순서 | 하는 일 | 코드 |
 |---|---|---|
+| 0 | `runlog.start_run()` — 본 로그 3종 + tag_out을 **초기에 초기화**, `log/error.log`에 실행 구분자 (`--keep-logs`로 유지) |
 | 1 | 인자 파싱 + 스위치 배선(모든 `--no-*`는 이 자리에서 `config`에 반영) | `run_comic.py:758~` |
 | 2 | `local_settings.yaml` 적용 (우선순위: **CLI > env > local_settings > 코드 기본값**) | `config.apply_local_settings()` |
 | 3 | 프리플라이트 화면: config 필수 10필드, 폰트 누락, ComfyUI/ollama 포트, 컷 배분 변동, 수다장이, 이름 고정 | `run_comic.py:378~` |
@@ -81,7 +82,7 @@
 
 | # | 위치 | 용도 | 호출 | 파라미터 | 출력 | 실패 시 |
 |---|---|---|---|---|---|---|
-| 1 | `comic_input.py:795` (`_extract_once`) | 본문 → 기승전결 가이드 + `segments`(막 앵커) + `units`(화면 항목) | EP당 1회 (전체 재시도 1회) | `call_openai_for_text`, low reasoning | JSON: `{guides, segments, units, name…}` | 파싱 실패 → 재시도, 그래도 실패 → 글자 수 기반 배분 + 자동 가이드 |
+| 1 | `comic_input._extract_once` | 본문 → 기승전결 가이드 + `segments`(막 앵커) + `units`(화면 항목) | EP당 1회(창이 여러 개면 창마다) — 파싱 실패/예외 시 **2회**(2회는 `temperature=0.0`) → 실패하면 **체크포인트 3단**: `merge_extract_cached`(빈 칸만 이어받기) → `fill_missing_extract`(빈 항목만 재확인) → `infer_missing_from_profile`(공식 태그·직업 추론) → `save_extract_checkpoint` |
 | 2 | `anima_gen._generate_tags_via_llm` (호출은 `anima_gen.py:1127` → `openAPI_control.openAI_response`, 825) | 회차 렌더 태그 일체 (face / makeup / exposure / parts / body / background / expressions / partner / location / time / safety) | EP당 1회 | `openAI_response` 경로 = plot.json `mainLLM` 해석 모델 (qwen 계열은 `enable_thinking=False`, 그 외 `repeat_penalty 1.15 + top_k 64`, 800s timeout·3회 재시도) | 태그 dict → `config.*_tag`, `config.current_level` | client 없거나 파싱 실패 → **결정론 fallback 태그**(`fb`) |
 | 3 | `comic_gen.py:1625` (장면 루프 안) | 장면 본문 → **컷 스크립트 JSON** | **장면당 1회** (장면 = 항목 ≤6개 묶음, 본문 ≤1800자) | `call_openai_for_text`, `reasoning_effort="low"`, `enable_thinking=False` | 컷 배열(pose/camera/position/caption_ko/lines/clothes/climax…) | 장면당 `retry`회 재시도 → 여전히 미달이면 남은 컷을 **침묵 컷**으로 채움(`notes`에 기록) |
 
@@ -221,7 +222,7 @@
 | 증상 | 방어선 | 코드 |
 |---|---|---|
 | 규칙 블록 잘림(응답만 옴) | 문자 예산 산식, 장면 1800자 상한 | `episode_char_budget` |
-| LLM이 JSON을 깨뜨림 | ① 관대한 파서(`json_soft_fix`) ② 객체 단위 구제(`_salvage_objects`) ③ 재시도(추출 2회·태그 2회·컷 스크립트 장면당 2회) ④ 그래도 모자라면 침묵 컷/에러 | `comic_input._extract_once`, `anima_gen._generate_tags_via_llm`, `request_panel_script(retry=2)` |
+| LLM이 JSON을 깨뜨림 | ① 관대한 파서(`json_soft_fix`) ② 객체 단위 구제(`_salvage_objects`) ③ 재시도(추출 2회·태그 2회·컷 스크립트 장면당 2회) ④ 그래도 모자라면 침묵 컷/에러 | `comic_input._extract_once`, `anima_gen._generate_tags_via_llm`, `request_panel_script(retry=2)` | — 에러·경고는 `log/error.log`에 복제(실행 구분자 포함)
 | 키 앞에 홀 글자(러 / U+2024)가 섞여 배열째 파싱 실패(실측) | `json_soft_fix`가 잡문자·이상 따옴표 정리 → 실패 시 `_salvage_objects`가 짝 맞는 `{}`만 주워拾음(부분 손실 < 전량 손실) | `comic_input.json_soft_fix`, `comic_gen._salvage_objects` |
 | 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |
 | 규칙이 잘려 LLM이 규칙 일부를 못 봄(실측: `{pose_policy}`가 3-c 아래로 밀림) | 규칙 3 → 그 뒷줄 → 3-b/3-c 순으로 배치 고정 | `comic_gen.build_panel_script_prompt` |

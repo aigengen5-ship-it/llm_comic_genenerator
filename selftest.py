@@ -2608,6 +2608,76 @@ def main() -> int:
     check("수다장이 함수는 빈 패널 목록에서 아무것도 하지 않는다", True)
     config.comic_chatty = False
 
+    # ── ⑭ [2026-09-10] 실행 로그 위생 + 추출 체크포인트(빈 항목만 이어받기)
+    from tempfile import mkdtemp as _mkdtemp_rl
+    import runlog as _RL
+    _tmp = _mkdtemp_rl(prefix="selftest_log_")
+    _cwd = os.getcwd()
+    _keep = (_RL.LOG_DIR, _RL.ERROR_LOG, CI.EXTRACT_CACHE, list(config.char_tags))
+    try:
+        os.chdir(_tmp)
+        os.makedirs("log", exist_ok=True)
+        _RL.LOG_DIR, _RL.ERROR_LOG = "log", os.path.join("log", "error.log")
+        CI.EXTRACT_CACHE = os.path.join("state", "extract_cache.yaml")
+        open(os.path.join("log", "comic_gen.log"), "w", encoding="utf-8").write("지난 실행 흔적\n")
+        _RL.start_run()
+        check("실행 시작에 본 로그를 비운다(어제 실패와 섞이지 않는다)",
+              open(os.path.join("log", "comic_gen.log"), encoding="utf-8").read().strip() == "")
+        open(os.path.join("log", "comic_gen.log"), "w", encoding="utf-8").write("유지됨\n")
+        _RL.start_run(keep=True)
+        check("--keep-logs면 본 로그를 이어서 쓴다",
+              "유지됨" in open(os.path.join("log", "comic_gen.log"), encoding="utf-8").read())
+        _RL.note("EP1 컷 스크립트가 필수 항목을 채우지 못했습니다", "COMIC")   # 표어 없는 문장도 잡히게
+        _RL.note("정상적인 진행 정보는 여기에 남지 않는다", "COMIC")
+        _er = open(os.path.join("log", "error.log"), encoding="utf-8").read()
+        check("에러·경고만 log/error.log에 따로 남는다(실행 구분자 포함)",
+              "필수 항목" in _er and "정상적인" not in _er and "RUN" in _er, _er[-90:].replace("\n", " "))
+        check("종료 요약이 에러 건수와 파일 위치를 알려준다",
+              "1" in _RL.summary() and "error.log" in _RL.summary(), _RL.summary())
+
+        _k1 = CI.extract_key("본문 A", "시트", 1, "plain")
+        check("추출 체크포인트 키는 원고 지문 — 원고를 고르면 자동 폐기",
+              _k1 == CI.extract_key("본문 A", "시트", 1, "plain")
+              and _k1 != CI.extract_key("본문 B", "시트", 1, "plain")
+              and _k1 != CI.extract_key("본문 A", "시트", 2, "plain"))
+        _d1 = {"protagonist": {"name": "A", "sex": "female", "clothes": "", "hair_color": "brown hair"},
+               "guides": {"protagonist": ["가", "나", "다", "라"]}, "rating": ""}
+        _miss = CI.missing_extract_fields(_d1)
+        check("빈 핵심 항목을 목록으로 뽑는다(다음 실행이 채울 대상)",
+              "protagonist.clothes" in _miss and "rating" in _miss and "protagonist.name" not in _miss,
+              str(_miss[:5]))
+        CI.save_extract_checkpoint(_k1, _d1, _miss)
+        _d2 = {"protagonist": {"name": "B", "clothes": ""}, "guides": {"protagonist": []}, "rating": ""}
+        _d2, _cf = CI.merge_extract_cached(_d2, CI.load_extract_checkpoint(_k1))
+        check("다음 실행은 빈 칸만 이어받는다(이번에 얻은 값은 안 덮는다)",
+              _d2["protagonist"]["name"] == "B" and _d2["protagonist"]["hair_color"] == "brown hair"
+              and len(_d2["guides"]["protagonist"]) == 4, str(_cf)[:70])
+        _orig_cit = CI.call_openai_for_text
+        try:
+            CI.call_openai_for_text = lambda *a, **k: (
+                '{"protagonist": {"clothes": "school uniform"}, "rating": "safe"}', "")
+            _d3, _m3 = CI.fill_missing_extract(_d2, ["protagonist.clothes", "rating"], "본문 A", "시트", 1)
+        finally:
+            CI.call_openai_for_text = _orig_cit
+        check("빈 항목만 따로 다시 물어서 메운다(전체 재추출보다 싸다)",
+              _d3["protagonist"]["clothes"] == "school uniform" and _d3["rating"] == "safe"
+              and "protagonist.clothes" not in _m3 and "rating" not in _m3, str(_m3)[:60])
+        config.char_tags = ["Kirisaki Chitoge, long hair, brown hair, blue eyes, fair skin,"
+                            " slim body, school uniform, red ribbon"]
+        _d4 = {"protagonist": {"name": "A", "job": "경찰"}, "guides": {"protagonist": ["a", "b", "c", "d"]}}
+        _d4, _inf = CI.infer_missing_from_profile(_d4, CI.missing_extract_fields(_d4))
+        check("그래도 모자라면 공식 캐릭터 태그·직업으로 추론해 메운다(마지막 안전판)",
+              "police uniform" in _d4["protagonist"]["clothes"]
+              and "blue eyes" in _d4["protagonist"]["eye_color"] and "rating" in _inf, str(_inf)[:80])
+        check("추론으로 메운 '지금 표정'은 중립 — 회차 끝 표정을 기본값으로 쓰지 않는다",
+              _d4["protagonist"]["face_style"] == "neutral expression",
+              str(_d4["protagonist"].get("face_style")))
+    finally:
+        os.chdir(_cwd)
+        _RL.LOG_DIR, _RL.ERROR_LOG, CI.EXTRACT_CACHE = _keep[0], _keep[1], _keep[2]
+        config.char_tags = _keep[3]
+
+
     # ── (A) 공개 repo 노출 가드: 로컬 사전(수위/강등/집계 이름)의 어휘가 추적 파일에 있으면 안 된다.
     #   로컬 사전을 심은 환경에서만 의미가 있다(공개 클론에서는 토큰이 없어 자동 통과).
     # 스캔 대상은 **한글 어휘**만 — 영문 danbooru 태그(sex/cum/…)는 이 repo의 산출물이라 노출이 아니다.

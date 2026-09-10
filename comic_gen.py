@@ -38,6 +38,7 @@ import time
 import zlib
 
 import config
+import runlog as _rl
 import anima_gen
 import comic_input as CI
 import comic_page_merge as CPM
@@ -431,7 +432,8 @@ _LOG_FILE = os.path.join(_LOG_DIR, "comic_gen.log")
 
 
 def _clog(msg: str):
-    """log/comic_gen.log + 콘솔 출력 (anima_gen.log와 섞이지 않게 분리)"""
+    """log/comic_gen.log + 콘솔 출력 (anima_gen.log와 섞이지 않게 분리) — 에러 계열은 error.log에도"""
+    _rl.note(msg, "COMIC")
     try:
         os.makedirs(_LOG_DIR, exist_ok=True)
         with open(_LOG_FILE, "a", encoding="utf-8") as f:

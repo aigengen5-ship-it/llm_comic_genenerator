@@ -12,6 +12,7 @@ import zlib
 import shutil
 import config
 import comic_input as CI
+import runlog
 import urllib.request as request
 
 from openai import OpenAI
@@ -244,6 +245,7 @@ def _ensure_log_files():
 def log(*args, **kwargs):
     """메시지를 콘솔과 log 파일에 동시에 출력합니다."""
     msg = " ".join(str(a) for a in args)
+    runlog.note(msg, "ANIMA")
     #print(msg, **kwargs)  # 콘솔에도 출력
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(msg + "\n")

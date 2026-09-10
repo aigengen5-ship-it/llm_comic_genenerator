@@ -732,7 +732,36 @@ comic/bookNNN/episode_NN_comic.json        base_seed/seeds/컷/페이지 계획(
 comic/bookNNN/episode_NN_script.json       dry-run 컷 스크립트
 image/*.png                                컷 원본(렌더)
 log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기록(append)
+log/error.log                                   에러·경고 이력 (지우지 않고 쌓습니다)
+state/extract_cache.yaml                        추출 체크포인트 (아래 3-10c)
 ```
+
+### 3-10b) 실행 로그 — 시작에 초기화, 에러는 따로
+
+- **본 로그는 실행을 시작할 때마다 비워집니다.** 예전에는 계속 이어 써서, 어제 실패한 줄을
+  오늘 실패로 읽는 일이 있었습니다(`log/comic_gen.log`, `log/comic_input.log`, `log/anima_gen.log`).
+- **에러·경고만 `log/error.log`에 따로 남깁니다.** 본 로그는 다음 실행에 사라지니 실패 이력이
+  남지 않기 때문입니다. 실행 단위로 `===== RUN 2026-09-10 07:00 … =====` 구분자가 찍히고,
+  실행이 끝나면 콘솔에 `에러/경고 N건 → log/error.log` 한 줄이 출력됩니다.
+- 이어서 쓰려면 `--keep-logs`를 사용하세요. 표어(오류/경고/실패/누락/미달/예외 …)가 포함된
+  로그만 복제되고, 프롬프트 덤프처럼 긴 블록은 첫 줄만 남깁니다.
+
+### 3-10c) 추출이 반쯤 깨졌을 때 — 체크포인트로 이어서 채웁니다
+
+평문 → 구조화 추출에서 JSON이 깨지거나 일부 항목이 비면, 회차 전체를 다시 물어먹는 대신
+아래 순서로 메웁니다. 일반 모드/`--special` 모드 모두 동일합니다.
+
+| 순서 | 동작 | 근거 |
+|---|---|---|
+| ① | 같은 원고의 지난 체크포인트에서 **빈 칸만** 이어받기 | `state/extract_cache.yaml` |
+| ② | 여전히 빈 항목만 따로 다시 묻기 (전체 재추출보다 훨씬 쌉니다) | LLM 1~2회 |
+| ③ | 그래도 모자라면 **캐릭터 설정(공식 `#캐릭터 태그#`·직업)**으로 추론 | 로그에 '추론' 명시 |
+
+- 체크포인트는 **원고 지문(본문+시트+회차+모드)**으로 저장되므로 원고를 고르면 자동 폐기됩니다.
+- ③은 최후 안전판입니다. 직업으로 복장을 유추하는 것은 본문 근거가 아니므로(직업이 경찰이어도
+  그 장면에서는 잠옷일 수 있습니다) 반드시 로그에 남기며, 표정은 모를 때 **중립**을 씁니다.
+- 캐시를 무시하고 처음부터 하려면 `--fresh-extract`를 쓰세요.
+
 
 ---
 
@@ -761,6 +790,7 @@ novel_progress.py     [선택 어댑터] local 전용 progress/ 포맷 → 두 �
 comic_gen.py          본문→컷 수→페이지 계획, 장면별 컷 스크립트(설명/풍선/의성어 + ★요약·에필로그), 프롬프트 조립/렌더, JSON 복구
 comic_page_merge.py   흰 프레임+검은 선 + 화면 문법(설명 박스/말풍선/속마음/의성어) 합성(행 비율 h_share 지원)
 anima_gen.py          EP 태그 LLM 생성 + 태그블록/헤더 + ComfyUI 클라이언트
+runlog.py             실행 로그 위생(시에 초기화 + error.log 분리 + 종료 요약)
 openAPI_control.py    LLM 클라이언트(ollama shim/router), 재시도, unload 3경로
 config.py             전역 상태(plot.json, data/episode_setup.json)
 LORA.md             선택 가능한 LoRA·UNet 안내(화풍을 고르실 때만 보는 문서 — 활성 키만 수록)

@@ -68,6 +68,7 @@ import time
 from PIL import Image
 
 import config
+import runlog
 import anima_gen
 import comic_gen as CG
 import comic_input as CI
@@ -482,6 +483,30 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     if not data:
         p("✗ 필드 추출 실패 — LLM(textLLM) 상태와 plot.json을 확인하세요. 상세: log/comic_input.log")
         return 2
+    # [2026-09-10] 초기 추출이 반쯤 깨졌을 때 회차 전체를 다시 물어먹지 않는다 —
+    #   ① 같은 원고의 지난 체크포인트에서 빈 칸만 이어받고 ② 빈 항목만 다시 묻고
+    #   ③ 그래도 모자라면 캐릭터 설정(공식 태그·직업)으로 추론해 메운다(로그에 '추론' 명시).
+    _xkey = CI.extract_key(ep_text, sheet_text, ep_num=ep_num, mode=inp["format"])
+    _cached = {} if getattr(args, "fresh_extract", False) else CI.load_extract_checkpoint(_xkey)
+    if _cached:
+        data, _cf = CI.merge_extract_cached(data, _cached)
+        if _cf:
+            p(f"  ○ 지난 실행의 추출 체크포인트에서 {len(_cf)}항목을 이어받았습니다 "
+              f"(빈 칸만): {', '.join(_cf[:6])}" + (" 외" if len(_cf) > 6 else ""))
+    _miss = CI.missing_extract_fields(data)
+    if _miss:
+        p(f"  추출에서 빈 핵심 항목 {len(_miss)}개 → 그 항목만 다시 묻습니다: {', '.join(_miss[:6])}"
+          + (" 외" if len(_miss) > 6 else ""))
+        data, _miss = CI.fill_missing_extract(data, _miss, ep_text, sheet_text, ep_num=ep_num)
+    if _miss:
+        data, _inf = CI.infer_missing_from_profile(data, _miss)
+        if _inf:
+            p("  ○ 캐릭터 설정(공식 태그·직업)으로 추론해 메운 항목: " + ", ".join(_inf) + " — 본문 근거 아님")
+        _miss = CI.missing_extract_fields(data)
+    if _miss:
+        p(f"  ✗ 여전히 빈 핵심 항목 {len(_miss)}개: {', '.join(_miss)}")
+        p(f"     체크포인트를 남깁니다({CI.EXTRACT_CACHE}) — 같은 원고를 다시 돌리면 이 항목만 채웁니다.")
+    CI.save_extract_checkpoint(_xkey, data, _miss)
     CI.apply_to_config(data, ep_text, sheet_text, ep_num=ep_num,
                        panels_per_page=args.panels_per_page, book_num=args.book,
                        total_episodes=total_eps, overrides=inp["overrides"],
@@ -670,6 +695,10 @@ def main() -> int:
                     help="페이지 템플릿을 고정합니다 (id 또는 이름 일부, 쉼표로 여러 개 → 페이지마다 회전). 예: --template romcom_banter_6panels")
     ap.add_argument("--list-templates", action="store_true",
                     help="사용 가능한 페이지 템플릿(id / 이름 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다")
+    ap.add_argument("--fresh-extract", action="store_true", dest="fresh_extract",
+                    help="이전 실행의 추출 체크포인트(state/extract_cache.yaml)를 무시하고 처음부터 추출한다")
+    ap.add_argument("--keep-logs", action="store_true", dest="keep_logs",
+                    help="log/*.log를 실행 시작에 초기화하지 않고 이어서 쓴다 (기본: 초기화)")
     ap.add_argument("--no-strict-state", action="store_true",
                     help="컷 스크립트 JSON이 필수 항목(상태 시트 12종·pose·첫 컷의 시작 상태)을 못 채울 때 기본은 에러로 종료합니다 — 이 플래그는 경고만 하고 진행")
     ap.add_argument("--item-cuts", action="store_true", dest="item_cuts", default=None,
@@ -735,6 +764,10 @@ def main() -> int:
     ap.add_argument("--no-explicit", action="store_true", dest="no_explicit",
                     help="[local] 로컬 설정/환경변수로 켜진 위 스위치를 이번 실행만 끕니다")
     args = ap.parse_args()
+
+    # [2026-09-10] 실행 시작에 본 로그를 비웁니다(전부 append라 어제 실패와 섞였습니다).
+    #   에러·경고는 지우지 않는 log/error.log에 따로 남깁니다.
+    runlog.start_run(keep=bool(getattr(args, "keep_logs", False)))
 
     global _OS_OVERRIDE, _KEEP_LLM
     _OS_OVERRIDE = args.os_override
@@ -989,4 +1022,8 @@ if __name__ == "__main__":
                 stop_ollama()
             except Exception as e:
                 p(f"  ollama 서버 종료 실패: {e}")
+    try:
+        print(runlog.summary(), flush=True)
+    except Exception:
+        pass
     sys.exit(rc)

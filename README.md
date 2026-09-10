@@ -654,6 +654,11 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 - **모자라면 에러로 끝냅니다.** 인물이 나오는 첫 컷이 `face`/`clothes`를 비우면 회차 요약 태그가 대신 들어가 컷 1부터 중반 복장·표정이 붙습니다. 그래서 ① 빈 항목만 작은 호출 1회로 보충 → ② 그래도 첫 컷이 모자라면 **그 컷만** 따로 재확인 → ③ 여전히 모자라면 `PanelScriptError`로 멈추고 안내합니다(렌더는 시작되지 않음). `--no-strict-state`로 경고만 켤 수 있습니다.
   - 실측: 모델이 state를 아예 안 채운 회차에서 첫 컷 보충이 `clothes=shabby Japanese school uniform`을 회수해 통과했습니다.
 - 확인: 로그 `EP1 컷 상태 시트: 시작 = 표정 … / 복장 … → 변화가 적힌 컷 N개`, 산출물 `comic/bookNNN/episode_NN_comic.json`의 `panels[i]["_state"]`.
+- **상대방도 같은 식으로 유지됩니다.** 두 사람이 한 화면인 컷(`multi`/`pov`)에서는 주인공만 '지금'을 가지고
+  상대는 회차 설정(평균)이었다가 고정이라, 상대가 회차 중반의 표정·복장으로 그려졌습니다. 이제 컷 상태에
+  `p_face`(표정) · `p_clothes`(복장) · `p_hair` · `p_posture` 를 함께 적습니다(예: `p_face=angry; p_clothes=white shirt`).
+  비우면 직전 컷이 유지되고, 상대에게만 `[BBB FACE]` / `[BBB CLOTHES]` / `[BBB ACCESSORIES]` / `[BBB MARKS]` /
+  `[BBB PROPS]` / `[BBB POSTURE]` 으로 붙습니다. 한글·일본어로 온 값은 이 단계에서 버립니다(최종 프롬프트에서 파기되는 값).
 
 ### 3-8d) 이름 고정 — `#캐릭터 태그#`가 이름을 빼앗지 못하게
 

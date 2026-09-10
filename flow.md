@@ -151,7 +151,9 @@
 - `_fill_chatty_narration` (1380): 지문 없는 컷은 **LLM#(보너스)** 작문 → 본문 문장 → 기본 문장
 - 전역 보정(1657 부근): 슬롯 메타(page/tier) 부여, 어휘·복장·시선 통일, face/action 분류 재확인
 - 정제 통계는 컷마다 찍지 않고 **회차 끝 한 줄**
-- **엄격 검사 게이트**(`validate_panel_script` → `fill_missing_state` → `fill_first_cut`): pose 누락, 인물이 나오는 첫 컷의 `face`/`clothes` 누락, state를 한 컷도 안 쓴 경우 → ① 빈 항목만 작은 호출 1회 → ② 첫 컷만 따로 재확인(단일 객체 응답·한글 값 배제) → ③ `PanelScriptError`. `run_comic`이 받아 안내 후 rc 2로 종료(렌더 미시작), `--no-strict-state`로 경고만 가능 (`_prompt_san_flush`)
+- **컷 연속 상태**(`STATE_KEYS` 21항목): 컷은 **변한 것만** 적고 나머지는 빈 값 = 직전 컷 유지, `fold_cut_state()`가 접는다. `place/time/background`는 씬이 바뀌는 컷에서 교체되고, 앞 컷이 비면 본문에 먼저 적힌 값을 시작 값으로 소급한다(회차 배경 태그는 회치 전체 장소를 담기 때문).
+- **상대방 항목(`p_` 접두사)**: `p_face/p_makeup/p_body/p_clothes/p_accessories/p_hair/p_marks/p_props/p_posture` — 두 사람이 한 화면인 컷(`multi`/`pov`)에서 상대에게도 '지금'을 준다. `anima_gen._build_partner_block(episode, name_b, cut_state)`가 회차 설정보다 먼저 쓰고 빈 항목만 회차 값을 쓴다 → `[BBB FACE] [BBB CLOTHES] [BBB ACCESSORIES] [BBB MARKS] [BBB PROPS] [BBB POSTURE]`.
+- **엄격 검사 게이트** `validate_panel_script` → 실패 시 ① `fill_missing_state`(빈 항목만 작은 호출 1회) → ② `fill_first_cut`(첫 컷만 따로, 못 읽으면 `temperature=0.0` 재시도, 답이 회치 중반 이후 상태(`clothes_late`/`face_style_late`)면 그 답을 받지 않음) → ③ 그래도 모자라면 `PanelScriptError` → `run_comic`이 `[오류]` 후 **rc 2**로 종료(렌더 전에 멈춘다). 우회: `--no-strict-state`. 근거는 언제나 **[에피소드 본문]의 이 컷 조각** — 회차 요약으로 빈 칸을 메우지 않는다.
 
 ### 3.5 [H] 컷 → 이미지 프롬프트 — `build_panel_prompt` (2110)
 - 결정론 경로: 태그 블록(`[AAA FACE]/[AAA CLOTHES]/[BACKGROUND]/[SAFETY]`…) + 정석 뷰 토큰(`ANGLE` 프리셋) + 시선 정책(말풍선이 오른쪽이면 인물은 왼쪽).

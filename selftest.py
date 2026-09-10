@@ -1553,7 +1553,7 @@ def main() -> int:
     pnl = {"no": 1, "caption_ko": "지문", "sfx": "쿵", "facing": "right", "fade": 0.0,
            "lines": [{"kind": "speech", "who": "소타", "text": "대사"}]}
     tp0 = CG.panel_text_payload(pnl)
-    check("panel_text_payload: 설명/풍선/의성어 + facing → 풍선 꼬리 쪽(side)",
+    check("panel_text_payload: 설명/풍선/의성어 + facing → 풍선 배치 쪽(side)",
           tp0["narration"] == "지문" and tp0["sfx"] == "쿵" and tp0["balloons"][0]["side"] == "right",
           str(tp0))
     _r_sum = CG._apply_text_role({"no": 1, "type": "face", "camera": "close_up",
@@ -1714,17 +1714,18 @@ def main() -> int:
 
     # ---------------------------------------------------------------------------
     # ⑪ [2026-09-09] 화면 문법 v4 — 사용자 지시 4건
-    #   1) 주인공 풍선 = 왼쪽 위(2개면 아래), 상대방 = 오른쪽 위(2개면 아래), 꼬리는 아주 작게
+    #   1) 주인공 풍선 = 왼쪽 위(2개면 아래), 상대방 = 오른쪽 위(2개면 아래)
+    #      (꼬리·물방울은 정상 동작하지 않아 삭제됐다 — 몸체만 그린다)
     #   2) 중간 이벤트 컷의 설명 박스는 대화에 맞추어 작게
     #   3) 컷 경계선과 그림 사이 빈틈 없이 굵은 검정선만  (④에서 픽셀로 확인)
     #   4) 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) — 감정마다 다른 색
     # ---------------------------------------------------------------------------
-    print("\n== ⑪ 화면 문법 v4: 풍선 자리·꼬리 크기 / 설명 크기 / 감정 표시 ==")
+    print("\n== ⑪ 화면 문법 v4: 풍선 자리 / 설명 크기 / 감정 표시 ==")
     sp_me = CPM._balloon_slot_pref({"speaker": "me"})
     sp_ot = CPM._balloon_slot_pref({"speaker": "other"})
-    check("주인공 풍선은 왼쪽 위 → 왼쪽 아래, 꼬리는 중앙 쪽",
+    check("주인공 풍선은 왼쪽 위 → 왼쪽 아래",
           sp_me == (("tl", "bl", "ml", "center"), "center"), str(sp_me))
-    check("상대방 풍선은 오른쪽 위 → 오른쪽 아래, 꼬리는 오른쪽 끝",
+    check("상대방 풍선은 오른쪽 위 → 오른쪽 아래",
           sp_ot == (("tr", "br", "mr", "center"), "right"), str(sp_ot))
 
     # 실제 렌더: 주인공 2개 + 상대방 2개를 한 컷에
@@ -1752,22 +1753,7 @@ def main() -> int:
           all(r[0] >= PX and r[1] >= PY and r[2] <= PX + PW and r[3] <= PY + PH for r in _rects),
           str(_rects))
 
-    # 꼬리 크기: 몸체 상자 밖으로 나가는 검은 픽션의 길이 = 꼬리 길이(아주 작아야 한다)
-    _cv2 = Image.new("RGB", (PW, PH), (255, 255, 255))
-    _dd2 = ImageDraw.Draw(_cv2)
-    _body = CPM._draw_balloon(_dd2, PX, PY, PW, PH,
-                             {"kind": "speech", "text": "꼬리 길이 재기", "speaker": "me"})
-    _px2 = _cv2.load()
-    _by1 = _body[3]
-    _run = 0
-    for _y in range(_by1 + 1, PY + PH):
-        if any(sum(_px2[x, _y]) < 120 for x in range(_body[0], _body[2])):
-            _run += 1
-        else:
-            break
-    check("꼬리는 몸체 밖으로 " + str(CPM.TAIL_LEN + 3) + "px 이내로 아주 작게만 나온다",
-          0 < _run <= CPM.TAIL_LEN + 3, f"tail_run={_run}")
-    check("꼬리 밑변도 작다(풍선 폭의 절반을 넘지 않는다)", CPM.TAIL_BASE <= 20, str(CPM.TAIL_BASE))
+    # 꼬리·생각 물방울은 삭제됐다 — 몸체만 그린다(아래 설명 박스 검사로 이어진다)
 
     # (2) 설명 박스는 글자 수에 맞추어 작아진다
     _cv3 = Image.new("RGB", (700, 500), (40, 120, 200))
@@ -1811,7 +1797,7 @@ def main() -> int:
           and CPM.NARR_W_RATIO_WITH_BALLOON >= 0.60,
           f"{CPM.NARR_W_RATIO}/{CPM.NARR_W_RATIO_WITH_BALLOON}")
 
-    # [2026-09-09] 사용자 지시: 풍선 **가로 비율 20%** · 세로로 길게 · 꼬리(삼각)·물방울(작은 원) 사용
+    # [2026-09-09] 사용자 지시: 풍선 **가로 비율 20%** · 세로로 길게 (꼬리·물방울은 폐지)
     _bp = (683, 512)                      # 2단 컷 실측 크기
     _btxt = "이 사람이 들어오면 매장 공기가 달라진다."
     _bal_boxes = {}
@@ -1821,16 +1807,6 @@ def main() -> int:
         _bb = CPM._draw_balloon(_d4, 0, 0, _bp[0], _bp[1],
                                 {"kind": _k, "text": _btxt, "speaker": "me"}, font_size=22)
         _bal_boxes[_k] = _bb
-        if _k == "speech":
-            _sp_px = _c.crop((_bb[0], _bb[3], _bb[2], min(_bp[1], _bb[3] + CPM.TAIL_LEN + 4)))
-            check("말풍선 아래에 아주 작은 삼각 꼬리가 그려진다",
-                  sum(1 for p in _sp_px.getdata() if p == (0, 0, 0)) > 8,
-                  str(sum(1 for p in _sp_px.getdata() if p == (0, 0, 0))))
-        else:
-            _tb_px = _c.crop((_bb[0], _bb[3], _bb[2], min(_bp[1], _bb[3] + CPM.TAIL_LEN + 12)))
-            check("속마음 타원 아래에 작은 원(생각 물방울)이 그려진다",
-                  sum(1 for p in _tb_px.getdata() if p == (0, 0, 0)) > 6,
-                  str(sum(1 for p in _tb_px.getdata() if p == (0, 0, 0))))
     check("말풍선·속마음 **가로 비율은 컷 폭의 20%** (넓은 얼굴 가림 방지)",
           all(_bal_boxes[k] and abs((_bal_boxes[k][2] - _bal_boxes[k][0]) / _bp[0] - CPM.BALLOON_W_RATIO) < 0.03
               for k in _bal_boxes),
@@ -2682,7 +2658,7 @@ def main() -> int:
         config.char_tags = _keep[3]
 
 
-    # ── ⑮ [2026-09-10] 말풍선·속마음 이미지 은행 (9슬라이스 · 감정 선택 · 회전 꼬리)
+    # ── ⑮ [2026-09-10] 말풍선·속마음 이미지 은행 (9슬라이스 · 감정 선택 · 꼬리/물방울 폐지)
     from tempfile import mkdtemp as _mkd_b
     _btmp = _mkd_b(prefix="selftest_balloons_")
     _bkeep = CPM.balloon_style()
@@ -2690,11 +2666,11 @@ def main() -> int:
         _bs = CPM.generate_balloon_set(dest=_btmp)
         _png = sorted(f for f in os.listdir(_btmp) if f.endswith(".png"))
         _bodies = [f for f in _png if f.startswith(("speech_", "thought_"))]
-        _tails = [f for f in _png if f.startswith("tail_")]
-        check("--get-balloons가 몸통 9종 + 꼬리 4종 + 물방울 1종을 만든다",
-              len(_bodies) == len(CPM.BALLOON_ART_VARIANTS) and len(_tails) == len(CPM.TAIL_ART)
-              and (CPM.BUBBLE_ART + ".png") in _png and os.path.exists(_bs["manifest"]),
-              f"몸통 {len(_bodies)} / 꼬리 {len(_tails)} / 물방울 {(CPM.BUBBLE_ART + '.png') in _png}")
+        check("--get-balloons가 몸통 9종만 만든다(꼬리·물방울은 기능 폐지)",
+              len(_bodies) == len(CPM.BALLOON_ART_VARIANTS)
+              and not [f for f in _png if f.startswith(("tail_", "bubble"))]
+              and os.path.exists(_bs["manifest"]),
+              f"몸통 {len(_bodies)} / png {len(_png)}")
         CPM.set_balloon_style("image", _btmp)
         check("감정으로 변형을 고른다 (anger→sharp, heart→dreamy, surprise→shout, gloom→void)",
               CPM.pick_balloon_variant("speech", "anger", 0, 0, 0) == "speech_sharp"
@@ -2759,29 +2735,8 @@ def main() -> int:
         _pl = [c for c in (_cv3.getpixel((xx, yy))[0]
                            for yy in range(_bx3[1] + 30, _bx3[3] - 30, 2)
                            for xx in range(_bx3[0] + 50, _bx3[2] - 50, 2)) if c > 200]
-        check("플레이트는 반투명(α=210)이고 꼬리와 겹치는 자리에서 짙어지지 않는다",
+        check("플레이트는 반투명(α=210)으로 유지된다",
               _pl and 210 <= max(_pl) <= 220, f"몸통 안 최대 {max(_pl) if _pl else None} (기대 217)")
-        # 꼬리는 화자를 가리킨다 — 밑점을 기준으로 회전하므로 좌/우에서 중심이 반대편으로 간다
-        def _tail_bias(side):
-            cv, u, bx = _shot("speech", "여기 좀 봐.", side=side)
-            if not bx:
-                return None
-            x0, y0, x1, y1 = bx
-            sx = sy = n = 0
-            for yy in range(max(0, y0 - 44), min(379, y1 + 44)):
-                for xx in range(max(0, x0 - 44), min(559, x1 + 44)):
-                    if cv.getpixel((xx, yy))[0] < 110 and not (x0 <= xx <= x1 and y0 <= yy <= y1):
-                        sx += xx
-                        n += 1
-            return ((sx / float(n)) - (x0 + x1) / 2.0) if n else None
-        _bl, _br = _tail_bias("left"), _tail_bias("right")
-        check("꼬리가 화자 쪽으로 회전한다(왼쪽/오른쪽에서 꼬리 중심이 반대편으로 이동)",
-              _bl is not None and _br is not None and _bl < 0 < _br, f"왼쪽 {(_bl or 0):+.1f} / 오른쪽 {(_br or 0):+.1f}")
-        _cv4, _u4, _bx4 = _shot("thought", "…심장이 너무 시끄럽다.")
-        _outs = sum(1 for yy in range(_bx4[3] + 2, min(379, _bx4[3] + 34))
-                    for xx in range(_bx4[0], _bx4[2]) if _cv4.getpixel((xx, yy))[0] < 110)
-        check("속마음 물방울은 몸통 **바깥**에 놓인다(안에는 같은 색이라 보이지 않았다)",
-              _outs > 40, f"몸통 아래 테두리 픽셀 {_outs}")
         CPM.set_balloon_style("image", os.path.join(_btmp, "없는_디렉터리"))
         _cv5, _u5, _bx5 = _shot("speech", "벡터 폴백 확인")
         check("자산이 없으면 조용히 벡터로 그린다(렌더가 죽지 않는다)",
@@ -2789,7 +2744,7 @@ def main() -> int:
                   ((_bx5[0] + _bx5[2]) // 2, (_bx5[1] + _bx5[3]) // 2))[0] > 250, str(_u5))
         CPM.set_balloon_style("image", _btmp)
         _cv6 = Image.new("RGB", (520, 360), (200, 200, 200))
-        check("좌우 반전해서 붙일 수 있다(꼬리 방향이 반대인 컷)",
+        check("좌우 반전해서 붙일 수 있다(비대칭 자산 대비)",
               CPM.paste_balloon_art(_cv6, "speech_sharp", (10, 10, 500, 340), (60, 60, 360, 160),
                                     flip=True) == "speech_sharp")
     finally:

@@ -7,10 +7,11 @@
   1) **설명(지문)** : 컷 **하단 왼쪽** 흰 박스 + 검은 테두리 + 검은 글씨 (`_draw_caption_box`).
      박스는 **글자 덩치에 맞추어** 작아지고, 대사가 있는 컷(`narrow`)은 폭·줄 수를 더 줄여
      대화 자리를 남긴다. ★서두 요약/에필로그만 예외로 컷 면적의 ~70%를 채운다(`narr_large`).
-  2) **대사** : 만화 말풍선 / **속마음** : 타원 + 물방울 (`_draw_balloon`, ≤2개).
+  2) **대사** : 만화 말풍선 = 직사각형 / **속마음** : 타원 (`_draw_balloon`, ≤2개).
      자리는 화자별로 고정 — `speaker="me"`(주인공)는 **왼쪽 위 → 왼쪽 아래**, `speaker="other"`
-     (상대방)는 **오른쪽 위 → 오른쪽 아래**. 꼬리는 아주 작게(`TAIL_LEN/TAIL_BASE`) 넣고
-     주인공은 컷 **중앙** 쪽으로, 상대방은 컷 **오른쪽 끝**으로 향한다(`_balloon_slot_pref`).
+     (상대방)는 **오른쪽 위 → 오른쪽 아래**(`_balloon_slot_pref`).
+     [2026-09-10] 사용자 지시: 꼬리(화살표)·속마음 화살표·생각 물방울(작은 원)은 정상 동작하지
+     않아 **전부 삭제** — 풍선은 몸체(직사각형/타원)만 그린다.
   3) **의성어/의태어** : 대형 흰 글씨 + 검은 윤곽, 살짝 기운 각도 (`_draw_sfx`)
   4) **감정 표시** : 풍선 곁의 작은 이모티콘(`_draw_emotif`) — anger/surprise/sweat/heart/
      gloom/sparkle/question, 감정마다 색이 다르다. PIL 벡터라 폰트 설치와 무관하다.
@@ -19,7 +20,7 @@
 
 [2026-09-07] 레이아웃 v2 (사용자 지시):
   1) portrait 컷은 "앞을 봄(front)" 또는 "왼쪽→오른쪽 시선(right)" 중 하나로 뽑는다(comic_gen에서 강제).
-     facing은 지금은 텍스트 위치가 아니라 **풍선 꼬리/배치 쪽**을 정하는 데 쓰인다.
+     facing은 지금은 텍스트 위치가 아니라 **풍선 배치 쪽**을 정하는 데 쓰인다.
   2) portrait(face 클로즈업) 컷은:event(액션) 컷과 한 행에 붙을 때 **축소(기본 42% 폭)**되어
      일반 이벤트 신과 합쳐진다. 나머지 폭은 이벤트 신이 쓴다.
 
@@ -46,7 +47,7 @@
 """
 import math
 import os
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- 기본 파라미터
 DEFAULT_CELL_W = 820          # 그리드 단위 폭 (px)
@@ -142,7 +143,7 @@ THOUGHT_W_RATIO = 0.20                   # 속ma음(타원) 폭 = 컷 폭의 20%
 
 # [2026-09-10] 말풍선·속마음 **이미지 은행** — 형태를 미리 그린 RGBA 자산으로 붙인다.
 #  · 크기 변형이 아니라 **모양·분위기 변형**을 은행으로 둔다(크기는 9슬라이스가 처리한다).
-#  · 몸통만 이미지이고 꼬리·생각 물방울은 계속 벡터로 그려, 화자 조준이 컷마다 정확하다.
+#  · 자산은 몸통뿐이다 — 꼬리·생각 물방울은 정상 동작하지 않아 삭제됐다(사용자 지시).
 #  · 자산이 없으면 지금의 벡터 그리기로 조용히 폴백한다(기본값도 vector).
 BALLOON_ART_DIR_DEFAULT = os.path.join("data", "balloons")
 BALLOON_ART_MANIFEST = "manifest.json"
@@ -152,22 +153,6 @@ BALLOON_ART_SLICE = 18                         # 9슬라이스 절선 = 굽혀�
 BALLOON_SIZE_BOOST = 2.2                       # 몸통을 컷 폭 기준 이 배수로 키워 만든다(글자보다 작아짐 방지)
 BALLOON_MIN_H_RATIO = 0.42                     # 몸통 최소 높이 = 컷 높이 × 이 값(보스트 반영)
 BALLOON_ART_FIT = 0.88                         # 자산 몸통은 사각에 가까워 타원보다 넓게 쓴다
-# [2026-09-10] 꼬리·생각 물방울도 자산으로 둔다(사용자 제안). 단 **방향이 연속값**이라
-#  資產을 그대로 붙이는 게 아니라 기준 방향으로 그려 놓고 **회전·크기조정·반전**한다.
-#   (꼬리는 이미지 크기가 아니라 화자 좌표를 가리키므로 각이 컷마다 다르다.)
-TAIL_ART = {                       # id: (기반 폭, 끝 두께 배율, 곡률) — 기본은 오른쪽을 가리켜 그려진다
-    "tail_plain": (80, 1.00, 0.16),
-    "tail_sharp": (58, 1.00, 0.02),
-    "tail_shout": (104, 1.00, 0.30),
-    "tail_soft":  (86, 1.00, 0.42),
-}
-TAIL_ART_W, TAIL_ART_H = 192, 96   # 기준 자산 크기(꼬리 hinge는 (0, H/2))
-TAIL_ART_MAP = {                   # 몸통 변형 → 쓸 꼬리 자산
-    "speech_plain": "tail_plain", "speech_flat": "tail_plain",
-    "speech_sharp": "tail_sharp", "speech_shout": "tail_shout", "speech_soft": "tail_soft",
-}
-BUBBLE_ART = "bubble"              # 속마음 물방울(하나를 3번 축소해 쓴다)
-BUBBLE_ART_SIZES = (30, 20, 13)    # 자산 물방울 지름(px) — 벡터(6/4/3)보다 크게(테투리를 굽히려면)
 BALLOON_ART_SAFE = (34, 30, 34, 30)            # 글자 안전 여백 (l,t,r,b)
 BALLOON_ART_PLATE_ALPHA = 210                  # 플레이트(내부) 불투명도 — 반투명
 # (id, kind, 모양, moods) — id는 파일명이 된다(영문만)
@@ -215,9 +200,6 @@ NARR_W_RATIO_WITH_BALLOON = 0.62         # 대사가 있으면 설명 폭 상한
 # [2026-09-09] 사용자 지시 2건: ★큰 지문은 글자가 다른 컷 대비 너무 크고, 박스가 컷의 절반만 써서 글자가 잘린다.
 NARR_W_RATIO_LARGE = 1.00                # ★회차 도입·에필로그 지문은 **컷 폭을 다 쓴다**(짧은 글자도 박스를 당기지 않는다)
 NARR_LARGE_FONT_RATIO = 1.25             # ★큰 지문의 글자 배율 (예전 1.5 → 지나치게 컸다)
-TAIL_LEN = 11                            # (유지) 풍선 꼬리 길이 — 아주 작게(사용자 지시)
-TAIL_BASE = 13                           # 풍선 꼬리 밑변(너무 크면 그림을 가린다)
-THOUGHT_BUBBLES = (6, 4, 3)              # 속마음 물방울 반지름 (역시 작게)
 EMOTIF_SIZE = 19                         # 감정 이모티콘 한 변 기본 크기
 EMOTIF_KINDS = ("anger", "surprise", "sweat", "heart", "gloom", "sparkle", "question")
 EMOTIF_COLORS = {                        # 감정마다 색을 다르게(사용자 지시)
@@ -613,13 +595,14 @@ def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
     return None
 
 
-# ---------------------------------------------------------------- [2026-09-09] 풍선 자리·꼬리·감정 표시
+# ---------------------------------------------------------------- [2026-09-09] 풍선 자리·감정 표시
 def _balloon_slot_pref(balloon, facing: str = None):
-    """(풍선 자리 순서, 꼬리 방향 키) — 사용자 지시:
+    """(풍선 자리 순서, 방향 키) — 사용자 지시:
 
-      주인공(me)    : 왼쪽 위 → 왼쪽 아래(2개일 때)      꼬리는 **중앙 쪽**
-      상대방(other) : 오른쪽 위 → 오른쪽 아래(2개일 때)   꼬리는 **오른쪽 끝**
+      주인공(me)    : 왼쪽 위 → 왼쪽 아래(2개일 때)
+      상대방(other) : 오른쪽 위 → 오른쪽 아래(2개일 때)
       화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
+    방향 키(_dkey)는 꼬리를 폐지한 뒤로는 **자산 좌우 반전**에만 쓴다.
     """
     sp = str((balloon or {}).get("speaker") or "").strip().lower()
     if sp == "me":
@@ -630,64 +613,6 @@ def _balloon_slot_pref(balloon, facing: str = None):
     if side in ("", "left"):
         return ("tr", "br", "mr", "center"), "left"
     return ("tl", "bl", "ml", "center"), "right"
-
-
-def _tail_target(ix: int, iy: int, iw: int, ih: int, x0: int, y0: int, x1: int, y1: int, dkey: str):
-    """꼬리가 향할 점(화자 쪽). 주인공 = 컷 중앙, 상대방 = 컷 오른쪽 끝."""
-    if dkey == "center":
-        return ix + iw // 2, iy + ih // 2
-    if dkey == "right":
-        return ix + iw - 2, min(iy + ih - 2, y1 + 3)
-    if dkey == "left":
-        return ix + 2, min(iy + ih - 2, y1 + 3)
-    return ix + iw // 2, iy + int(ih * 0.8)
-
-
-def _tail_geom(x0: int, y0: int, x1: int, y1: int, tx: int, ty: int,
-               ix: int, iy: int, iw: int, ih: int, length: int = TAIL_LEN, base: int = TAIL_BASE):
-    """풍선 테두리에서 목표 방향으로 **아주 짧게** 내리는 꼬리의 기하(꼭짓점·방향·반폭)."""
-    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    dx, dy = tx - cx, ty - cy
-    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-        dx, dy = 0.0, 1.0
-    hw, hh = max(1.0, (x1 - x0) / 2.0), max(1.0, (y1 - y0) / 2.0)
-    r = min(hw / max(abs(dx), 1e-6), hh / max(abs(dy), 1e-6))
-    ax, ay = cx + dx * r, cy + dy * r                       # 테두리를 나가는 점
-    n = math.hypot(dx, dy) or 1.0
-    ux, uy = dx / n, dy / n
-    tipx, tipy = max(ix + 1, min(ix + iw - 2, ax + ux * length)), \
-        max(iy + 1, min(iy + ih - 2, ay + uy * length))     # 컷 밖으로 안 나간다
-    return {"a": (ax, ay), "tip": (tipx, tipy), "p": (-uy, ux), "u": (ux, uy),
-            "bh": max(3.0, base / 2.0)}
-
-
-def _draw_tail(d, g, *, frame=DEFAULT_FRAME, plate=DEFAULT_PLATE, line: int = DEFAULT_FRAME_WIDTH):
-    """꼬리 그리기(풍선 몸체를 그린 **뒤**에) — 테두리를 지우고 작은 outlined 삼각을 붙인다."""
-    (ax, ay), (tipx, tipy), (px, py), (ux, uy), bh = g["a"], g["tip"], g["p"], g["u"], g["bh"]
-    lw = max(1, int(line))
-    d.line([(ax - px * (bh + 2), ay - py * (bh + 2)), (ax + px * (bh + 2), ay + py * (bh + 2))],
-           fill=plate, width=max(2, lw + 1))                # 붙는 자리의 풍선 테두리를 지운다
-    d.polygon([(ax + px * bh, ay + py * bh), (ax - px * bh, ay - py * bh), (tipx, tipy)], fill=frame)
-    ib = max(1.0, bh - max(1.5, lw * 0.9))
-    d.polygon([(ax + px * ib + ux * 2, ay + py * ib + uy * 2),
-               (ax - px * ib + ux * 2, ay - py * ib + uy * 2),
-               (tipx - (tipx - ax) * 0.18, tipy - (tipy - ay) * 0.18)], fill=plate)
-
-
-def _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty, *, frame=DEFAULT_FRAME, plate=DEFAULT_PLATE,
-                          line: int = DEFAULT_FRAME_WIDTH, radii=THOUGHT_BUBBLES):
-    """속마음 풍선의 물방울 — 화자 쪽으로 **아주 작게** 작아지며 3개(꼬리 대신)."""
-    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    bx, by = (x0 + x1) / 2.0, y1
-    n = len(radii)
-    for i, rr in enumerate(radii):
-        f = (i + 1) / float(n)
-        px_ = bx + (tx - bx) * (0.25 + 0.55 * f)
-        py_ = by + (ty - by) * (0.20 + 0.55 * f)
-        px_ = max(x0 - TAIL_LEN, min(x1 + TAIL_LEN, px_))
-        d.ellipse([px_ - rr, py_ - rr, px_ + rr, py_ + rr], fill=plate, outline=frame,
-                  width=max(1, int(line)))
-    return cx, cy
 
 
 def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: int, ih: int,
@@ -1251,10 +1176,11 @@ _SHAPE_SPEC = {            # (n, k, amp) — 말풍선은 각진 기반 + 날선
 }
 
 
-def generate_balloon_set(dest: str = None, force: bool = False, plate_fill=None) -> dict:
+def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
     """data/balloons/에 자리표시 자산 9종 + manifest.json을 만든다(코드로 그림).
 
     실제 작화 자산을 같은 파일명·같은 스펙으로 덮어넣으면 코드 수정이 필요 없다.
+    [2026-09-10] 꼬리·물방울 자산은 기능 폐지와 함께 만들지 않는다(몸통 9종뿐).
     """
     import json as _json
     d = os.path.abspath(dest or _balloon_art_dir)
@@ -1285,42 +1211,6 @@ def generate_balloon_set(dest: str = None, force: bool = False, plate_fill=None)
                    fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
         layer.save(path)
         made.append(vid)
-    # ── 꼬리 4종·생각 물방울 1종 (기준은 "오른쪽을 가리켜" 그린다 — 붙일 때 회전·반전)
-    for tid, (bh_, _tw, curl) in TAIL_ART.items():
-        tpath = os.path.join(d, tid + ".png")
-        man["assets"][tid] = {"kind": "tail", "file": tid + ".png", "moods": "",
-                             "slice": [4, 4, 4, 4], "safe": [8, 8, 8, 8],
-                             "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA,
-                             "hinge": [0, TAIL_ART_H // 2], "tip": [TAIL_ART_W - 8, TAIL_ART_H // 2]}
-        if os.path.exists(tpath) and not force:
-            continue
-        tl = Image.new("RGBA", (TAIL_ART_W, TAIL_ART_H), (0, 0, 0, 0))
-        td = ImageDraw.Draw(tl)
-        mid, tipx = TAIL_ART_H / 2.0, TAIL_ART_W - 8.0
-        pts, top, bot = [], [], []
-        for i in range(25):                       # 두 갈래 변을 살짝 부풀려 손그림 느낌으로
-            t = i / 24.0
-            bulge = curl * (bh_ / 2.0) * (t ** 0.6)
-            top.append((t * tipx, mid - (bh_ / 2.0) * (1.0 - t) - bulge * 0.0))
-            bot.append((t * tipx, mid + (bh_ / 2.0) * (1.0 - t) + bulge * 0.0))
-        pts = top + list(reversed(bot))
-        td.polygon(pts, fill=tuple(plate_fill or DEFAULT_PLATE)[:3] + (BALLOON_ART_PLATE_ALPHA,))
-        for side in (top, bot):                   # 밑변(몸통에 붙는 변)에는 선을 긋지 않는다
-            td.line(side, fill=tuple(DEFAULT_FRAME) + (255,), width=7, joint="curve")
-        td.polygon([top[-1], (tipx, mid), bot[-1]], fill=tuple(DEFAULT_FRAME) + (255,))
-        tl.save(tpath)
-    bpath = os.path.join(d, BUBBLE_ART + ".png")
-    man["assets"][BUBBLE_ART] = {"kind": "bubble", "file": BUBBLE_ART + ".png", "moods": "",
-                                 "slice": [6, 6, 6, 6], "safe": [10, 10, 10, 10],
-                                 "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA}
-    if not (os.path.exists(bpath) and not force):
-        bs = 128
-        bl = Image.new("RGBA", (bs, bs), (0, 0, 0, 0))
-        bd = ImageDraw.Draw(bl)
-        bd.ellipse([4, 4, bs - 4, bs - 4], fill=tuple(DEFAULT_FRAME) + (255,))
-        bd.ellipse([12, 12, bs - 12, bs - 12],
-                   fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
-        bl.save(bpath)
     try:
         with open(os.path.join(d, BALLOON_ART_MANIFEST), "w", encoding="utf-8") as f:
             _json.dump(man, f, ensure_ascii=False, indent=1)
@@ -1478,55 +1368,12 @@ def _nine_slice(dst, art: "Image.Image", box, slice_px):
     dst.alpha_composite(cen, (x0 + l, y0 + t))
 
 
-def _alpha_max(base, add, anchor):
-    """`add`를 `base` 위에 **알파가 큰 쪽**으로 합친다.
-
-    일반 합성(over)을 하면 반투명(α=210)끼리 겹쳐 그 자리가 짙어진다(실측 0.82→0.97) —
-    꼬리와 몸통의 이음새가 사각패치처럼 보이는 원인이다. 알파는 큰 값을 쓰고 색은 거의
-    같으므로 그대로 둔다.
-    """
-    try:
-        w, h = base.size
-        lay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        lay.paste(add, (int(anchor[0]), int(anchor[1])))
-        aa = lay.split()[3]
-        if aa.getextrema()[1] == 0:
-            return base
-        out = Image.composite(lay, base, aa)
-        out.putalpha(ImageChops.lighter(base.split()[3], aa))
-        return out
-    except Exception:
-        return base
-
-
-def _compose_tail(art, hinge, tip, length, base_h, angle_deg):
-    """기준(오른쪽 방향) 꼬리 자산을 **길이·밑변·각도**에 맞게 비틀어 층으로 만든다.
-
-    자산 하나 + 회전/반전으로 방향을 모두 처리한다(사용자 제안의 회전 보완판).
-    반환: (RGBA 층, 층 안에서 꼬리 밑점이 놓일 좌표)
-    """
-    aw, ah = art.size
-    hx, hy = [float(v) for v in hinge]
-    tx = max(2.0, float(tip[0]) - hx)
-    sx = max(0.04, float(max(6, length)) / tx)
-    sy = max(0.04, float(max(8, base_h)) / max(1.0, ah - 2.0 * min(hy, ah - hy)))
-    sw, sh = max(3, int(round(aw * sx))), max(3, int(round(ah * sy)))
-    scaled = art.resize((sw, sh), Image.LANCZOS)
-    r = int(max(sw, sh) * 1.10) + 8
-    cv = Image.new("RGBA", (2 * r, 2 * r), (0, 0, 0, 0))
-    ax, ay = r - int(round(hx * sx)), r - int(round(hy * sy))     # 밑점을 캔버스 가운데로
-    cv.alpha_composite(scaled, (ax, ay))
-    cv = cv.rotate(float(angle_deg), resample=Image.BICUBIC, center=(r, r))
-    return cv, (r, r)
-
-
-def paste_balloon_art(canvas, variant: str, region, box, tail_g=None, bubbles=None,
-                      flip: bool = False, plate=DEFAULT_PLATE, frame=DEFAULT_FRAME,
-                      line: int = DEFAULT_FRAME_WIDTH):
-    """ 컷 영역 RGBA 레이어에 몸통(9슬라이스)+꼬리/물방울을 합성해 한 번에 붙인다.
+def paste_balloon_art(canvas, variant: str, region, box, flip: bool = False):
+    """컷 영역 RGBA 레이어에 몸통(9슬라이스)을 합성해 한 번에 붙인다.
 
     텍스트는 이 함수가 끝난 **뒤**에 그린다(그렇지 않으면 글자까지 반투명해진다).
     성공 시 사용 변형 id, 실패(자산 없음) 시 None → 호출자가 벡터로 그린다.
+    [2026-09-10] 꼬리·생각 물방울은 정상 동작하지 않아 삭제됐다 — 몸통만 붙인다.
     """
     bank = _balloon_bank()
     a = bank.get(variant or "")
@@ -1541,64 +1388,7 @@ def paste_balloon_art(canvas, variant: str, region, box, tail_g=None, bubbles=No
         return None
     try:
         layer = Image.new("RGBA", (iw, ih), (0, 0, 0, 0))
-        # 몸통(9슬라이스) → 꼬리/생각 물방울은 **기존 벡터 함수**를 레이어에 그린다
-        #   (화자 조준은 컷마다 달라지므로 이미지를 늘리는 것보다 정확하고, 결과도 같다)
         _nine_slice(layer, art, (x0 - ix, y0 - iy, x1 - ix, y1 - iy), a["slice"])
-        alp = int(a.get("alpha") or BALLOON_ART_PLATE_ALPHA)
-        fill_rgba = tuple(plate)[:3] + (alp,)
-        frame_rgba = tuple(frame)[:3] + (255,)
-
-        # ── 꼬리: 자산 하나를 **길이·밑변·각도**에 맞춰 비튼다(사용자 제안 + 회전 보완)
-        if isinstance(tail_g, dict) and {"a", "tip", "p", "u", "bh"} <= set(tail_g):
-            tid = TAIL_ART_MAP.get(variant, "tail_plain")
-            ta = bank.get(tid)
-            ax_, ay_ = tail_g["a"]
-            tpt = tail_g["tip"]
-            vx, vy = float(tpt[0] - ax_), float(tpt[1] - ay_)
-            ln = math.hypot(vx, vy)
-            if ta and ta.get("kind") == "tail" and ln > 4:
-                im = ta["img"]
-                if flip:
-                    im = im.transpose(Image.FLIP_TOP_BOTTOM)     # 대칭이지만 커스텀 자산은 대비
-                ang = -math.degrees(math.atan2(vy, vx))          # PIL은 반시계 양수 → 부호 반대
-                tv, (rrx, rry) = _compose_tail(
-                    im, ta.get("hinge") or [0, im.size[1] // 2],
-                    ta.get("tip") or [im.size[0] - 8, im.size[1] // 2],
-                    ln, max(10.0, 2.0 * float(tail_g.get("bh") or 8)), ang)
-                layer = _alpha_max(layer, tv, (ax_ - ix - rrx, ay_ - iy - rry))
-            else:                                               # 자산 없음 → 벡터 꼬리
-                dl = ImageDraw.Draw(layer)
-                g = dict(tail_g)
-                g["a"] = (ax_ - ix, ay_ - iy)
-                g["tip"] = (tpt[0] - ix, tpt[1] - iy)
-                _draw_tail(dl, g, frame=frame_rgba, plate=fill_rgba, line=line)
-
-        # ── 속마음 물방울: 원 하나를 3번 축소해 화자 쪽에 늘어놓는다
-        if bubbles:
-            bx0, by0, bx1, by1, btx, bty = bubbles
-            ba = bank.get(BUBBLE_ART)
-            if ba and ba.get("kind") == "bubble":
-                sc = max(0.42, min(1.0, min(x1 - x0, y1 - y0) / 170.0))
-                # 물방울은 몸통 **바깥**으로 나간다 — 예전 벡터는 몸통 안에 그려져
-                #   (같은 색이라) 안 보이는 데다 테투리 두께만 어색했다.
-                cmx, cmy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
-                dx, dy = float(btx - cmx), float(bty - cmy)
-                t_edge = 1.0 / max(abs(dx) / max(1.0, (bx1 - bx0) / 2.0),
-                                   abs(dy) / max(1.0, (by1 - by0) / 2.0), 1e-6)
-                ex, ey = cmx + dx * min(1.0, t_edge) * 0.99, cmy + dy * min(1.0, t_edge) * 0.99
-                for _k, dsz in enumerate(BUBBLE_ART_SIZES):
-                    f = 0.16 + 0.50 * (_k / float(max(1, len(BUBBLE_ART_SIZES) - 1)))
-                    px_ = ex + (btx - ex) * f
-                    py_ = ey + (bty - ey) * f
-                    dd = max(7, int(dsz * sc))
-                    lay2 = Image.new("RGBA", layer.size, (0, 0, 0, 0))
-                    lay2.alpha_composite(ba["img"].resize((dd, dd), Image.LANCZOS),
-                                         (int(px_ - ix - dd / 2.0), int(py_ - iy - dd / 2.0)))
-                    layer = _alpha_max(layer, lay2, (0, 0))
-            else:
-                dl = ImageDraw.Draw(layer)
-                _draw_thought_bubbles(dl, bx0 - ix, by0 - iy, bx1 - ix, by1 - iy, btx - ix, bty - iy,
-                                      frame=frame_rgba, plate=fill_rgba, line=line)
         canvas.paste(layer, (ix, iy), layer)
         return variant
     except Exception:
@@ -1613,7 +1403,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
 
     speech  : **직사각형** — 폭은 컷의 20%, 글자는 그 폭에 맞춰 접고 세로로 늘린다(얼굴 가림 방지)
     thought : **타원** — 폭은 컷의 20%, 세로는 그 폭에 글자를 넣는 데 필요한 만큼만
-    꼬리는 아주 작게(TAIL_LEN), 생각 물방울은 3개(6/4/3px) — 화자 쪽으로 보낸다.
+    [2026-09-10] 꼬리(화살표)·생각 물방울(작은 원)은 정상 동작하지 않아 삭제 — 몸체만 그린다.
     배치는 `_place_in_panel`(결정론 후보 순회) — 설명 박스·다른 풍선과 안 겹치게.
     → 그린 상자 (x0,y0,x1,y1) 또는 None(자리가 없으면 그리지 않는다)
     """
@@ -1624,9 +1414,9 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None
     role = "thought" if kind == "thought" else "dialog"
     side = str((balloon or {}).get("side") or facing or "").strip().lower() or None
-    prefer, _dkey = _balloon_slot_pref(balloon, facing)   # _dkey: 꼬리 시절의 방향 이름(감정 표시 자리에만 쓴다)
+    prefer, _dkey = _balloon_slot_pref(balloon, facing)   # _dkey: 방향(꼬리 폐지 이후로는 자산 좌우 반전에만 쓴다)
     emo = _norm_emo((balloon or {}).get("emo"))
-    mg = max(8, TAIL_LEN + 6) if _dkey == "right" else 8   # 꼬리가 컷 밖에 나가지 않게 상대방 쪽은 여유를 둔다
+    mg = 8
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     box_w = box_h = 0
     lines, font, fs, line_h = [], None, font_size, _text_line_height(font_size)
@@ -1704,17 +1494,12 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None                       # 자리가 없으면 겹쳐 쓰지 않고 생략한다
     x0, y0 = xy
     x1, y1 = x0 + box_w, y0 + box_h
-    # 말풍선은 **직사각형 + 삼각 꼬리**, 속마음은 **타원 + 작은 원**. 형태 그 자체로 화자를 구분한다.
-    tx, ty_ = _tail_target(ix, iy, iw, ih, x0, y0, x1, y1, _dkey)
+    # 말풍선은 **직사각형**, 속마음은 **타원**. 형태 그 자체로 화자를 구분한다(꼬리·물방울은 폐지).
     art = ""
     if art_id:
         # 미리 골라 둔 변형을 붙인다(위에서 안전여백을 이 변형 기준으로 잰다).
-        #   꼬리·생각 물방울은 계속 벡터로 그리므로 화자 조준은 벡터 모드와 똑같다.
         art = paste_balloon_art(canvas, art_id, (ix, iy, iw, ih), (x0, y0, x1, y1),
-                                tail_g=_tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih)
-                                if kind == "speech" else None,
-                                bubbles=None if kind == "speech" else (x0, y0, x1, y1, tx, ty_),
-                                flip=(_dkey == "right"), plate=plate, frame=frame, line=line)
+                                flip=(_dkey == "right"))
         if art:
             if bank_used is not None:
                 bank_used.append(art)
@@ -1727,12 +1512,9 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             art = ""
     if not art and kind == "speech":
         d.rectangle([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
-        _draw_tail(d, _tail_geom(x0, y0, x1, y1, tx, ty_, ix, iy, iw, ih),
-                   frame=frame, plate=plate, line=line)
         ty0 = y0 + pad
     elif not art:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
-        _draw_thought_bubbles(d, x0, y0, x1, y1, tx, ty_, frame=frame, plate=plate, line=line)
         ty0 = y0 + int(box_h * 0.5 - len(lines) * line_h / 2)        # 타원 안에서는 글자 블록을 세로 가운데에 둔다
     ty = ty0
     for ln in lines:
@@ -1870,7 +1652,7 @@ def compose_page(panel_paths, captions, *,
         panel_face: face 클로즈업 여부 (액션과 한 행이 될 때 축소 pairing)
         panel_zone: [호환] 옛 텍스트 위치("right"/"bottom") — 2026-09-09 화면 문법 통일으로
                     렌더에는 영향이 없고 값만 받는다(설명은 하단 왼쪽 + 풍선으로 고정).
-        panel_facing: 컷별 시선("left"/"right"/"front") — 풍선 꼬리/배치 쪽을 정하는 데 쓴다.
+        panel_facing: 컷별 시선("left"/"right"/"front") — 풍선 배치 쪽을 정하는 데 쓴다.
     Returns: PIL.Image
     """
     if not panel_paths:

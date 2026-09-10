@@ -8,6 +8,11 @@ Pillow>=10.0
 
 # [2026-09-08] --special(local progress/ 포맷 어댑터 novel_progress.py)은 stdlib(json/glob/re)만 씁니다 — 추가 설치 없음.
 # [2026-09-09] 화면 문법 폰트 자동 다운로드(--get-fonts)는 stdlib urllib만 씁니다 — 추가 설치 없음.
+
+# [2026-09-09] 컷 크롭을 얼굴 중심으로(기본 켬). 없어도 동작합니다 — 그때는 '원본 위에서 8%' 추정치로 자릅니다.
+#   켜려면: pip install opencv-python-headless  &&  python run_comic.py --get-face-model
+#   (OpenCV 5에는 Haar CascadeClassifier가 없어 YuNet DNN을 씁니다 — 모델 227KB, data/models/ 에 저장)
+# opencv-python-headless>=4.10
 #   글자 자체를 그리는 것은 이미 Pillow 안의 일입니다(Pillow >= 10.0, stroke_width 지원).
 
 # [전용 LLM 서빙(llm_server.py)只用 — 기본 파이프라인엔 불필요]

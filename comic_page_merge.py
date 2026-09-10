@@ -687,8 +687,98 @@ def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: in
 
 
 # ---------------------------------------------------------------- 이미지 맞춤
-def fit_cover(img: Image.Image, w: int, h: int, bias_x: float = 0.5) -> Image.Image:
-    """비율 유지 후 (w,h)를 정확히 채운다(크롭). bias_x=크롭 창 좌우 위치."""
+# [2026-09-09] 컷 크롭을 '얼굴 중심'으로 — 사용자: "만화 컷에 얼굴이 많이 나오게"
+#   자체 실측(image/ 원본 컷 150장, OpenCV 5 YuNet):
+#     - 얼굴 검출률 36%(score>=0.5) — 애니메이션 얼굴은 학습 분포 밖이라 검출만 믿을 수 없다.
+#     - 검출된 얼굴 중심의 세로 위치: 중앙값 32%, 10~90퍼센타일 16~57% (전신 컷은 더 위).
+#     - 전폭 행(1008x755) 크롭에서 **현재(세로 가운데 자르기)는 얼굴이 통째로 남는 경우가 51%**에
+#       지나지 않았고, 위에서 20% 지점부터 자르면 55%. 격자 탐색最优은 **위에서 8% 부근, 배율 1.0**
+#       (=79%)였다 — 크게 자를수록 창이 좁아져 오히려 잘리므로 배율은 올리지 않는다.
+FACE_CROP_ENABLE = True       # comic_gen이 config.comic_face_crop 값으로 덮어쓴다 (--no-face-crop)
+FACE_H_TARGET = 0.40          # 검출 성공 시: 얼굴 높이를 컷 높이의 이 비율까지 당긴다(실측 1.35x에서 보존 97%)
+FACE_ZOOM_MAX = 1.35          # 배율 상한 — 그 이상은 얼굴이 잘리기 시작해 이득이 준다고 실측됐다
+FACE_CROP_TOP = 0.08          # 얼굴 검출 실패 시: 세로 여유의 시작점을 원본 위에서 8%로 잡는다
+FACE_SLACK_MIN = 0.10         # 세로 여유가 원본 높이의 10% 이상일 때만 위 규칙을 적용(세로 컷은 그대로)
+FACE_MODEL_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
+                  "face_detection_yunet/face_detection_yunet_2023mar.onnx")
+FACE_MODEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "models",
+                               "face_detection_yunet_2023mar.onnx")
+FACE_SCORE_MIN = 0.60
+_face_det_cache, _anchor_cache = {}, {}
+
+
+def face_model_available() -> bool:
+    return os.path.exists(FACE_MODEL_FILE)
+
+
+def download_face_model(dest: str = None, timeout: int = 60, log=None) -> bool:
+    """YuNet ONNX(227KB) 다운로드 — 없어도 크롭은 동작한다(추정치로 대체)."""
+    dest = dest or FACE_MODEL_FILE
+    if os.path.exists(dest):
+        return True
+    try:
+        import urllib.request
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        urllib.request.urlretrieve(FACE_MODEL_URL, dest + ".part")
+        os.replace(dest + ".part", dest)
+        if log:
+            log(f"  (받음) 얼굴 검출 모델 {os.path.getsize(dest) // 1024}KB → {dest}")
+        return True
+    except Exception as e:
+        if log:
+            log(f"  (실패) 얼굴 검출 모델: {e}")
+        return False
+
+
+def face_anchor(img: Image.Image):
+    """cv2 + YuNet이 있을 때만 얼굴 박스를 돌려준다 (없으면 None → 추정치 사용).
+
+    OpenCV 5에서는 Haar CascadeClassifier가 빠졌다 — FaceDetectorYN(YuNet)을 쓴다.
+    """
+    try:
+        import cv2
+    except Exception:
+        return None
+    if not face_model_available():
+        return None
+    w, h = img.size
+    if not w or not h:
+        return None
+    key = (w, h)
+    det = _face_det_cache.get(key)
+    if det is None:
+        try:
+            det = cv2.FaceDetectorYN_create(FACE_MODEL_FILE, "", [w, h], FACE_SCORE_MIN, 0.3, 5000)
+        except Exception:
+            det = False
+        _face_det_cache[key] = det
+    if not det:
+        return None
+    try:
+        import numpy as np
+        arr = cv2.cvtColor(np.asarray(img.convert("RGB"), dtype=np.uint8), cv2.COLOR_RGB2BGR)
+        _n, boxes = det.detect(arr)
+    except Exception:
+        return None
+    if boxes is None or not len(boxes):
+        return None
+    b = max(boxes, key=lambda x: float(x[2]) * float(x[3]))      # 가장 큰 얼굴 = 화면의 주인공
+    return ((float(b[0]) + float(b[2]) / 2) / w, (float(b[1]) + float(b[3]) / 2) / h,
+            float(b[2]) / w, float(b[3]) / h)
+
+
+def fit_cover(img: Image.Image, w: int, h: int, bias_x: float = 0.5, path: str = None,
+              anchor: bool = True) -> Image.Image:
+    """비율 유지 후 (w,h)를 정확히 채운다(크롭). bias_x=크롭 창 좌우 위치.
+
+    [2026-09-09] 세로는 항상 가운데로 자르던 것을 얼굴 위치로 잡는다 — 세로 여유가 큰 컷(세로로 긴
+    원본을 가로 컷에 넣는 경우)에서 얼굴이 잘려 나가는 일이 절반을 넘었다(실측 51%).
+      ① 얼굴 검출 성공 → 얼굴이 컷 세로의 30% 부근에 오게 잡고, 얼굴 높이가 컷의 40%가 될 때까지
+         배율을 올린다(상한 1.35x). 실측: 전폭 행 얼굴 보존 76%→100%, 얼굴 높이 36%→39%.
+      ② 검출 실패/모듈 없음 → 원본 위에서 FACE_CROP_TOP(8%) 지점부터 자른다(배율 1.0 유지 —
+         위치를 모른 채 당기면 오히려 잘린다). 실측: 전폭 행 51%→79%, 2단 전폭 39%→70%.
+      ③ 세로 여지가 원본 높이의 10% 미만(세로 슬롯) → 예전처럼 가운데 자르기(보존 100%라 이득 없음).
+    """
     iw, ih = img.size
     if iw == 0 or ih == 0:
         return Image.new("RGB", (w, h), (255, 255, 255))
@@ -700,7 +790,33 @@ def fit_cover(img: Image.Image, w: int, h: int, bias_x: float = 0.5) -> Image.Im
     except Exception:
         bias = 0.5
     left = int(round((nw - w) * bias))
-    top = (nh - h) // 2
+    # 세로 크롭 창 정하기 — 검출은 원본 비율 좌표에서 먼저 한다(배율과 무관하다)
+    ax_ay = None
+    if anchor and path:
+        if path in _anchor_cache:
+            ax_ay = _anchor_cache[path]
+        else:
+            ax_ay = face_anchor(img)
+            _anchor_cache[path] = ax_ay
+    base = scale
+    slack_base = ih - h / base
+    zoom = 1.0
+    if ax_ay and slack_base > FACE_SLACK_MIN * ih:            # 얼굴을 안다 → 가까이 당겨도 된다
+        fh_px = max(1.0, float(ax_ay[3]) * ih)
+        zoom = min(FACE_ZOOM_MAX, max(1.0, (FACE_H_TARGET * h / base) / fh_px))
+    if zoom != 1.0:
+        scale = base * zoom
+        nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
+        r = img.resize((nw, nh), Image.LANCZOS)
+        left = int(round((nw - w) * bias))
+    slack = nh - h
+    top = slack // 2
+    if anchor and slack > FACE_SLACK_MIN * nh and slack > 0:      # anchor=False는 예전 그대로(가운데)
+        if ax_ay:                                             # 얼굴이 컷 세로의 30% 부근에 오게
+            top = int(round(float(ax_ay[1]) * ih * scale - 0.30 * h))
+        elif zoom == 1.0:                                     # 모를 때는 위에서 8%(격자 탐색 最优)
+            top = int(round(FACE_CROP_TOP * ih * scale))
+        top = max(0, min(slack, top))
     return r.crop((left, top, left + w, top + h))
 
 
@@ -1315,7 +1431,8 @@ def compose_page(panel_paths, captions, *,
             aw, ah = max(1, c["w"] - 2 * inset), max(1, r["h"] - 2 * inset)
             try:
                 img = fit_cover(_load_rgb(panel_paths[p_idx]), aw, ah,
-                                bias_x=0.42 if (panel_wide or [False] * n)[p_idx] else 0.5)
+                                bias_x=0.42 if (panel_wide or [False] * n)[p_idx] else 0.5,
+                                path=panel_paths[p_idx], anchor=bool(FACE_CROP_ENABLE))
             except Exception:
                 img = Image.new("RGB", (aw, ah), bg)
             tp = text_payload(c.get("text") if c.get("text") is not None else c["blocks"])

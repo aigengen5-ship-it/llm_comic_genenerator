@@ -652,6 +652,12 @@ def main() -> int:
                     help="컷 배분에 변동을 섞는다 (0=완전 재현, N>0=그 값마다 다른 레이아웃·장면당 컷 수)")
     ap.add_argument("--vary", action="store_true",
                     help="변동 값을 이번 실행에서 뽑고 로그에 남긴다(마음에 들면 그 값으로 재실행)")
+    ap.add_argument("--face-crop", action="store_true", dest="face_crop",
+                    help="컷에 넣을 때 얼굴 위치로 자릅니다(기본 켬). OpenCV가 없어도 '위에서 8%%' 추정치로 동작합니다")
+    ap.add_argument("--no-face-crop", action="store_false", dest="face_crop", default=True,
+                    help="얼굴 중심 크롭을 끄고 세로 가운데로 자릅니다(옛 동작)")
+    ap.add_argument("--get-face-model", action="store_true",
+                    help="얼굴 검출 모델(YuNet ONNX 227KB)을 받아 둡니다 — OpenCV가 있을 때만 쓰입니다")
     ap.add_argument("--chatty", action="store_true",
                     help="수다장이 모드: **모든 컷** 아래에 설명(지문)을 붙인다 — 서술할 내용이 없으면 그녀의 행동·표정을 짧게 묘사한다")
     ap.add_argument("--name", default="", help="주인공 이름을 고정한다 (추출 LLM이 시트의 #캐릭터 태그#에서 이름을 주워오는 것을 막는다)")
@@ -771,6 +777,11 @@ def main() -> int:
         config.comic_variation = (int(_t.time()) % 99999) + 1
     if int(getattr(args, "variation", 0) or 0) > 0:
         config.comic_variation = int(args.variation)        # --variation은 --vary보다 뒤에 적용(강함)
+    config.comic_face_crop = bool(getattr(args, "face_crop", True))
+    if getattr(args, "get_face_model", False):
+        import comic_page_merge as _CPM
+        p("  얼굴 검출 모델 받음 : " + ("완료" if _CPM.download_face_model(log=lambda s: p(s)) else "실패(추정치로 계속)"))
+        p(f"    OpenCV : {'있음' if _CPM.face_model_available() else '없음'} — cv2가 없으면 추정치(원본 위에서 8%)를 씁니다")
     if getattr(args, "chatty", False):
         config.comic_chatty = True
     if str(getattr(args, "name", "") or "").strip():

@@ -112,6 +112,9 @@ comic_font_thought = ""           # 속마음(풍선)
 comic_font_sfx = ""               # 의성어/의태어
 comic_summary_cuts = True         # ★회차 도입 요약: **각 회차의 첫 컷**만 배경만 + 큰 지문 (기승전결 페이지마다 아님)
 comic_epilogue = True               # ★에필로그: **마지막 회차 끝**에만 반투명 이벤트신 1칸 + 큰 여운 지문
+# [2026-09-09] 컷 크롭을 얼굴 중심으로(세로 여부가 큰 컷에서 얼굴이 잘려 나가던 증상)
+comic_face_crop = True
+comic_face_model = ""           # YuNet ONNX 경로(빈값이면 data/models/ 기본, cv2가 없으면 추정치만)
 comic_chatty = False              # 수다장이 모드: 모든 컷 하단에 설명(지문) — 없으면 행동·표정 묘사로 채운다
 comic_emo_marks = True              # 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) → --no-emo-marks
 comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차** 맨 앞에 도입 1컷(배경만+큰 지문)

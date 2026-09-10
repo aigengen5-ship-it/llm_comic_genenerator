@@ -2351,6 +2351,10 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     page_specs = build_page_specs(panels)
     _apply_slot_aspects(panels, page_specs)   # 렌더 전: 슬롯 화면비 → 해상도 선택에 사용
     _apply_font_roles_from_config()          # ★화면 문법 용도별 폰트 지정 반영
+    # [2026-09-09] 얼굴 중심 크롭 스위치(기본 켬) — cv2/모델이 없으면 추정치(위에서 8%)로 동작한다
+    CPM.FACE_CROP_ENABLE = bool(getattr(config, "comic_face_crop", True))
+    if CPM.FACE_CROP_ENABLE and getattr(config, "comic_face_model", ""):
+        CPM.FACE_MODEL_FILE = str(config.comic_face_model)
     pages = CPM.compose_pages(files, texts, out_dir, f"episode_{ep_num_1:02d}",
                               panels_per_page=int(getattr(config, "comic_panels_per_page", PANELS_PER_PAGE)),
                               page_label_prefix=f"EP{ep_num_1:02d}",

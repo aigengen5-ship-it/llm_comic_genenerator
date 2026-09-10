@@ -2046,6 +2046,54 @@ def main() -> int:
     check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
           len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
 
+    # ── ⑬d [2026-09-09] 컷 크롭을 얼굴 중심으로 (사용자: "얼굴이 많이 나오게")
+    _W, _H = 1024, 1344
+    _sim = Image.new("RGB", (_W, _H), (240, 240, 255))
+    _dd = ImageDraw.Draw(_sim)
+    _dd.rectangle([int(0.42 * _W), int(0.10 * _H), int(0.58 * _W), int(0.25 * _H)], fill=(200, 40, 40))
+
+    def _red_share(_img):
+        _px = _img.convert("RGB")
+        _w, _h = _px.size
+        _n = sum(1 for _y in range(_h) for _x in range(0, _w, 7)
+                 if _px.getpixel((_x, _y))[0] > 150 and _px.getpixel((_x, _y))[1] < 90)
+        return _n / float(_w * _h) * 100.0
+
+    _o_wide = _red_share(CPM.fit_cover(_sim, 1008, 755, 0.5, anchor=False))
+    _n_wide = _red_share(CPM.fit_cover(_sim, 1008, 755, 0.5, path="synthetic_noface.png", anchor=True))
+    check("가로 전폭 컷: 얼굴이 위에 있는 원본을 가운데로 자르면 잘려 나가고, 새 규칙은 지킨다",
+          _n_wide >= max(3.0 * _o_wide, 0.3), f"옛={_o_wide:.2f}% → 새={_n_wide:.2f}%")
+    _o_p = _red_share(CPM.fit_cover(_sim, 330, 450, 0.5, anchor=False))
+    _n_p = _red_share(CPM.fit_cover(_sim, 330, 450, 0.5, path="synthetic_noface2.png", anchor=True))
+    _rec = {}
+    _crop0, _rs0 = Image.Image.crop, Image.Image.resize
+    try:
+        Image.Image.crop = lambda self, box=None, **_kw: (_rec.update(box=box) or _crop0(self, box, **_kw))
+        Image.Image.resize = lambda self, size, *A, **K: (_rec.update(size=size) or _rs0(self, size, *A, **K))
+        CPM.fit_cover(_sim, 1008, 755, 0.5, path="synthetic_noface.png", anchor=False)
+        _nh = _rec["size"][1]
+        check("--no-face-crop(anchor=False)은 예전 '세로 가운데 자르기'와 같은 창을 쓴다 "
+              "( anchor 밖에서도 폴백이 새던 회귀)", abs(_rec["box"][1] - (_nh - 755) // 2) <= 1,
+              f"top={_rec['box'][1]} center={(_nh - 755) // 2}")
+    finally:
+        Image.Image.crop, Image.Image.resize = _crop0, _rs0
+    check("세로 슬롯(잘릴 여유가 작은 컷)은 예전과 같이 가운데 크롭을 지킨다",
+          abs(_o_p - _n_p) < 0.05, f"{_o_p:.2f}% vs {_n_p:.2f}%")
+    check("얼굴 크롭 상수가 실측 최적값 근방이다(원본 위에서 0~20%, 세로 여유 10% 이상만)",
+          0.0 <= CPM.FACE_CROP_TOP <= 0.20 and 0.05 <= CPM.FACE_SLACK_MIN <= 0.30,
+          f"top={CPM.FACE_CROP_TOP} slack={CPM.FACE_SLACK_MIN}")
+    check("OpenCV/모델이 없어도 크롭은 동작한다(face_anchor가 None을 돌려도 터지지 않는다)",
+          CPM.face_anchor(_sim) is None or isinstance(CPM.face_anchor(_sim), tuple),
+          str(CPM.face_anchor(_sim)))
+    _hp4 = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--help"],
+                          capture_output=True, text=True).stdout
+    _rs2 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("--no-face-crop / --get-face-model 이 도움말에 있고 config에 배선된다",
+          "--no-face-crop" in _hp4 and "--get-face-model" in _hp4
+          and "config.comic_face_crop = bool(getattr(args" in _rs2
+          and 'CPM.FACE_CROP_ENABLE = bool(getattr(config, "comic_face_crop"' in
+              open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read())
+
     # ── ⑬ [2026-09-09] 컷 배분 변동(--variation/--vary) + 수다장이 모드(--chatty)
     check("变动 헬퍼는 같은 입력 → 같은 값(재현성)이고 값마다 다른 값을 준다",
           CI._vary("budget|1", 7) == CI._vary("budget|1", 7)

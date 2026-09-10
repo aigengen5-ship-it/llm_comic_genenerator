@@ -34,3 +34,6 @@ order/additional.md
 inputs/*_amd.txt
 inputs/sheet_*.txt
 !inputs/sheet01.txt
+
+# [2026-09-09] 얼굴 검출 모델(옵션, --get-face-model로 받음)
+data/models/

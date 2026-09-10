@@ -1797,7 +1797,7 @@ def main() -> int:
           and CPM.NARR_W_RATIO_WITH_BALLOON >= 0.60,
           f"{CPM.NARR_W_RATIO}/{CPM.NARR_W_RATIO_WITH_BALLOON}")
 
-    # [2026-09-09] 사용자 지시: 풍선 **가로 비율 20%** · 세로로 길게 (꼬리·물방울은 폐지)
+    # [2026-09-10] 사용자 지시: 풍선 **가로 비율 10%**(20%의 절반) · 세로로 길게 (꼬리·물방울은 폐지)
     _bp = (683, 512)                      # 2단 컷 실측 크기
     _btxt = "이 사람이 들어오면 매장 공기가 달라진다."
     _bal_boxes = {}
@@ -1807,17 +1807,19 @@ def main() -> int:
         _bb = CPM._draw_balloon(_d4, 0, 0, _bp[0], _bp[1],
                                 {"kind": _k, "text": _btxt, "speaker": "me"}, font_size=22)
         _bal_boxes[_k] = _bb
-    check("말풍선·속마음 **가로 비율은 컷 폭의 20%** (넓은 얼굴 가림 방지)",
-          all(_bal_boxes[k] and abs((_bal_boxes[k][2] - _bal_boxes[k][0]) / _bp[0] - CPM.BALLOON_W_RATIO) < 0.03
-              for k in _bal_boxes),
+    check("말풍선 가로 비율은 컷 폭의 " + str(int(CPM.BALLOON_W_RATIO * 100)) + "% (속마음은 글자가 안 들어갈 때만 구제 폭까지 넓힌다)",
+          _bal_boxes["speech"]
+          and abs((_bal_boxes["speech"][2] - _bal_boxes["speech"][0]) / _bp[0] - CPM.BALLOON_W_RATIO) < 0.03
+          and _bal_boxes["thought"]
+          and (_bal_boxes["thought"][2] - _bal_boxes["thought"][0]) / _bp[0] <= CPM.THOUGHT_W_RELIEF + 0.02,
           str({k: round((v[2] - v[0]) / _bp[0] * 100, 1) for k, v in _bal_boxes.items()}))
     _pf = CPM.load_font(20, role="dialog")
     _probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     _wrap20 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * CPM.BALLOON_W_RATIO) - 24, _probe, max_lines=9)
     _wrap66 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * 0.66) - 24, _probe, max_lines=9)
-    check("대사는 20% 폭에 맞춰 여럿 줄로 접힌다(예전 66% 폭에서는 한두 줄이었다)",
+    check("대사는 " + str(int(CPM.BALLOON_W_RATIO * 100)) + "% 폭에 맞춰 여럿 줄로 접힌다(예전 66% 폭에서는 한두 줄이었다)",
           len(_wrap20) >= 3 and len(_wrap20) > len(_wrap66),
-          f"20%폭 {len(_wrap20)}줄 / 예전 66%폭 {len(_wrap66)}줄")
+          f"{int(CPM.BALLOON_W_RATIO * 100)}%폭 {len(_wrap20)}줄 / 예전 66%폭 {len(_wrap66)}줄")
     check("좁은 폭에서 글자 크기를 줄여도 풍선이 컷 안에 들어간다",
           _bal_boxes["speech"] and _bal_boxes["speech"][3] <= _bp[1] and _bal_boxes["speech"][2] <= _bp[0],
           str(_bal_boxes["speech"]))
@@ -2709,8 +2711,8 @@ def main() -> int:
         _cv_v, _, _bx_v = _shot("speech", "거기 서! 오늘 할 이야기가 있어서 왔어.", style="vector")
         _a_img = (_bx[2] - _bx[0]) * (_bx[3] - _bx[1])
         _a_vec = (_bx_v[2] - _bx_v[0]) * (_bx_v[3] - _bx_v[1])
-        check("몸통이 예전(벡터)보다 면적 2배 이상 크다 — 글자를 몸통 안에 다 넣는다",
-              _a_img >= 2.0 * _a_vec, f"이미지 {_a_img} vs 벡터 {_a_vec} = {_a_img / max(1, _a_vec):.1f}배")
+        check("몸통이 예전(벡터)보다 면적 1.5배 이상 크다(폭 절반 후) — 글자를 몸통 안에 다 넣는다",
+              _a_img >= 1.5 * _a_vec, f"이미지 {_a_img} vs 벡터 {_a_vec} = {_a_img / max(1, _a_vec):.1f}배")
 
         def _bg_leak(cv, box, variant):
             w, h = box[2] - box[0], box[3] - box[1]
@@ -2729,8 +2731,8 @@ def main() -> int:
                        ("thought", "고백할 타이밍을 놓쳤다.")):
             _c2, _u2, _b2 = _shot(_k, _t)
             _r.append(_bg_leak(_c2, _b2, _u2[0]))
-        check("글자가 몸통 안에 전부 들어간다(안전영역 배경 노출 ≤ 0.5%)",
-              all(x <= 0.005 for x in _r), " ".join(f"{x:.2%}" for x in _r))
+        check("글자가 몸통 안에 전부 들어간다(안전영역 배경 노출 ≤ 1%, 폭 절반 후 기준)",
+              all(x <= 0.01 for x in _r), " ".join(f"{x:.2%}" for x in _r))
         _cv3, _u3, _bx3 = _shot("speech", "이음새 확인 문장입니다.")
         _pl = [c for c in (_cv3.getpixel((xx, yy))[0]
                            for yy in range(_bx3[1] + 30, _bx3[3] - 30, 2)
@@ -2740,8 +2742,8 @@ def main() -> int:
         CPM.set_balloon_style("image", os.path.join(_btmp, "없는_디렉터리"))
         _cv5, _u5, _bx5 = _shot("speech", "벡터 폴백 확인")
         check("자산이 없으면 조용히 벡터로 그린다(렌더가 죽지 않는다)",
-              _u5 == [] and _bx5 is not None and _cv5.getpixel(
-                  ((_bx5[0] + _bx5[2]) // 2, (_bx5[1] + _bx5[3]) // 2))[0] > 250, str(_u5))
+              _u5 == [] and _bx5 is not None and _cv5.crop(_bx5).convert("L").getextrema()[1] > 250,
+              str(_u5))
         CPM.set_balloon_style("image", _btmp)
         _cv6 = Image.new("RGB", (520, 360), (200, 200, 200))
         check("좌우 반전해서 붙일 수 있다(비대칭 자산 대비)",

@@ -650,6 +650,10 @@ def main() -> int:
                     help="★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끈다")
     ap.add_argument("--wide-share", type=float, default=0.5, dest="wide_share",
                     help="전폭(가로 넓이) 컷 비중 상한 (기본 0.5 = 컷의 절반까지, 1.0 = 제한 없음)")
+    ap.add_argument("--template", default="", dest="template",
+                    help="페이지 템플릿을 고정합니다 (id 또는 이름 일부, 쉼표로 여러 개 → 페이지마다 회전). 예: --template romcom_banter_6panels")
+    ap.add_argument("--list-templates", action="store_true",
+                    help="사용 가능한 페이지 템플릿(id / 이름 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다")
     ap.add_argument("--item-cuts", action="store_true", dest="item_cuts", default=None,
                     help="본문을 시간 순 '행동/대사/속마음' 항목으로 나눠 항목 하나를 컷 하나로 씁니다(기본 켬)")
     ap.add_argument("--no-item-cuts", action="store_false", dest="item_cuts",
@@ -753,8 +757,22 @@ def main() -> int:
                           else "미준비 " + ", ".join(_missed) + " → OS 폰트로 렌더됩니다"))
         return 0
 
+    if getattr(args, "get_face_model", False):
+        import comic_page_merge as _CPM
+        p("  얼굴 검출 모델 받음 : " + ("완료" if _CPM.download_face_model(log=lambda s: p(s)) else "실패(추정치로 계속)"))
+        p(f"    OpenCV : {'있음' if _CPM.face_model_available() else '없음'} — cv2가 없으면 추정치(원본 위에서 8%)를 씁니다")
+    if getattr(args, "list_templates", False):
+        import comic_gen as _CG
+        _tm = _CG.load_cut_templates()
+        p(f"사용 가능한 페이지 템플릿 {len(_tm)}종 (data/cut.yaml) — --template 에 id나 이름 일부를 넣으세요")
+        for _tid in sorted(_tm):
+            _t = _tm[_tid]
+            _n = sum(len(x["shares"]) for x in _t["tiers"])
+            p(f"  {_tid:<32} {len(_t['tiers'])}단 {_n:>2}컷/페이지 [{'/'.join(_t['situations']) or '—'}]"
+              f"{' ★에필로그 전용' if _t.get('epilogue') else ''}  {_t['name']}")
+        return 0
     if not args.episode:
-        ap.error("--episode 필수 (--stop-llm/--llm-plan/--get-fonts 모드에서는 생략 가능)")
+        ap.error("--episode 필수 (--stop-llm/--llm-plan/--get-fonts/--list-templates/--get-face-model 모드에서는 생략 가능)")
     if args.ep < 1:                      # 1기준. --ep 0(0기준 습관)을 1로 흡수한다 —
         args.ep = 1                      # 0으로 두면 가이드 map은 key 0, 조회는 1기준이라 기승전결이 증발한다
     if args.font:
@@ -781,18 +799,28 @@ def main() -> int:
     if getattr(args, "vary", False):
         import time as _t
         config.comic_variation = (int(_t.time()) % 99999) + 1
+    if str(getattr(args, "template", "") or "").strip():
+        _want = [x.strip() for x in str(args.template).split(",") if x.strip()]
+        import comic_gen as _CG
+        _tm = _CG.load_cut_templates()
+        _hit, _miss = [], []
+        for _w in _want:
+            _wl = _w.lower()
+            _m = [k for k in sorted(_tm) if k.lower() == _wl or _wl in k.lower() or _wl in (_tm[k].get("name") or "").lower()]
+            (_hit if _m else _miss).extend(_m or [_w])
+        if _miss:
+            p(f"[오류] 템플릿을 찾을 수 없습니다: {_miss} — `--list-templates`로 34종을 확인하세요")
+            return 2
+        config.comic_templates_pin = sorted(set(_hit))
     if getattr(args, "item_cuts", None) is not None:
         config.comic_item_cuts = bool(args.item_cuts)
+    p(f"  컷 템플릿      : {('고정 ' + ', '.join(config.comic_templates_pin)) if getattr(config, 'comic_templates_pin', []) else '34종 자동 (회차 안 재사용)'}")
     p(f"  컷 배분 단위   : {'본문 항목 1 = 컷 1 (행동/대사/속마음)' if config.comic_item_cuts else '사건 단위(LLM이 컷 1~2개 지정)'}")
     if getattr(args, "wide_share", None) is not None:
         config.comic_wide_share_max = min(1.0, max(0.0, float(args.wide_share)))
     if int(getattr(args, "variation", 0) or 0) > 0:
         config.comic_variation = int(args.variation)        # --variation은 --vary보다 뒤에 적용(강함)
     config.comic_face_crop = bool(getattr(args, "face_crop", True))
-    if getattr(args, "get_face_model", False):
-        import comic_page_merge as _CPM
-        p("  얼굴 검출 모델 받음 : " + ("완료" if _CPM.download_face_model(log=lambda s: p(s)) else "실패(추정치로 계속)"))
-        p(f"    OpenCV : {'있음' if _CPM.face_model_available() else '없음'} — cv2가 없으면 추정치(원본 위에서 8%)를 씁니다")
     if getattr(args, "chatty", False):
         config.comic_chatty = True
     if str(getattr(args, "name", "") or "").strip():

@@ -129,6 +129,9 @@ def load_cut_templates():
     return out
 
 
+_PIN_LOGGED = set()          # 템플릿 고정 로그는 회차당 1번만
+
+
 def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
     """페이지별 템플릿(회차 시드 결정론) → [{page,situation,template_id,template_name,slots:[...]}]
 
@@ -178,6 +181,20 @@ def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
     #   같은 페이지라도 다른 컷 구성이 나온다. 풀이 비면(_long 페이지) 직전 페이지 것만 피해 재사용한다.
     all_pool = sorted((t for t in tmpls.values() if not t.get("epilogue")), key=lambda t: t["id"])
     used_tmpl, prev_id = set(), ""
+    # [2026-09-09] 템플릿 고정(--template) — 화면 문법을 회차 전체에서 하나로 통일한다.
+    #   고정이면 기승전결 필터·회차 안 재사용·전폭 비중 상한을 모두 내려놓는다(의도가 통일だから).
+    _pin = [str(x).strip().lower() for x in (getattr(config, "comic_templates_pin", []) or []) if str(x).strip()]
+    pinned = [t for t in all_pool
+              if t["id"].lower() in _pin or any(x in (t.get("name") or "").lower() for x in _pin)]
+    pinned = [t for i, t in enumerate(pinned) if i == next((k for k, u in enumerate(pinned) if u["id"] == t["id"]), i)]
+    if pinned:
+        all_pool = pinned
+        _key = (int(ep_num_1based), tuple(t["id"] for t in pinned))
+        if _key not in _PIN_LOGGED:                       # 레이아웃 재추첨마다 반복 찍히지 않게
+            _PIN_LOGGED.add(_key)
+            _clog(f"EP{ep_num_1based} 템플릿 고정: {', '.join(t['id'] for t in pinned)} "
+                  f"(페이지당 {sum(len(_slots_of(t)) for t in pinned) // len(pinned)}컷)")
+    _pin_i = [0]
 
     def _full_row_first(t):
         """첫 행이 전폭 1컷인가 — 회차의 첫 페이지는 이걸 우대한다(사용자: 첫 컷이 좁다)"""
@@ -200,6 +217,12 @@ def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
 
     def _pick_template(sit, prefer_wide=False):
         nonlocal prev_id
+        if pinned:                                      # 고정: 순서대로 회전(1개면 그 하나가 계속)
+            t = pinned[_pin_i[0] % len(pinned)]
+            _pin_i[0] += 1
+            used_tmpl.add(t["id"])
+            prev_id = t["id"]
+            return t
         pool = [t for t in all_pool if sit in t["situations"]] or all_pool
         cand = [t for t in pool if t["id"] not in used_tmpl]
         if not cand:                                  # 풀을 다 썼다 → 직전 페이지 것만 빼고 재사용
@@ -301,6 +324,8 @@ def plan_pages_layout(ep_num_1based: int, target_panels: int, pages: int = 0):
     #   레이아웃 4~5컷). 이제 페이지 수 × 레이아웃 재추첨(salt)을 함께 훑어 목표에 가장 가까운
     #   구성을 고른다. 모자란 쪽 벌점은 2.2배 — 넘치는 편이 장면 압축보다 낫다(예전부터 같은 판단).
     rolls = max(1, int(getattr(config, "comic_layout_rolls", 10) or 10))
+    if getattr(config, "comic_templates_pin", []):
+        rolls = 1                                          # 템플릿 고정: 재추첨해도 같은 구성
     best, best_key, best_n = None, None, 0
     for n in range(lo, hi + 1):
         for salt in range(rolls):

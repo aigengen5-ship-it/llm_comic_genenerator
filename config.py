@@ -125,6 +125,9 @@ comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차
 # [2026-09-09] 항목 1:1 모드 — 본문을 시간 순 '행동/대사/속마음' 항목으로 나눠 항목 하나 = 컷 하나.
 #   끄면(--no-item-cuts) 예전처럼 사건 단위(LLM이 컷 1~2개를 고름)로 배분한다.
 comic_item_cuts = True
+# [2026-09-09] 페이지 템플릿 고정 (--template) — 예: ["romcom_banter_6panels"] 또는 이름 부분 일치.
+#   빈 배열이면 34종 자동 배분. 1개면 회차 전체가 그 구성, 여러 개면 페이지마다 회전한다.
+comic_templates_pin = []
 comic_layout_rolls = 10         # 페이지 수마다 레이아웃을 몇 번 다시 추첨해 목표 컷 수에 가까운 것을 고르는가
 comic_wide_share_max = 0.5
 comic_variation = 0

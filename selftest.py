@@ -2050,6 +2050,43 @@ def main() -> int:
     check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
           len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
 
+    # ── ⑬h [2026-09-09] 페이지 템플릿 고정 (--template)
+    _tm_all = CG.load_cut_templates()
+    _one = sorted(k for k in _tm_all if not _tm_all[k].get("epilogue"))[3]
+    _slots_one = sum(len(x["shares"]) for x in _tm_all[_one]["tiers"])
+    config.comic_templates_pin = [_one]
+    config.comic_variation = 0
+    _pl = [p for p in (CG.plan_pages(5, 3) or []) if not p.get("epilogue") and not p.get("prologue")]
+    check("--template 로 1종을 고정하면 회차의 모든 페이지가 그 구성이다(★전용 페이지는 그대로)",
+          len(_pl) == 3 and all(p["template_id"] == _one for p in _pl),
+          str([p["template_id"] for p in _pl]))
+    check("고정 구성의 컷 수 = 페이지 수 × 슬롯 수 (재사용 금지·전폭 상한은 내려놓는다)",
+          len(CG.spec_slots(_pl)) == 3 * _slots_one, f"{len(CG.spec_slots(_pl))} vs {3 * _slots_one}")
+    _two = sorted(k for k in _tm_all if not _tm_all[k].get("epilogue"))[:2]
+    config.comic_templates_pin = _two
+    _pl2 = CG.plan_pages(5, 4) or []
+    _seq = [p["template_id"] for p in _pl2]
+    check("2종을 고정한 페이지마다 번갈아 나온다(회전)", _seq[0] == _two[0] and _seq[1] == _two[1]
+          and _seq[2] == _two[0], str(_seq))
+    config.comic_templates_pin = [_one]
+    _pl3, _n3 = CG.plan_pages_layout(5, 13, 0)
+    check("고정 상태에서도 레이아웃이 목표 컷 수 이상을 담는다(초과 선호)",
+          len(CG.spec_slots(_pl3)) >= 13, f"{_n3}페이지 {len(CG.spec_slots(_pl3))}컷")
+    _lt = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"), "--list-templates"],
+                         capture_output=True, text=True)
+    check("--list-templates 는 --episode 없이 34종을 출력한다",
+          _lt.returncode == 0 and "34종" in _lt.stdout and _one in _lt.stdout,
+          _lt.stdout[:60] + _lt.stderr[:60])
+    _bad = subprocess.run([sys.executable, os.path.join(ROOT, "run_comic.py"),
+                           "--episode", os.path.join(ROOT, "inputs", "ep90_deadbeef.txt"),
+                           "--template", "없는템플릿"], capture_output=True, text=True)
+    check("--template 에 없는 id를 주면 진행하지 않는다(안내와 함께 종료)",
+          _bad.returncode == 2 and "템플릿을 찾을 수 없습니다" in _bad.stdout + _bad.stderr,
+          (_bad.stdout + _bad.stderr)[:80])
+    config.comic_templates_pin = []
+    check("고정을 풀면 다시 34종 자동 배분(회차 안 재사용)",
+          len({p["template_id"] for p in (CG.plan_pages(5, 4) or [])}) >= 3)
+
     # ── ⑬g [2026-09-09] 항목 1:1 모드 — 행동/대사/속마음 항목 하나 = 컷 하나
     config.comic_item_cuts = True
     _iu = CI.normalize_units([{"at": "렌이 꽃을 집어 든다.", "cuts": 2, "kind": "행동"},

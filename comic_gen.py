@@ -1767,6 +1767,40 @@ def sanitize_english(text: str, gloss: dict = None) -> tuple:
     return ", ".join(kept), dropped
 
 
+# [2026-09-09] 프롬프트 정제 로그 — 컷마다 찍으니 한 회차에 1,500줄이 넘는 노이즈였다(실측).
+#   일은 필요한다(같은 태그가 두 번 들어가면 가중치가 흔들리고 토큰도 새므로) → 세기만 하고 회차 끝에 한 줄로 낸다.
+_PROMPT_SAN = {"dup": 0, "dup_cuts": 0, "anat": set(), "hangul": set()}
+
+
+def _prompt_san_reset():
+    for k in _PROMPT_SAN:
+        _PROMPT_SAN[k] = 0 if isinstance(_PROMPT_SAN[k], int) else set()
+
+
+def _prompt_san_summary(ep=None) -> str:
+    """정제 통계를 한 줄로(아무 일도 없으면 빈 문자열) — 로그에 남길 값도 이걸로 돌려준다."""
+    dup, cuts = int(_PROMPT_SAN["dup"]), int(_PROMPT_SAN["dup_cuts"])
+    anat, hangul = sorted(_PROMPT_SAN["anat"]), sorted(_PROMPT_SAN["hangul"])
+    if not (dup or anat or hangul):
+        return ""
+    parts = []
+    if dup:
+        parts.append(f"중복 태그 {dup}개(컷 {cuts}개)")
+    if anat:
+        parts.append(f"해부학 태그 {len(anat)}종")
+    if hangul:
+        parts.append(f"한글 파기 {len(hangul)}종 {hangul[:3]}")
+    return (f"EP{ep} 프롬프트 정제: " if ep is not None else "프롬프트 정제: ") + " · ".join(parts)
+
+
+def _prompt_san_flush(ep=None) -> str:
+    s = _prompt_san_summary(ep)
+    if s:
+        _clog(s)
+    _prompt_san_reset()
+    return s
+
+
 def dedupe_flat(text: str) -> tuple:
     """플랫 태그 문자열에서 중복 제거 → (클린 문자열, 제거 수)
 
@@ -2072,10 +2106,12 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     # [2026-09-07] 해부학 정책(갱신): 성기 계열(vagina/penis 등)만 최종 필터로 제거.
     # nipples/cameltoe 노출은 허용. LLM pose 문장과 init_anima_tags(LLM) 태그 양쪽을 여기서 거른다.
     body, anatomy_removed = anima_gen.strip_anatomy_tags(body)
-    if removed or dropped or anatomy_removed:
-        _clog(f"EP{ep_idx+1} 컷{panel['no']} 정제: 중복 {removed}개 제거"
-              + (f", 해부학 태그 {anatomy_removed}종 제거" if anatomy_removed else "")
-              + (f", 한글 파기 {len(dropped)}종 {dropped[:3]}" if dropped else ""))
+    _PROMPT_SAN["dup"] += int(removed or 0)
+    _PROMPT_SAN["dup_cuts"] += 1 if removed else 0
+    if anatomy_removed:
+        _PROMPT_SAN["anat"].add(str(anatomy_removed))
+    if dropped:
+        _PROMPT_SAN["hangul"].update(dropped)
     # [2026-09-08] 시트 #…# 캐릭터 공식 태그: 결정론 본문이든 LLM 재작성이든 정제를 통과하며 빠질 수 있어
     #   마지막에 보장 주입한다(상대방 태그는 상대방이 프레임에 실제로 있는 POV 컷에서만 — [BBB] 분리 유지).
     body, ct_added = anima_gen.ensure_char_tags(body, include_partner=is_pov)
@@ -2273,6 +2309,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     """
     json_value = json_value or config.get_json_value()
     ep_num_1 = ep_idx + 1
+    _prompt_san_reset()      # 정제 통계는 회차 단위로 모은다
     total = max(1, int(getattr(config, "total_episodes", 1) or 1))
 
     if script is None:
@@ -2337,6 +2374,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     elif rendered and not do_render:
         _clog(f"EP{ep_num_1} 렌더 생략(do_render=False) → 컷 {len(panels)}개 스크립트만 확보")
 
+    _prompt_san_flush(ep_num_1)      # [2026-09-09] 컷마다 찍던 정제 로그를 회차 끝 한 줄로 모은다
     out_dir = comic_out_dir()
     os.makedirs(out_dir, exist_ok=True)
     # 화면 텍스트 = 설명(하단 왼쪽 박스) + 풍선(말풍선/속마음 ≤2) + 의성어 (comic_page_merge가 그린다)

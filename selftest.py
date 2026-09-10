@@ -2046,6 +2046,22 @@ def main() -> int:
     check("전폭(share 1.0) 슬롯은 페이지 폭의 70% 이상으로 그려진다(좁은 세로 컷만 있던 증상)",
           len(_widths) == 2 and min(_widths) >= int(_pw * 0.70), f"page_w={_pw2} widths={_widths}")
 
+    # ── ⑬e [2026-09-09] 정제 로그를 회차 끝 한 줄로 (사용자: "이거 정말 필요함?")
+    CG._prompt_san_reset()
+    check("정제가 아무것도 안 하면 로그를 남기지 않는다", CG._prompt_san_summary(1) == "")
+    CG._PROMPT_SAN["dup"] = 12
+    CG._PROMPT_SAN["dup_cuts"] = 11
+    CG._PROMPT_SAN["hangul"] = {"치마", "교복", "창가", "눈물"}
+    _sum = CG._prompt_san_summary(1)
+    check("중복 태그·한글 파기는 회차 끝 요약 한 줄로 모인다(컷마다 1,500줄 회귀 방지)",
+          _sum.startswith("EP1 프롬프트 정제:") and _sum.count(" · ") == 1 and "12개" in _sum
+          and "컷 11개" in _sum and "한글 파기 4종" in _sum, _sum)
+    check("플래시를 부르면 요약이 나오고 다음 회차는清白하다",
+          CG._prompt_san_flush(1) == _sum and CG._prompt_san_summary(2) == "")
+    _gs = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("컷 단위로 찍던 '정제: 중복 N개 제거' 줄은源码에 없다",
+          "정제: 중복" not in _gs and '_PROMPT_SAN["dup"] += int(removed or 0)' in _gs)
+
     # ── ⑬d [2026-09-09] 컷 크롭을 얼굴 중심으로 (사용자: "얼굴이 많이 나오게")
     _W, _H = 1024, 1344
     _sim = Image.new("RGB", (_W, _H), (240, 240, 255))

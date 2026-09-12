@@ -179,6 +179,7 @@
 ### 3.5 [H] 컷 → 이미지 프롬프트 — `build_panel_prompt` (2110)
 - 결정론 경로: 태그 블록(`[AAA FACE]/[AAA CLOTHES]/[BACKGROUND]/[SAFETY]`…) + 정석 뷰 토큰(`ANGLE` 프리셋) + 시선 정책(말풍선이 오른쪽이면 인물은 왼쪽).
 - 예외 경로: `camera=pov` 또는 `multi` 컷만 **LLM#5**로 자연어 재작성(`prompt_pov.md` / `prompt_multi.md` 가이드).
+- **제출 직전 그래프를 회차당 1장 남긴다**(`anima_gen.dump_workflow_once`): `log/comfyui_workflow_epNN.json`는 API 그래프 그 자체(ComfyUI 드래그로 열리게 값을 안 고친다), 요약은 `…debug.json`. 같은 함수 계열로 `_apply_detailer_switch`가 템플릿의 화풍 디테일러(122의 3·4번)를 **기본 OFF**로 끈다(`--detailer`로 템플릿 원본 값 복원, `--real`/`--sole`은 강제 OFF).
 - **상대방(BBB) 외모는 고정 그룹 하나로 닫습니다**(`comic_partner_invisible`, 기본 켬). 조립부는 `[BBB] … COMPLETE and FINAL: (bald featureless faceless naked nude <체형> invisible man:3.0)` + `[BBB RULE]` + 포즈/소지품만 내보냅니다. LLM이 외모를 다시 풀어쓴 POV/multi 섹션은 `simplify_partner_section`이 후처리에서 고정 그룹으로 되돌립니다(포즈·행동 구문은 보존하고, "not visible in the frame" 컷은 건드리지 않습니다). 체형 토큰은 회차 시트에서 결정론적으로 고릅니다(`_partner_body_token`: 뚱뚱함→fat 등 6종 — `skinny`는 `fat`과 충돌해 쓰지 않습니다). 되돌릴 때는 `--partner-full`.
 - 얼굴 표정: 컷 감정이 있으면 그것을 쓰고, 회차 `face_tag`는 **클라이맥스 컷에만** 적용(일상 컷이 한 표정으로 고정되던 증상 방지). 극단 표정 어휘는 `local_settings.yaml`의 `extreme_face`로만 켜집니다.
 - 복장: 컷 레벨 `clothes`는 회차 의상 태그와 **같은 종류면 병합**, 종류가 다르면 교체. 의류어가 하나도 남지 않으면 회차 의상을 되돌립니다(`_undress_guard`).

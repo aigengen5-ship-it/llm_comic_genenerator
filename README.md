@@ -282,6 +282,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--lora1 KEY` | `ANIMA_LORA_CONFIG`의 키로 lora1 슬롯을 고정합니다 (`plot.json`의 `anima_style`보다 우선) |
 | `--lora2 KEY` | lora2(보조) 슬롯입니다. 예: `--lora1 lora_mi1k --lora2 lora_sex` |
 | `--lora-chg episode` | 에피소드가 바뀔 때마다 단독 LoRA 쌍을 랜덤으로 다시 고릅니다 (`increment`는 폐지되었습니다) |
+| `--detailer` | 워크플로우가 매 컷 붙이던 화풍 디테일러 LoRA(122의 3·4번 슬롯)를 켭니다. 기본 OFF — 캐릭터 LoRA의 얼굴이 화풍에 묻혔습니다 |
 | `--str1 0.8` | lora1 **강도** 오버라이드(0.0~2.0, 생략하면 `ANIMA_LORA_CONFIG`의 값). `--lora1`뿐 아니라 `plot.json` 화풍/`lora_random`에도 적용됩니다 |
 | `--str2 0.3` | lora2 강도 오버라이드. `0`이면 그 슬롯이 꺼집니다 |
 
@@ -320,24 +321,37 @@ python run_comic.py --episode inputs/ep01.txt --lora1 lora_mi1k --lora2 lora_sex
 - 범위는 0.0~2.0이며 넘는 값은 클램프됩니다(`--str2 9` → 2.0).
 - `--real`/`--sole`은 LoRA를 전부 끄는 모드이므로 `--str1/--str2`도 함께 무시됩니다.
 
-**"LoRA가 정말 켜졌나" 확인하는 법** — 렌더를 시작하면 회차당 1장씩 **제출 직전의 최종 그래프**가
-`log/comfyui_workflow_epNN.json`으로 남습니다. 첫 줄 요약을 보면 답이 바로 나옵니다.
+**워크플로우가 몰래 섞던 화풍 디테일러 — 기본 OFF (`--detailer`)**
+
+템플릿의 `122`(Power Lora Loader)는 3·4번 슬롯에 `rendering_detailer 0.4` + `anima_context_detailer 0.25`를
+**매 컷** 켜둔 상태였습니다. `--lora1/--lora2`로 캐릭터를 골라도 그 위에 화풍이 깔려 얼굴·개성이 묻혔습니다.
+지금은 **기본으로 끄고**(`config.comic_detailer_on = False`) submit 직전 그래프에도 `on:false / strength:0`으로
+제출됩니다. 되돌리고 싶으시면 `--detailer`를 붙이세요 — 템플릿이 적어둔 파일명·강도를 그대로 되살립니다(코드가 값을 지어내지 않습니다).
+
+**"LoRA가 정말 켜졌나" 확인하는 법** — 렌더를 시작하면 회차당 1장씩 두 파일이 남습니다.
+
+| 파일 | 내용 |
+|---|---|
+| `log/comfyui_workflow_epNN.json` | **서버에 제출한 API 그래프 그 자체** — ComfyUI 화면에 드래그하면 노드가 그대로 뜹니다(UI의 "Save (API Format)"과 같은 형태) |
+| `log/comfyui_workflow_epNN.debug.json` | 보기 좋은 요약(회차·prefix·시드·해상도·UNet·LoRA 슬롯·TE 텐서·디테일러 상태) |
 
 ```jsonc
-{"_debug": {
-   "unet": "anima_aestheticV11.safetensors", "seed": 777, "resolution": [1280, 1280],
-   "lora_slots": {
-     "lora_1": {"on": true, "lora": "b529e7df-…TA_trained.safetensors", "strength": 1.0},   ← --lora1/--str1
-     "lora_2": {"on": true, "lora": "ren45_v1.safetensors", "strength": 0.8},               ← --lora2/--str2
-     "lora_3": {"on": true, "lora": "rendering_detailer_base10-000400.safetensors", "strength": 0.4},
-     "lora_4": {"on": true, "lora": "anima_context_detailer_base10.safetensors", "strength": 0.25}
-   },
-   "lora_te_tensors": {"ren45_v1.safetensors": {"te_tensors": 0, "all_tensors": 840}}
- },
- "workflow": { …제출한 그래프 그 자체… }}
+// comfyui_workflow_ep01.debug.json
+{
+  "unet": "anima_aestheticV11.safetensors", "seed": 777, "resolution": [1280, 1280],
+  "lora_slots": {
+    "lora_1": {"on": true,  "lora": "b529e7df-…TA_trained.safetensors", "strength": 1.0},   ← --lora1/--str1
+    "lora_2": {"on": true,  "lora": "ren45_v1.safetensors",             "strength": 0.8},   ← --lora2/--str2
+    "lora_3": {"on": false, "lora": "rendering_detailer_base10-000400.safetensors", "strength": 0},
+    "lora_4": {"on": false, "lora": "anima_context_detailer_base10.safetensors",    "strength": 0}
+  },
+  "lora_te_tensors": {"ren45_v1.safetensors": {"te_tensors": 0, "all_tensors": 840}},
+  "detailer": {"on": false, "slots": ["lora_3", "lora_4"]}
+}
 ```
 
-- `workflow` 블록은 서버로 간 내용과 **100% 동일**합니다(요약만 `_debug`로 따로 뒀습니다). 같은 걸 서버에서도 볼 수 있습니다: `GET /history/<prompt_id>`의 노드 `122`.
+- 그래프 파일은 **한 글자도 덧붙이지 않습니다**(드래그로 열리게). 그래서 값 확인은 `.debug.json` 또는 로그 `[ComfyUI DEBUG]` 라인에서 합니다. 서버에서도 볼 수 있습니다: `GET /history/<prompt_id>`의 노드 `122`.
+- 결과 PNG를 드래그해도 노드가 안 보이는 것은 정상이 아닙니다 — PNG에는 `prompt`(API 그래프) 메타데이터만 들어 있고 `workflow`(UI 그래프)가 없기 때문입니다. 그 경우 방금 만든 `comfyui_workflow_epNN.json`을 드래그하세요.
 - **`122`(Power Lora Loader)는 `model`만 연결합니다** — `46 UNETLoader → 122 → 1017 → 1016(샘플러)`. `39`(CLIPLoader)는 86/87 텍스트 인코더로 바로 갑니다. anima LoRA는 텐서가 전부 `lora_unet_*`(텍스트 인코더 가중치가 아예 없음)라서 **model 연결만으로 충분합니다** — 그래서 `lora_te_tensors`가 0이면 정상입니다. TE 텐서가 0이 아닌 파일을 고르면 로그가 "텍스트 쪽은 적용되지 않습니다"라고 알려줍니다.
 - 로그 한 줄로도 보입니다: `[ComfyUI LoRA] lora_1=…(1.0) lora_2=…(0.8) unet=…` · `[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): …`.
 - 템플릿(`data_comfyui/anima_spectrum_July11.json`)의 `on:false`는 **UI 기본값**입니다. 코드가 강도>0이면 제출 직전 `on:true`로 켭니다 — 템플릿만 보고 "꺼져 있다"로 오해하지 마세요.
@@ -904,7 +918,8 @@ comic/bookNNN/episode_NN_comic.json        base_seed/seeds/컷/페이지 계획(
 comic/bookNNN/episode_NN_script.json       dry-run 컷 스크립트
 image/*.png                                컷 원본(렌더)
 log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기록(append)
-log/comfyui_workflow_epNN.json             회차당 1장 — ComfyUI에 제출한 **최종 그래프 그대로**(LoRA/UNet/시드/해상도 포함)
+log/comfyui_workflow_epNN.json             회차당 1장 — ComfyUI에 제출한 **최종 그래프 그대로**(드래그하면 노드가 보인다)
+log/comfyui_workflow_epNN.debug.json       그 그래프의 요약(시드·해상도·UNet·LoRA 슬롯·TE 텐서·디테일러)
 log/error.log                                   에러·경고 이력 (지우지 않고 쌓습니다, 줄마다 pid)
 log/.run.lock                                   지금 실행 중인 PID (동시 실행 시 본 로그를 지키는 열쇠)
 comic/bookNNN/episode_NN_SKIPPED.txt             페이지를 못 만든 회차의 사유 (성공하면 사라집니다)

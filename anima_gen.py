@@ -814,6 +814,44 @@ def _lora_te_tensors(name: str):
     return out
 
 
+# ============================================================================
+# [2026-09-12] 디테일러 슬롯 스위치 — 템플릿이 매 컷 붙이던 화풍 LoRA(122의 3·4번)를 끈다
+#   기본 OFF(사용자 지시): `rendering_detailer 0.4` + `anima_context_detailer 0.25`가 회차의 모든 컷에
+#   깔려 --lora1/--lora2로 고른 캐릭터 LoRA의 얼굴·개성을 화풍으로 덮어썼다.
+#   켤 때는 템플릿이 원래 적어둔 파일·강도를 그대로 되살린다(이 코드가 임의 값을 지어내지 않는다).
+# ============================================================================
+_DETAILER_SLOTS = ("lora_3", "lora_4")
+_detailer_template = {}            # slot → 템플릿 원본 {"lora","strength"} (되살리기용, 첫 목격 시 저장)
+
+
+def _apply_detailer_switch(prompt, resolved=None):
+    """122 번의 3·4번 슬롯(화풍 디테일러)을 config.comic_detailer_on 에 맞춰 켜고 끈다."""
+    n122 = ((prompt or {}).get("122") or {}).get("inputs")
+    if not isinstance(n122, dict):
+        return
+    on = bool(getattr(config, "comic_detailer_on", False))
+    if _real_mode_active() or _sole_mode_active():
+        on = False                      # --real/--sole은 LoRA 전부 OFF 모드 — 디테일러도 예외가 아니다
+    for slot in _DETAILER_SLOTS:
+        node = n122.get(slot)
+        if not isinstance(node, dict):
+            continue
+        if slot not in _detailer_template:
+            _detailer_template[slot] = {"lora": str(node.get("lora") or ""),
+                                        "strength": float(node.get("strength") or 0.0)}
+        if on:
+            o = _detailer_template[slot]
+            if o["lora"] and o["strength"]:
+                node["lora"] = o["lora"]
+                node["strength"] = o["strength"]
+                node["on"] = True
+                continue
+            node["on"], node["strength"] = False, 0   # 템플릿에 적힌 것이 없으면 켤 대상이 없다
+        else:
+            node["on"] = False
+            node["strength"] = 0
+
+
 def _apply_lora_nodes(prompt, resolved):
     """resolved → ComfyUI 워크플로우 반영 (노드 122 슬롯 + 노드 46 UNet).
 
@@ -1763,10 +1801,11 @@ _workflow_dumped = set()           # 회차 번호 → 이미 뽑았는지 (--al
 
 def dump_workflow_once(prompt: dict, episode=None, prefix: str = "", template: str = "",
                        log_dir: str = "./log") -> str:
-    """최종 제출 프롬프트(그래프)를 `log/comfyui_workflow_epNN.json`에 회차당 1번 쓴다 → 파일 경로("" = 건너뜀)
+    """최종 제출 그래프를 회차당 1번 쓴다 → `log/comfyui_workflow_epNN.json` (경로 반환, "" = 건너뜀)
 
-    형식: {"_debug": {회차·nametag·prefix·seed·unet·LoRA 슬롯 요약}, "workflow": {제출된 그대로}}
-    `workflow`는 제출 내용과 **100% 동일**해야 하므로 여기에 무엇을도 섞지 않는다(요약은 _debug로).
+    파일은 **제출한 API 그래프 그 자체**다 — ComfyUI 화면에 드래그하면 노드가 그대로 뜬다
+    (한 글자도 덧붙이지 않는 이유. UI의 "Save (API Format)"과 같은 형태여야 한다).
+    요약(회차·seed·unet·LoRA 슬롯·TE 텐서·디테일러)은 옆에 `…epNN.debug.json`으로 따로 남긴다.
     """
     try:
         ep = int(episode) if episode is not None else int(getattr(config, "episode_num", 0) or 0)
@@ -1789,31 +1828,36 @@ def dump_workflow_once(prompt: dict, episode=None, prefix: str = "", template: s
                 r = _lora_te_tensors(v["lora"])
                 if r:
                     te[v["lora"]] = {"te_tensors": r[0], "all_tensors": r[1]}
-        payload = {
-            "_debug": {
-                "written_at": time_mod.strftime("%Y-%m-%d %H:%M:%S"),
-                "episode": ep + 1,
-                "anima_nametag": anima_nametag,
-                "prefix": prefix,
-                "template": template,
-                "seed": ((nodes.get("1016") or {}).get("inputs") or {}).get("seed"),
-                "resolution": [((nodes.get("123") or {}).get("inputs") or {}).get("width"),
-                               ((nodes.get("123") or {}).get("inputs") or {}).get("height")],
-                "unet": ((nodes.get("46") or {}).get("inputs") or {}).get("unet_name"),
-                "lora_slots": slots,
-                "lora_te_tensors": te,
-            },
-            "workflow": nodes,
+        debug = {
+            "written_at": time_mod.strftime("%Y-%m-%d %H:%M:%S"),
+            "episode": ep + 1,
+            "anima_nametag": anima_nametag,
+            "prefix": prefix,
+            "template": template,
+            "seed": ((nodes.get("1016") or {}).get("inputs") or {}).get("seed"),
+            "resolution": [((nodes.get("123") or {}).get("inputs") or {}).get("width"),
+                           ((nodes.get("123") or {}).get("inputs") or {}).get("height")],
+            "unet": ((nodes.get("46") or {}).get("inputs") or {}).get("unet_name"),
+            "lora_slots": slots,
+            "lora_te_tensors": te,
+            "detailer": {"on": bool(getattr(config, "comic_detailer_on", False)),
+                         "slots": list(_DETAILER_SLOTS),
+                         "template": dict(_detailer_template)},
         }
         path = os.path.join(log_dir, "comfyui_workflow_ep%02d.json" % (ep + 1))
+        dpath = path[:-5] + ".debug.json"
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=1)
+            json.dump(nodes, f, ensure_ascii=False, indent=1)      # 순수 API 그래프 (드래그해서 열 수 있게)
+        with open(dpath, "w", encoding="utf-8") as f:
+            json.dump(debug, f, ensure_ascii=False, indent=1)
         _workflow_dumped.add(ep)
         _sw = ", ".join(f"{k}={'ON' if v['on'] else 'off'} {v['lora'] or '-'}@{v['strength']}"
                         for k, v in sorted(slots.items()))
-        log(f"[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): {path}")
-        log(f"[ComfyUI DEBUG]   unet={payload['_debug']['unet']} | seed={payload['_debug']['seed']} | "
-            f"{_sw or 'LoRA 슬롯 없음'}")
+        log(f"[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): {path} (ComfyUI에 드래그하면 노드가 보입니다) "
+            f"· 요약 {dpath}")
+        log(f"[ComfyUI DEBUG]   unet={debug['unet']} | seed={debug['seed']} | "
+            + (f"{debug['resolution'][0]}x{debug['resolution'][1]}" if all(debug['resolution']) else "?")
+            + f" | {_sw or 'LoRA 슬롯 없음'}")
         for f_, t in te.items():
             if t["te_tensors"]:
                 log(f"[ComfyUI DEBUG]   {f_}: TE 텐서 {t['te_tensors']}/{t['all_tensors']} — "
@@ -1907,6 +1951,9 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
     
     # LoRA 설정: 통합 config(ANIMA_LORA_CONFIG)에서 해석 (lora_random/CLI LoRA/--str1·--str2 포함)
     _apply_lora_nodes(prompt, resolve_anima_lora(json_value, episode))
+
+    # [2026-09-12] 템플릿의 화풍 디테일러(3·4번)는 기본 OFF — --detailer로 켠다 (캐릭터 LoRA 보존)
+    _apply_detailer_switch(prompt)
     
     # [2026-08-30] 최종 prompt '_' → 공백 (score_N만 '_' 유지): anima 모델이 danbooru tag의 '_'를 인식 못 하는 경우 방지
     prompt["86"]["inputs"]["text"] = _sanitize_prompt_underscores(full_prompt)

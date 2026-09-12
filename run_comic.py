@@ -808,6 +808,9 @@ def main() -> int:
                     help="상대방을 최소 태그 (bald featureless faceless naked nude <체형> invisible man:3.0)로 "
                          "그리지 않고 시트의 상세 태그(머리·눈·피부·복장)로 그립니다")
     # [2026-09-12] 페이지 합성 게이트 — 기본은 '컷이 전부 렌더된 회차만' 합성한다
+    ap.add_argument("--detailer", action="store_true", dest="detailer",
+                    help="워크플로우가 매 컷 붙이던 화풍 디테일러 LoRA(122의 3·4번 슬롯)를 켭니다 "
+                         "(기본 OFF: 캐릭터 LoRA의 얼굴·개성이 디테일러 화풍에 묻혔습니다)")
     ap.add_argument("--merge-partial", action="store_true", dest="merge_partial",
                     help="컷이 몇 장 빠졌어도 렌더된 것만으로 페이지를 합성합니다 "
                          "(기본: 전부 만들어졌을 때만 합성하고, 모자라면 이 회차를 합성 없이 접습니다)")
@@ -938,6 +941,8 @@ def main() -> int:
         config.comic_emo_marks = False
     if not args.partner_full:                   # [2026-09-12] 상대방 상세 태그로 되돌리기
         config.comic_partner_invisible = False
+    if getattr(args, "detailer", False):               # [2026-09-12] 화풍 디테일러 되살리기
+        config.comic_detailer_on = True
     if getattr(args, "merge_partial", False):   # [2026-09-12] 빠진 컷이 있어도 합성하기
         config.comic_merge_partial = True
     if args.no_prologue:
@@ -987,6 +992,7 @@ def main() -> int:
     p(f"  수다장이 모드  : {'ON (모든 컷 하단에 설명)' if config.comic_chatty else 'off (지문이 있는 컷만 설명)'}")
     p(f"  상대방 외모    : {'최소 태그 (invisible man/woman 고정 그룹) — 외모 태그 오염 차단' if getattr(config, 'comic_partner_invisible', True) else '상세 태그 (--partner-full)'}")
     p(f"  페이지 합성    : {'컷이 전부 렌더된 회차만 합성합니다 (모자라면 합성 보류)' if not getattr(config, 'comic_merge_partial', False) else '--merge-partial: 빠진 컷이 있어도 렌더된 것만으로 합성합니다'}")
+    p(f"  디테일러 LoRA  : {'ON (--detailer)' if getattr(config, 'comic_detailer_on', False) else 'OFF — 워크플로우 3·4번 슬롯을 끕니다 (--detailer로 켜기)'}")
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.
     #   우선순위: CLI 인자 > env(COMIC_ALLOW_EXPLICIT) > local_settings.yaml > 기본 — CLI 주입은 아래에서 된다.
     if config.local_settings:

@@ -2533,26 +2533,33 @@ def main() -> int:
         _wf1 = anima_gen.dump_workflow_once(_tpl, episode=41, prefix="probe_prefix",
                                             template="data_comfyui/anima_spectrum_July11.json", log_dir=_wf_dir)
         _wf_path = os.path.join(_wf_dir, "comfyui_workflow_ep42.json")
-        _wf_doc = {}
+        _wd_path = os.path.join(_wf_dir, "comfyui_workflow_ep42.debug.json")
+        _wf_doc, _wd_doc = {}, {}
         if _wf1 and os.path.isfile(_wf_path):
             _wf_doc = json.load(open(_wf_path, encoding="utf-8"))
+        if os.path.isfile(_wd_path):
+            _wd_doc = json.load(open(_wd_path, encoding="utf-8"))
         check("최종 워크플로우를 log에 회차당 1장 남긴다(comfyui_workflow_epNN.json)",
-              _wf1.endswith("comfyui_workflow_ep42.json") and os.path.isfile(_wf_path)
-              and _wf_doc.get("workflow"), str(_wf1))
-        _slots = (_wf_doc.get("_debug") or {}).get("lora_slots") or {}
+              _wf1.endswith("comfyui_workflow_ep42.json") and os.path.isfile(_wf_path), str(_wf1))
+        check("그 파일은 순수 API 그래프 — ComfyUI에 드래그하면 노드가 뜬다(래퍼/요약 키를 섞지 않는다)",
+              "workflow" not in _wf_doc and "_debug" not in _wf_doc
+              and isinstance(_wf_doc.get("122"), dict)
+              and any("SaveImage" in str(v.get("class_type")) for v in _wf_doc.values() if isinstance(v, dict)),
+              str(list(_wf_doc)[:4]))
+        _slots = _wd_doc.get("lora_slots") or {}
         check("저장된 요약에 LoRA 온/오프·파일명·강도가 그대로 적힌다(--lora1/--str1 확인용)",
               _slots.get("lora_1", {}).get("on") is True
               and _slots.get("lora_1", {}).get("lora") == "lora_a.safetensors"
               and _slots.get("lora_1", {}).get("strength") == 1.0
               and _slots.get("lora_2", {}).get("strength") == 0.6
-              and (_wf_doc.get("_debug") or {}).get("unet") == "some_unet.safetensors", str(_slots))
+              and _wd_doc.get("unet") == "some_unet.safetensors", str(_slots))
         check("같은 회차는 다시 뽑지 않는다(25컷 × 그래프 = 로그 폭발 방지)",
               anima_gen.dump_workflow_once(_tpl, episode=41, prefix="p", log_dir=_wf_dir) == "", "")
         check("다른 회차는 따로 뽑는다(--all-eps에서 회차별 비교가 가능해야 한다)",
               anima_gen.dump_workflow_once(_tpl, episode=42, log_dir=_wf_dir)
               .endswith("comfyui_workflow_ep43.json"), "")
-        check("workflow 블록은 제출 그래프와 같다(디버깅 위해 값을 안 고친다)",
-              json.dumps(_wf_doc.get("workflow") or {}, sort_keys=True, ensure_ascii=False)
+        check("저장된 그래프는 제출 그래프와 같다(디버깅 위해 값을 안 고친다)",
+              json.dumps(_wf_doc, sort_keys=True, ensure_ascii=False)
               == json.dumps(_tpl, sort_keys=True, ensure_ascii=False), "")
         # TE 텐서 수 읽기(safetensors 헤더만 본다) — 가짜 파일로
         _fake_root = os.path.join(_tmpq, "fakeroot")
@@ -2565,6 +2572,36 @@ def main() -> int:
         _roots_bak = anima_gen._comfyui_roots
         anima_gen._comfyui_roots = lambda: [_fake_root]
         anima_gen._lora_te_cache.clear()
+        # 디테일러 슬롯(템플릿의 122번 3·4) — 기본 OFF, --detailer로 되살리기
+        import copy as _cp_dt
+        _g_dt = json.load(open(os.path.join(ROOT, "data_comfyui", "anima_spectrum_July11.json"), encoding="utf-8"))
+        _orig_dt = {k: dict(_g_dt["122"]["inputs"][k]) for k in ("lora_3", "lora_4")}
+        anima_gen._detailer_template.clear()
+        config.comic_detailer_on = False
+        anima_gen._apply_detailer_switch(_g_dt)
+        check("템플릿이 매 컷 붙이던 화풍 디테일러(3·4번)는 기본 OFF다",
+              all(_g_dt["122"]["inputs"][k]["on"] is False and _g_dt["122"]["inputs"][k]["strength"] == 0
+                  for k in ("lora_3", "lora_4")),
+              str({k: _g_dt["122"]["inputs"][k] for k in ("lora_3", "lora_4")}))
+        config.comic_detailer_on = True
+        anima_gen._apply_detailer_switch(_g_dt)
+        check("--detailer는 템플릿이 적어둔 파일·강도를 그대로 되살린다(코드가 값을 지어내지 않는다)",
+              all(_g_dt["122"]["inputs"][k]["on"] is True
+                  and _g_dt["122"]["inputs"][k]["lora"] == _orig_dt[k]["lora"]
+                  and abs(float(_g_dt["122"]["inputs"][k]["strength"]) - float(_orig_dt[k]["strength"])) < 1e-6
+                  for k in ("lora_3", "lora_4")),
+              str({k: _g_dt["122"]["inputs"][k] for k in ("lora_3", "lora_4")}))
+        config.comic_detailer_on = True
+        _g_real = _cp_dt.deepcopy(_g_dt)
+        _bak_real, _bak_sole = anima_gen._real_mode_active, anima_gen._sole_mode_active
+        anima_gen._real_mode_active = lambda *a, **k: True
+        anima_gen._apply_detailer_switch(_g_real)
+        check("--real/--sole은 LoRA 전부 OFF 모드 — 디테일러도 켜질 수 없다",
+              all(_g_real["122"]["inputs"][k]["on"] is False for k in ("lora_3", "lora_4")), "")
+        anima_gen._real_mode_active = _bak_real
+        config.comic_detailer_on = False
+        anima_gen._detailer_template.clear()
+
         check("LoRA 헤더에서 TE 텐서 수를 센다(clip 미연결인지 눈으로 확인하는 근거)",
               anima_gen._lora_te_tensors("fake_te.safetensors") == (2, 3)
               and anima_gen._lora_te_tensors("없는파일.safetensors") is None,

@@ -143,6 +143,10 @@ comic_partner_invisible = True
 # [2026-09-12] 페이지 합성 게이트 — 컷이 **전부** 렌더된 회차만 페이지로 합친다.
 #   true(run_comic --merge-partial)면 예전 동작: 렌더된 컷만으로 합성(마지막 페이지가 짧아진다).
 comic_merge_partial = False
+# [2026-09-12] 워크플로우 템플릿이 **매 컷** 붙이던 화풍 디테일러 LoRA(122의 3·4번 슬롯
+#   rendering_detailer 0.4 + anima_context_detailer 0.25)를 끄는가. 기본 OFF — 캐릭터 LoRA(--lora1/--lora2)
+#   의 얼굴·개성이 디테일러 화풍에 묻혔다(사용자 지시). run_comic.py --detailer 로 되살린다.
+comic_detailer_on = False
 comic_layout_rolls = 10         # 페이지 수마다 레이아웃을 몇 번 다시 추첨해 목표 컷 수에 가까운 것을 고르는가
 comic_wide_share_max = 0.5
 comic_variation = 0

@@ -1760,6 +1760,12 @@ def compose_pages(panel_paths, captions, out_dir: str, basename: str,
     total = len(chunks)
     saved = []
     for pi, (chunk, off, k) in enumerate(chunks, start=1):
+        if not chunk:
+            # [2026-09-11] ComfyUI가 렌더 도중 죽으면 레이아웃 슬롯은 있는데 파일이 없는 페이지가
+            #   생깁니다(실측: 27슬롯 중 22장만 렌더 → 5페이지 슬롯이 빈 채로 들어옴). 예전은 여기서
+            #   ValueError로 회차를 통째로 죽여 앞의 4페이지까지 '미완'으로 만들었습니다. 빈 슬롯은
+            #   건너뛰고 남은 페이지를 살립니다(사유는 comic_gen이 로그에 남깁니다).
+            continue
         caps = list(captions[off:off + k]) if captions else []
         sl = lambda lst: (list(lst[off:off + k]) if lst else None)
         label = f"{page_label_prefix} · P{pi}/{total}" if page_label_prefix else None

@@ -683,6 +683,10 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
        단 회치의 첫 컷과 장면이 바뀌는 컷은 place·time·background를 반드시 채웁니다. 회차 배경 태그는
        회차 전체 장소를 담고 있어, 그때 적지 않으면 다른 장소의 배경이 컷에 먼저 섞여 들어옵니다.
        본문에 실제로 변화가 있는 컷만 채우세요. 소지품·자세는 **사라지면 안 되는 물건**을 이어가는 데 쓰입니다. 값은 영문 태그.
+       · 본문에 `장소:` · `시간:` · `…의 복장:` 줄이 보이면 **그게 원작이 정한 값**입니다 — 그 줄이 속한 컷의
+         place·time·background·clothes를 그 기준으로 영문 태그로 채웁니다(한글 지문을 그대로 쓰지 않는다).
+         예: `시간: 심야 (밤)` → `time=night`, `장소: 심야 약국 내부 …` → `place=pharmacy interior,
+         shelves of bottles` / `복장: 다크 네이비 학생 바지 …` → `clothes=navy school uniform, white shirt`.
        **근거는 [에피소드 본문]의 이 컷에 해당하는 조각뿐입니다.** 가이드(기승전결 4줄)는 흐름
        이해용입니다 — 가이드에 나온 결말의 복장·표정을 앞 컷에 미리 입히지 마세요(컷 1은 회차가
        **시작하는** 복장·표정을 입는다).
@@ -2920,11 +2924,24 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
             release_llm_for_gpu(json_value, log_fn=_clog)
         except Exception as e:
             _clog(f"EP{ep_num_1} LLM 메모리 반납 실패(무시, 렌더 계속): {e}")
+        _miss_run = 0
         for p, sd, pr in zip(panels, seeds, prompts):
             f = render_panel(ep_idx, p, sd, safety_tag, json_value, gloss=gloss,
                              angle_preset=_pick_panel_angle(p), prompt=pr)
             if f:
                 files.append(f)
+                _miss_run = 0
+                continue
+            _miss_run += 1
+            if _miss_run >= 5:
+                # ComfyUI가 도중 죽으면(실측 17:04: 컷21~27 전부 Connection refused) 남은 컷도
+                #   전부 실패합니다 — 20번을 더 대기하지 않고 이 회차의 렌더를 접습니다.
+                _clog(f"EP{ep_num_1} 컷 {_miss_run}개 연속 렌더 실패 — ComfyUI가 중단된 것으로 보여 "
+                      f"남은 {len(panels) - len(files) - _miss_run}컷의 렌더를 접습니다")
+                break
+        if files and len(files) < len(panels):
+            _clog(f"EP{ep_num_1} 컷 {len(files)}/{len(panels)}장만 렌더되었습니다"
+                  " — 페이지는 렌더된 컷으로만 짭니다(실패 컷은 페이지에서 빠집니다)")
         if not files:
             _clog(f"EP{ep_num_1} 생성된 컷 이미지 0장 (ComfyUI 확인 필요)")
             return {"ep": ep_num_1, "panels": panels, "files": [], "pages": [],
@@ -2944,7 +2961,9 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
                    for p in panels][:len(files)]
     # [2026-09-07 A안] cut.yaml 모드: 컷에 page/tier/share 메타가 있으면 그 구성으로 페이지를 짠다.
     page_plans = script.get("page_plans") or []
-    page_specs = build_page_specs(panels)
+    # 렌더 실패로 파일이 컷보다 적으면(ComfyUI 중단 등) **렌더된 컷 기준**으로 레이아웃을 짭니다.
+    #   안 그러면 빈 슬롯이 생겨 compose_pages가 빈 페이지를 만나거나 페이지 구성이 어긋납니다.
+    page_specs = build_page_specs(panels[:len(files)] if files and len(files) < len(panels) else panels)
     _apply_slot_aspects(panels, page_specs)   # 렌더 전: 슬롯 화면비 → 해상도 선택에 사용
     _apply_font_roles_from_config()          # ★화면 문법 용도별 폰트 지정 반영
     # [2026-09-09] 얼굴 중심 크롭 스위치(기본 켬) — cv2/모델이 없으면 추정치(위에서 8%)로 동작한다

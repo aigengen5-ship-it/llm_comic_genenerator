@@ -2828,6 +2828,157 @@ def main() -> int:
           str(CI.normalize_units([{"at": "그는 그녀의 손을 잡았다."}]))[:60])
 
 
+    # ── ⑮b [2026-09-11] --special 장면 카드 ([LOCATION]/[SITUATION]/[TIME]/[CLOTHES])
+    import novel_progress as _NP_card
+    _card_src = """=== Episode 1 ===
+
+# 주인공 (호시 소이치로)
+직업: 고등학생 선도부원
+
+# 상대방 (카즈키 렌)
+직업: 오타쿠 고등학생
+
+--- 에피소드 내용 ---
+
+##EPISODE 1:
+[LOCATION]: 심야 약국 내부. 선반마다 약품이 빼곡하고 형광등이 깜빡인다.
+[SITUATION]: 비밀 취미를 숨기던 약국에서 상대와 마주친 상황.
+[TIME]: 심야 (밤)
+[CLOTHES]: 다크 네이비 슬림핏 학생 바지, 흰 와이셔츠.
+#####
+기:
+[ACTION] 소이치로가 경계하며 약국으로 들어선다.
+[INNER] 이곳이 유일한 탈출구다.
+#####
+승:
+[LOCATION]: 약국 구석 서가. 잡지 코너 앞.
+[TIME]: 심야 (밤)
+[CLOTHES]: 젖은 셔츠, 옷이 몸에 붙은 상태.
+[ACTION] 소이치로가 잡지를 꺼내고 손을 뻗는다.
+[TALK] 이게 신간이군요.
+#####
+전:
+[ACTION] 렌이 소이치로의 손 위에 손을 포갠다.
+#####
+결:
+[ACTION] 카즈키 렌이 다정한 미소를 지으며 입을 연다.
+[TALK] 앞으로 많이 알려드릴게요.
+[ACTION] 호시 소이치로가 고개를 돌린다.
+[TALK] 고… 고맙군.
+"""
+    _card_dir = _mkdtemp_rl(prefix="selftest_card_")
+    _card_ep = os.path.join(_card_dir, "ep01_c09a45175e5843d7.txt")
+    with open(_card_ep, "w", encoding="utf-8") as _f_card:
+        _f_card.write(_card_src)
+    _cp = _NP_card.parse_episode(_card_ep)
+    _body, _segs = _NP_card.render(_cp)
+    check("신형 장면 카드 [LOCATION]/[SITUATION]/[TIME]/[CLOTHES]를 4개 필드로 읽는다(지문 오염 아님)",
+          len(_cp["cards"]) >= 2 and _cp["cards"][0].get("시간") == "심야 (밤)"
+          and "약국" in _cp["cards"][0].get("장소", "") and "학생 바지" in _cp["cards"][0].get("복장", "")
+          and "마주친" in _cp["cards"][0].get("상황", ""),
+          str([{k: v for k, v in c.items() if k in ("장소", "시간")} for c in _cp["cards"]])[:110])
+    check("카드 라벨([LOCATION] …)과 '##EPISODE 1:' 구간 헤더가 본문에 남지 않는다",
+          "[LOCATION]" not in _body and "##EPISODE" not in _body and "[CLOTHES]" not in _body,
+          _body[:60].replace("\n", "⏎"))
+    check("회차 시작 카드는 본문 맨 앞(첫 막 라벨 앞)에 상태 줄로 놓인다",
+          _body.startswith("장소:") and "시간: 심야 (밤)" in _body and "소이치로의 복장:" in _body,
+          _body[:70].replace("\n", "⏎"))
+    check("막 중간 카드는 **그 막 안에** 놓인다(장면 전환 — 앞 막 꼬리로 새지 않는다)",
+          _body.find("약국 구석 서가") > _body.find("승:")
+          and _body.find("약국 구석 서가") < _body.find("전:"),
+          _body[_body.find("승:"):][:70].replace("\n", "⏎") if "승:" in _body else "(승 없음)")
+    check("카드를 넣어도 기승전결 앵커 4개가 잡고 막이 갈라진다",
+          len(_segs) == 4 and len(CI.split_by_segments(_body, _segs)) == 4,
+          str([len(x) for x in CI.split_by_segments(_body, _segs)]))
+    _cl = CI.scene_card_block(_cp["cards"])
+    check("추출 프롬프트는 **회차 시작 카드만** 원작 지정값으로 올린다(막 중간 카드는 컷이 받는다)",
+          "약국 내부" in _cl and "약국 구석 서가" not in _cl, _cl[:80].replace("\n", "⏎"))
+    _ep_prompt = CI.build_extract_prompt(_body, "시트", 1, need_segments=False, scene_cards=_cp["cards"])
+    check("추출 프롬프트에 장면 카드 블록과 '1순위 근거' 규칙이 들어간다",
+          "[장면 카드(원작 지정" in _ep_prompt and "1순위 근거" in _ep_prompt, "")
+    check("추출 프롬프트가 **[에피소드 N 본문]을 다시 싣는다**(한때 '# 본문 미사용'으로 시트만 갔다)",
+          "[에피소드 1 본문]" in _ep_prompt and "소이치로가 경계하며 약국으로 들어선다" in _ep_prompt,
+          _ep_prompt[-90:].replace("\n", "⏎"))
+    check("컷 스크립트 규칙에 '장소:/시간:/복장: 줄 = 원작 지정값'이 있다",
+          "원작이 정한 값" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read(), "")
+    _keep_sc = getattr(config, "ep_scene_cards", None)
+    CI.apply_to_config({"protagonist": {"name": "소이치로", "sex": "male"}, "guides": {},
+                        "rating": "nsfw", "units": [{"at": "소이치로가 경계하며", "kind": "행동"}]},
+                       _body, "시트", 1, scene_cards=_cp["cards"])
+    _sc = (getattr(config, "ep_scene_cards", {}) or {}).get(1) or []
+    check("장면 카드가 config.ep_scene_cards에 구조로 남는다(막 전환 값을 구분해 쓸 수 있게)",
+          len(_sc) >= 2 and any(c.get("act") == "승" for c in _sc)
+          and not _sc[0].get("act"), str([(c.get("act"), c.get("idx")) for c in _sc])[:80])
+    if _keep_sc is None:
+        config.ep_scene_cards = {}
+    else:
+        config.ep_scene_cards = _keep_sc
+    check("본문 예산은 **시트 길이까지 빼서** 계산한다(시트가 예약을 먹으면 규칙/스키마가 앞에서 잘린다)",
+          CI.episode_char_budget(sheet_text="가" * 4000) < CI.episode_char_budget()
+          and CI.episode_char_budget(sheet_text="가" * 40000) >= CI.EPISODE_TEXT_CAP_MIN,
+          f"{CI.episode_char_budget()} → {CI.episode_char_budget(sheet_text='가' * 4000)}")
+    # [2026-09-11] ComfyUI가 렌더 도중 죽은 실측에서 나온 3가지 방어선
+    _mp4 = _mkdtemp_rl(prefix="selftest_gone_")
+    _pp4 = []
+    for _i in (1, 2):
+        _pt4 = os.path.join(_mp4, f"p{_i}.png")
+        Image.new("RGB", (420, 420), (90, 120, 200)).save(_pt4)
+        _pp4.append(_pt4)
+    _specs4 = [{"size": 1, "rows": [{"cells": [{"idx": j}]}]} for j in range(3)]   # 슬롯 3, 파일 2
+    try:
+        _saved4 = CPM.compose_pages(_pp4, ["a", "b"], _mp4, "ep_gone",
+                                    page_specs=_specs4, page_label_prefix="EP99")
+        _gone_err = ""
+    except Exception as _e4:
+        _saved4, _gone_err = [], f"{type(_e4).__name__}: {_e4}"
+    check("ComfyUI 중단으로 컷이 일부만 렌더되면 **빈 페이지 슬롯은 건너뛰고** 나머지를 살린다(예전엔 ValueError로 회차 전체 사망)",
+          len(_saved4) == 2, _gone_err or f"{len(_saved4)}장")
+    _cg4 = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("렌더 5연속 실패(ComfyUI 중단)면 남은 컷을 불러 시간을 태우지 않는다",
+          "_miss_run >= 5" in _cg4 and "ComfyUI가 중단된 것으로 보여" in _cg4, "")
+    check("부분 렌더 시 페이지는 **렌더된 컷 기준** 레이아웃으로 짠다(슬롯/파일 어긋남 방지)",
+          "build_page_specs(panels[:len(files)]" in _cg4, "")
+    _rc4 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("잡히지 않은 예외도 error.log에 남긴다(날것 traceback로 회차가 조용히 사라지던 것)",
+          "except Exception as e:" in _rc4 and "runlog.note(_ln" in _rc4 and "실행 중 예외" in _rc4, "")
+    _dead_src = ("=== Episode 5 ===\n\n# 주인공 (호시 소이치로)\n직업: 고등학생 선도부원\n\n"
+                 "--- 에피소드 내용 ---\n\n서버 응답 실패 (마지막 남은 이성으로 저항하려 눈물을 흘리지만 …)\n")
+    _dead_ep = os.path.join(_card_dir, "ep05_c09a45175e5843d7.txt")
+    with open(_dead_ep, "w", encoding="utf-8") as _f_d:
+        _f_d.write(_dead_src)
+    _dead_info = _NP_card.load(_dead_ep, "")
+    check("원작 생성이 실패한 회차(본문 몇 자 · 앵커 없음)는 **회차 자체를 건너뜁니다**(근거 없는 컷 6개를 지우지 않는다)",
+          bool(_dead_info.get("empty_body")) and any("비어" in n for n in _dead_info["notes"])
+          and not _NP_card.load(_card_ep, "")["empty_body"], str(_dead_info["notes"])[:90])
+    check("건너뛴 회차는 사유 코드(rc 5)와 SKIPPED 메모로 남긴다",
+          "5: \"에피소드 본문이 비어 있음" in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+          and "inp.get(\"empty_body\")" in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read(), "")
+    _uk_src = _card_src.replace("[TIME]: 심야 (밤)\n[CLOTHES]:",
+                                "[TIME]: 심야 (밤)\n[MOOD]: 형광등이 깜빡이는 음침함\n[CLOTHES]:", 1)
+    _uk_ep = os.path.join(_card_dir, "ep02_c09a45175e5843d7.txt")
+    with open(_uk_ep, "w", encoding="utf-8") as _f_uk:
+        _f_uk.write(_uk_src)
+    _uk_body, _uk_segs = _NP_card.render(_NP_card.parse_episode(_uk_ep))
+    check("카드 4종 밖의 [키]: 줄도 지문으로 살아남는다(입력이 바뀌어도 정보를 버리지 않는다)",
+          "형광등이 깜빡이는 음침함" in _uk_body and len(_uk_segs) == 4, _uk_body[:50].replace("\n", "⏎"))
+    _lines = [l for l in _body.split("\n") if l.startswith(("카즈키 렌:", "호시 소이치로:"))]
+    check("[TALK] 화자 = 호명 > **직전 서술의 주어** > 교대 순서(1음절 이름 '렌'도 조사로 검출)",
+          any(l.startswith("카즈키 렌: 앞으로 많이") for l in _lines)
+          and any(l.startswith("호시 소이치로: 고… 고맙군") for l in _lines),
+          " | ".join(x[:22] for x in _lines)[:110])
+    _broken = ('{\n "units": [\n   {"at": "잡지를 꺼낸다.", "kind": "행동"},\n'
+               '   {"의 "at": "손이 겹친다.", "kind": "행동"},\n   {"at": "눈을 맞춘다.", "kind": "행동"}\n ]\n}')
+    _bd, _be = CI.extract_json_obj_checked(_broken)
+    check('키 자리에 섞인 따옴표+홀 글자({"의 "at": …})도 복구한다(2026-09-11 실측 — 값 안 따옴표는 그대로)',
+          bool(_bd) and len(_bd.get("units") or []) == 3, (_be or "")[:70])
+    _ns = CI.extract_json_obj_checked('{\n "units": [\n  {"at": "aaa", "kind": "행동"},\ns    {"at": "bbb", "kind": "속마음"}\n ]\n}')
+    check("줄 맨 앞 잡토큰(ns + 객체 여는 글자) 뒤의 객체도 주워담는다(2026-09-11 실측 — 예전엔 배열째 버렸다)",
+          bool(_ns[0]) and len(_ns[0].get("units") or []) == 2, (_ns[1] or "")[:60])
+    _v = CI.extract_json_obj_checked('{"units":[{"at":"“하아… 렌 님….” 가까이 왔다","kind":"대사"}]}')
+    check("값 안 곡선 따옴표·줄임표는 이번 복구로도 죽지 않는다(2026-09-10 회귀)",
+          bool(_v[0]) and "“하아… 렌 님….”" in str(_v[0]), (_v[1] or "")[:60])
+
+
     # ── ⑯ [2026-09-10] --special 10회 실행 분석으로 남긴 6가지 (2·5·6·7 항목)
     _rs16 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
     check("회차 실패·게이트 중단이 콘솔이 아니라 error.log에도 남는다(perr)",

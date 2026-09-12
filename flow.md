@@ -83,7 +83,7 @@
 
 | # | 위치 | 용도 | 호출 | 파라미터 | 출력 | 실패 시 |
 |---|---|---|---|---|---|---|
-| 1 | `comic_input._extract_once` | 본문 → 기승전결 가이드 + `segments`(막 앵커) + `units`(화면 항목) | EP당 1회(창이 여러 개면 창마다) — 파싱 실패/예외 시 **2회**(2회는 `temperature=0.0`) → 실패하면 **체크포인트 3단**: `merge_extract_cached`(빈 칸만 이어받기) → `fill_missing_extract`(빈 항목만 재확인) → `infer_missing_from_profile`(공식 태그·직업 추론) → `save_extract_checkpoint` |
+| 1 | `comic_input._extract_once` | **시트 + 본문 + 장면 카드** → 기승전결 가이드 + `segments`(막 앵커) + `units`(화면 항목) — `[에피소드 N 본문]` 블록은 필수입니다(한때 주석 처리돼 `at`이 지어졌습니다) | EP당 1회(창이 여러 개면 창마다) — 파싱 실패/예외 시 **2회**(2회는 `temperature=0.0`) → 실패하면 **체크포인트 3단**: `merge_extract_cached`(빈 칸만 이어받기) → `fill_missing_extract`(빈 항목만 재확인) → `infer_missing_from_profile`(공식 태그·직업 추론) → `save_extract_checkpoint` |
 | 2 | `anima_gen._generate_tags_via_llm` (호출은 `anima_gen.py:1127` → `openAPI_control.openAI_response`, 825) | 회차 렌더 태그 일체 (face / makeup / exposure / parts / body / background / expressions / partner / location / time / safety) | EP당 1회 | `openAI_response` 경로 = plot.json `mainLLM` 해석 모델 (qwen 계열은 `enable_thinking=False`, 그 외 `repeat_penalty 1.15 + top_k 64`, 800s timeout·3회 재시도) | 태그 dict → `config.*_tag`, `config.current_level` | client 없거나 파싱 실패 → **결정론 fallback 태그**(`fb`) |
 | 3 | `comic_gen.py:1625` (장면 루프 안) | 장면 본문 → **컷 스크립트 JSON** | **장면당 1회** (장면 = 항목 ≤6개 묶음, 본문 ≤1800자) | `call_openai_for_text`, `reasoning_effort="low"`, `enable_thinking=False` | 컷 배열(pose/camera/position/caption_ko/lines/clothes/climax…) | 장면당 `retry`회 재시도 → 여전히 미달이면 남은 컷을 **침묵 컷**으로 채움(`notes`에 기록) |
 
@@ -114,6 +114,18 @@
 ---
 
 ## 3. 단계별 상세
+
+### 3.0 [B] 입력 로딩 — `comic_input.load_inputs` (평문 계약 + `--special` 어댑터)
+
+평문 2종(본문·시트)이 이 repo의 입력 계약입니다. 로컬 단편 생성기 `progress/` 산출물만 예외이고, 그 번역은 `novel_progress.py`가 전담합니다(선택 import).
+
+1. 머리(`=== Episode N ===`, `# 주인공 (…)`)/꼬리(`--- 캐릭터 시트 ---`) 제거, `#####`·`##EPISODE N:` 구간 헤더 제거.
+2. **장면 카드**(2026-09-11): `[LOCATION]/[SITUATION]/[TIME]/[CLOTHES]`(구형 `[장소: … / 상황: …]`)를 4필드로 파싱 — 회차 시작 카드는 `act=""`(본문 맨 앞), 막 중간 카드는 `act`+`idx`(그 막의 해당 항목 앞)에 붙습니다. 라벨은 사라지고 `장소: …`·`시간: …`·`…의 복장: …` 상태 줄만 남습니다.
+3. `[TALK]`→`이름: 대사`(화자 추정: ① 발화 안의 호명 → ② 직전 서술의 주어(`렌이 …`) → ③ 교대 순서 — 1음절 이름은 조사 검출만 허용), `[INNER]`→`(속마음) …`.
+4. **막 앵커**는 어댑터가 본문 사본으로 확정(`기:` 라벨 + 그 아래 첫 줄) — 카드를 먼저 넣어도 앵커가 어긋나지 않습니다(`split_by_segments`는 접두사 매칭).
+5. 시트 JSON → 평문 시트 + config **우선**주입(이름·성별·머리/눈/피부·표정·몸매). `clothes`는 한글 산문이라 우선주입하지 않습니다(영문 태그화는 LLM 몫).
+
+`--special` 장면 카드의 2차 경로: 회차 시작 카드 → `CI.extract(scene_cards=)` → 추출 프롬프트 `[장면 카드(원작 지정)]`, 회차 전체 → `apply_to_config(scene_cards=)` → `config.ep_scene_cards[회차]`.
 
 ### 3.1 [C] 추출 — `comic_input.extract` (807) / `_extract_once` (790)
 - 프롬프트는 `에피소드 전문 + 시트 + 규칙 블록`. 본문은 §2-1 예산만큼만 넣습니다.
@@ -230,6 +242,13 @@
 | 규칙 블록 잘림(응답만 옴) | 문자 예산 산식, 장면 1800자 상한 | `episode_char_budget` |
 | LLM이 JSON을 깨뜨림 | ① 관대한 파서(`json_soft_fix`) ② 객체 단위 구제(`_salvage_objects`) ③ 재시도(추출 2회·태그 2회·컷 스크립트 장면당 2회) ④ 그래도 모자라면 침묵 컷/에러 | `comic_input._extract_once`, `anima_gen._generate_tags_via_llm`, `request_panel_script(retry=2)` | — 에러·경고는 `log/error.log`에 복제(실행 구분자 포함)
 | 키 앞에 홀 글자(러 / U+2024)가 섞여 배열째 파싱 실패(실측) | `json_soft_fix`가 잡문자·이상 따옴표 정리 → 실패 시 `_salvage_objects`가 짝 맞는 `{}`만 주워拾음(부분 손실 < 전량 손실) | `comic_input.json_soft_fix`, `comic_gen._salvage_objects` |
+| `[LOCATION]` 카드가 메타로 취급되지 않아 기 막 **끝** 자유 서술로 밀렸다(2026-09-11 신형 입력) | 키별 한 줄 카드(한/영 키 모두)를 파싱해 회차 시작은 본문 맨 앞·막 중간은 그 막 제자리로 배치, 라벨은 본문에서 제거 | `novel_progress._parse_card_line`, `render` |
+| 막 라벨 **뒤**에 온 카드가 다음 막으로 밀렸다(실 입력은 라벨 앞/뒤 둘 다 쓴다) | 다음 `[ACTION]`을 만나기 전에 카드를 흘려 그 항목 앞에 놓는다 | `novel_progress.parse_episode` |
+| 추출 프롬프트에서 본문 블록이 빠져 시트만 갔다(`units.at`가 본문에 없는 문장 → 앵커 실패 → guides 지어짐) | `[에피소드 N 본문]` 복원 + selftest로 블록 존재 고정(본문은 `episode_char_budget` 안에서만 자른다) | `comic_input.build_extract_prompt` |
+| 키 자리에 따옴표+홀 글자가 붙었다(`{"의 "at": …`, 2026-09-11 실측) — 줄 중간이라 행 두께 규칙을 못 탔다 | `{`·`[`·`,` 뒤 키 자리만 보는 복구 규칙 추가(값 안 곡선 따옴표·줄임표는 여전히 안 건드림) | `comic_input.json_soft_fix` |
+| ComfyUI가 렌더 도중 죽으면(실측 17:04) 빈 페이지 슬롯이 생겨 `ValueError`로 회차가 통째로 죽었다 | 빈 슬롯은 건너뛰고, 렌더 5연속 실패로 중단으로 판정해 남은 컷 대기를 접고, 페이지는 렌더된 컷 기준 레이아웃으로 짠다 | `comic_page_merge.compose_pages`, `comic_gen.comic_gen_episode` |
+| 원작 생성기가 `서버 응답 실패 (…)` 한 줄만 남긴 회차(ep05 실측) | 본문 300자 미만 + 막 앵커 없으면 회차를 건너뜀(rc 5) — 근거 없는 컷 6개를 지우지 않는다 | `novel_progress.load`, `run_comic._RC_WHY[5]` |
+| 잡히지 않은 예외가 날것 traceback만 남기고 조용히 끝남 | 예외도 error.log에 복제(트레이스 Lines 포함) 후 재던진다 | `run_comic.__main__` |
 | 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |
 | 컷이 **직접 입은** 옷이 아니라 직전 컷에서 **승계된** `clothes`가 상태 시트를 덮어 컷의 옷 변화가 사라짐(실측 EP10) | 승계분에는 `_clothes_prev` 표시 → 우선순위 `state 시트 > 컷이 직접 쓴 clothes > 승계(무시)` | `comic_gen._repair_panels`, `comic_gen.fold_cut_state` |
 | 첫 컷 보충답이 한글/산문 → 태그로 못 써 버리고 → 게이트가 회차를 통째로 죽임(실측 EP09) | 프롬프트에 '소문자 영문 태그' 지시 + `[회차 시작 후보]` 영문 태그를 근거로 제공 → 답이 unusable이면 회차 시작 태그로 명시 보충 | `comic_gen.fill_first_cut` |
@@ -265,7 +284,7 @@
 | 크롭 | 세로 가운데(전폭에서 얼굴 보존 51%) | **얼굴 앵커/8% 폴백**(79~98%) |
 | 템플릿 | 14종, 페이지마다 독립 추첨 | **34종, 회차 안 재사용**, 전폭 비중 0.5 상한 |
 | 정제 로그 | 컷마다 1,557줄 | 회차 끝 **1줄** |
-| selftest | — | **PASS 520 / FAIL 0** |
+| selftest | — | **PASS 542 / FAIL 0** |
 | 추출 스키마 `cuts` | 항목 모드에서 항상 1·값은 코드 폐기·**디코딩 사고 1순위 자리** | 프롬프트에서 제거(파서·키 접기는 2차 방어) |
 | 실행 로그 | append → 초기화 없음, 동시 실행 혼입, 덤프가 에러로 복제 | 초기화 + PID 락 + `[pid]` 줄 + 덤프 제외 |
 | 회차 실패 가시성 | stdout만, 산출물 구멍 방치 | error.log 복제 + `episode_NN_SKIPPED.txt` + 완성/스킵 요약 |
@@ -292,7 +311,7 @@
 
 **확인 질문 (직접 돌려볼 것)**
 ```bash
-venv/bin/python selftest.py                                   # PASS 520 / FAIL 0
+venv/bin/python selftest.py                                   # PASS 542 / FAIL 0
 venv/bin/python run_comic.py --episode inputs/ep90_deadbeef.txt --ep 1 --total-episodes 3 --dry-run
 venv/bin/python run_comic.py --episode inputs/ep90_deadbeef.txt --ep 1 --no-item-cuts --dry-run   # 회귀 비교
 tail -80 log/comic_gen.log | grep -E "화면 장치|컷 스크립트 완성|프롬프트 정제"

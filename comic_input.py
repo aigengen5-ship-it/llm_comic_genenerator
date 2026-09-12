@@ -107,7 +107,7 @@ def read_text(path: str) -> str:
         return f.read().decode("utf-8", "replace").strip()
 
 
-def episode_char_budget(reserve_tokens: int = EXTRACT_RESERVE_TOKENS) -> int:
+def episode_char_budget(reserve_tokens: int = EXTRACT_RESERVE_TOKENS, sheet_text: str = "") -> int:
     """LLM 호출 1회에 넣어도 안전한 본문 글자 수 (plot.json ollama_num_ctx → 글자).
 
     num_ctx를 넘기면 ollama는 에러 없이 프롬프트 앞부분을 버린다 → 규칙/스키마가 증발한 채
@@ -120,7 +120,12 @@ def episode_char_budget(reserve_tokens: int = EXTRACT_RESERVE_TOKENS) -> int:
         nc = 0
     if nc <= 0:
         nc = OLLAMA_DEFAULT_NUM_CTX
-    return max(EPISODE_TEXT_CAP_MIN, int((nc - int(reserve_tokens)) * CHARS_PER_TOKEN))
+    room = max(EPISODE_TEXT_CAP_MIN, int((nc - int(reserve_tokens)) * CHARS_PER_TOKEN))
+    # [2026-09-11] 시트도 프롬프트에 같이 들어간다(최대 4,000자 ≈ 2,200토큰) — 예약 2,000토큰을
+    #   시트가 먼저 먹으면 본문 때문에 num_ctx를 넘고, ollama는 **프롬프트 앞부분(규칙·스키마)**을 버린다.
+    if sheet_text:
+        room = max(EPISODE_TEXT_CAP_MIN, room - int(len(sheet_text) / CHARS_PER_TOKEN))
+    return room
 
 
 # 문장 종결 직후(또는 개행)에서 자른다. re lookbehind는 고정폭(1문자)만 허용된다.
@@ -595,15 +600,36 @@ def strip_markdown(text: str) -> str:
 
 
 # ------------------------------------------------------------------ LLM 추출
+def scene_card_block(cards, for_start: bool = True) -> str:
+    """장면 카드 → 추출 프롬프트 블록 (한글 원문 그대로 보낸다 — 번역은 LLM이 한다)
+
+    2026-09-11 --special 신형 입력: `[LOCATION]/[SITUATION]/[TIME]/[CLOTHES]`은 **원작이 정한
+    장소·상황·시간·복장**이다. 회차 시작 카드는 회차 태그(clothes/background)의 정답이고,
+    막 중간 카드는 그 컷들의 상태이므로 컷 스크립트(본문)가 받는다(for_start=False).
+    """
+    got = []
+    for c in (cards or []):
+        if not isinstance(c, dict) or (c.get("act") and for_start):
+            continue
+        ln = " / ".join(f"{k}: {c[k]}" for k in ("장소", "상황", "시간", "복장") if c.get(k))
+        if c.get("복장 주인") and c.get("복장"):
+            ln = ln.replace(f"복장: {c['복장']}", f"{c['복장 주인']}의 복장: {c['복장']}")
+        if ln and ln not in got:
+            got.append(ln)
+    return "\n".join(got[:4])
+
+
 def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
-                         need_segments: bool = True) -> str:
+                         need_segments: bool = True, scene_cards=None) -> str:
     """평문 2종 → 구조화 JSON 추출 프롬프트
 
     need_segments=False: 막 앵커를 파서(novel_progress)가 이미 확보했을 때. LLM에게
       "一字不사본"을 요구할수록 오히려 한 글자 어긋나 분할이 죽으므로 요구 자체를 내린다.
+    scene_cards: --special 장면 카드([LOCATION]…). 회차 시작 카드만 here 쓰고, 막 중간 카드는
+      본문과 함께 컷 스크립트로 간다.
     """
-    ep = (episode_text or "")[:episode_char_budget()]
     sh = (sheet_text or "")[:SHEET_TEXT_CAP]
+    ep = (episode_text or "")[:episode_char_budget(sheet_text=sh)]   # 시트 길이까지 뺀 본문 예산
     seg_schema = ('"segments": ["기/승/전/결 각 첫 문장의 **앞부분 ~40자를 본문에서 그대로 복사**(접두 조각도 OK, 총 4개)"],'
                   if need_segments else '"segments": [],')
     # units는 항상 부탁한다 — 유닛은 컷 배분의 저울이라 막 앵커를 파서가 이미 갖고 있어도 필요하다.
@@ -662,6 +688,12 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
                  "   (이 값은 컷 pose에 주입되는 $키워드다 → 짧게 정확히)")
         rule5 = ("5. rating은 본문 수위 기준(청년향 상한=nsfw). 강한 성행위가 나와도 nsfw로만 평가하고\n"
                  "   explicit는 쓰지 않는다.")
+    _cards = scene_card_block(scene_cards)
+    _card_sec = ("\n\n[장면 카드(원작 지정 — 이 값이 정답)]\n" + _cards) if _cards else ""
+    card_rule = ("0. [장면 카드]가 주어지면 그 값을 외모·복장·배경 필드의 **1순위 근거**로 쓴다"
+                 " (카드가 본문 서술과 어긋나면 카드가 정답이다). 한글 지문을 그대로 쓰지 말고"
+                 " 영문 태그로 옮긴다 — 예: '다크 네이비 슬림핏 학생 바지' → navy shirt, navy pants.\n"
+                 if _cards else "")
     return f"""{role_line}
 아래 [캐릭터 시트(평문)]와 [에피소드 {ep_num} 본문]만 읽고 JSON 하나만 출력하세요. 설명문/코드펜스 금지.
 
@@ -690,7 +722,7 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
 }}
 
 규칙:
-1. 외모·복장 필드(APPEARANCE)는 반드시 **소문자 영문 태그**만. 한글/설명문 금지. 시트에 없으면 본문에서推断, 그래도 없으면 가장 무난한 태그.
+{card_rule}1. 외모·복장 필드(APPEARANCE)는 반드시 **소문자 영문 태그**만. 한글/설명문 금지. 시트에 없으면 본문에서 추론, 그래도 없으면 가장 무난한 태그.
 2. guides.protagonist 4문장은 본문의 사건의 순서를 그대로 요약(도입→위기→클라이맥스→마무리), 각 문장에 **장소·복장·구체 행동**을 포함한다.
 {rule3}
 4. 성별은 문맥(대명사/서술) 기준으로 판단, 애매하면 female.
@@ -703,12 +735,17 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
 
 [캐릭터 시트(평문)]
 {sh}
+{_card_sec}
 
+[에피소드 {ep_num} 본문]
+{ep}
 """
 
-# 본문 미사용
-#[에피소드 {ep_num} 본문]
-#{ep}
+# [2026-09-11] 주의: 한때 여기가 "# 본문 미사용"으로 comment-out 되어 추출 LLM이 **시트만** 읽었다.
+#   프롬프트 첫 줄은 "시트와 본문을 읽고"라고 하는데 본문이 없으니 units의 'at'이 본문에 없는
+#   문장으로 되고(앵커 매칭 실패 → 글자 수 분할로 후퇴), guides는 지어진다. 지우면 안 되는 블록.
+# #[에피소드 {ep_num} 본문]
+#   episode_text는 episode_char_budget() 안에서 자른다(규칙+시트 예약 토큰은 EXTRACT_RESERVE_TOKENS).
 # [2026-09-09] 추출 실패 실측 재현: gemma가 키 앞 따옴표를 이상한 유니코드 문자로 디코딩한다
 #   "eye_color": "brown eyes",\n․  "skin_color": ...   → U+2024 ONE DOT LEADER
 #   json.loads는 "Expecting property name enclosed in double quotes"로 죽고 우리는 {}를 받았다.
@@ -753,6 +790,14 @@ def json_soft_fix(text: str) -> str:
     t = re.sub(r'(?m)^(\s*)[*\u2022\u00b7]+(?=\s*")', r'\1', t)                                        # * "문장",  (마크다운 총알)
     # 키 앞에 섞여 들어온 홀 글자(실측: ...,\n\ub7ec  "background": "shopping mall") — Q4 디코딩 사고
     t = re.sub(r'(?m)^(\s*)[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u3040-\u30ff]{1,3}\s+(?=")', r"\1", t)
+    # [2026-09-11] 실측(new progress 입력): {"의 "at": "이런 은밀한…"} — `{`·`,` 바로 뒤 **키 자리**에
+    #   열림 따옴표 뒤에 한글 홀 글자(+공간)가 붙고 나서야 진짜 키가 왔다(21개 항목 중 마지막 하나).
+    #   즉 `{"의 "at": …` — 행이 아니라 줄 중간에서
+    #   터지므로 위의 행 두께 규칙들이 못 잡는다. 값 자리(`:` 뒤)는 이 패턴이 닿지 않는다.
+    t = re.sub(r'([\{\[,]\s*)"?\s*[^\x00-\x7F\s][^\x00-\x7F\s]{0,7}\s*"(?=[A-Za-z_])', r'\1"', t)
+    # [2026-09-11 실측] 줄 맨 앞에 붙은 잡토큰(`ns    {"at": …`) — 객체/배열 여는 글자 바로 앞에
+    #   온 1~8글자짜리 단어는 JSON이 아니다(정상 응답은 줄이 `{`, `[`, `"키":`로 시작한다).
+    t = re.sub(r'(?m)^[ \t]*[A-Za-z\uac00-\ud7af\u3131-\u318f\u3040-\u30ff]{1,8}[ \t]*(?=[{\[])', '', t)
     t = re.sub(r",\s*([}\]])", r"\1", t)                                             # trailing comma
     return _repair_lines(t)
 
@@ -1289,13 +1334,14 @@ def infer_missing_from_profile(data, missing=None) -> tuple:
 
 
 def _extract_once(episode_text: str, sheet_text: str, ep_num: int, log_fn=None,
-                  need_segments: bool = True, attempts: int = 2) -> dict:
+                  need_segments: bool = True, attempts: int = 2, scene_cards=None) -> dict:
     """본문 1창 → LLM → 정규화 dict. **JSON 파싱 실패/예외는 재시도**(2회는 temp 0.0으로).
 
     Q4 디코딩 사고(키 앞 이상 문자)는 재시도로 피하는 것이 가장 싸다 — 관대한 파서(`json_soft_fix`)를
     통과하지 못한 응답만 다시 묻는다.
     """
-    prompt = build_extract_prompt(episode_text, sheet_text, ep_num, need_segments=need_segments)
+    prompt = build_extract_prompt(episode_text, sheet_text, ep_num, need_segments=need_segments,
+                                  scene_cards=scene_cards)
     last, raw = "", ""
     for k in range(1, max(1, int(attempts)) + 1):
         try:
@@ -1312,13 +1358,14 @@ def _extract_once(episode_text: str, sheet_text: str, ep_num: int, log_fn=None,
             return _normalize_extract(data)
         last = _perr
         if k < int(attempts):
-            clog(f"추출 JSON 파싱 실패({k}회): {_perr[:110]} → 재시도합니다")
+            # 재시도로 recover해도 **어떤 자리가 왜 깨졌는지**는 남겨야 다음에 고칠 수 있다(2026-09-11)
+            clog(f"추출 JSON 파싱 실패({k}회): {_perr[:220]} → 재시도합니다")
     clog(f"추출 실패({max(1, int(attempts))}회 시도): {last[:150]} (응답 앞 120자): {str(raw)[:120]}")
     return {}
 
 
 def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,
-            char_budget: int = 0, need_segments: bool = True) -> dict:
+            char_budget: int = 0, need_segments: bool = True, scene_cards=None) -> dict:
     """본문 전체 → 구조화 dict. 컨텍스트 예산을 넘기면 창(beat)으로 쪼개 창당 1회 → 병합.
 
     통째로 한 번에 넣으려다 num_ctx에 넘어가면 프롬프트 앞부분(=추출 규칙)이 잘려
@@ -1326,12 +1373,13 @@ def extract(episode_text: str, sheet_text: str, ep_num: int = 1, log_fn=None,
     """
     ep_num = max(1, int(ep_num or 1))        # 회차 번호는 1기준(--ep 0 습관 흡수) — 키가 0으로 박히면
                                              # 조회가 1기준이라 기승전결 가이드가 통째로 '(가이드 없음)'이 된다
-    budget = int(char_budget or episode_char_budget())
+    budget = int(char_budget or episode_char_budget(sheet_text=(sheet_text or "")[:SHEET_TEXT_CAP]))
     body = episode_text or ""
     windows = [body] if len(body) <= budget else (split_beats(body, max_chars=budget) or [body])
     parts = []
     for wi, w in enumerate(windows, 1):
-        d = _extract_once(w, sheet_text, ep_num, log_fn, need_segments=need_segments)
+        d = _extract_once(w, sheet_text, ep_num, log_fn, need_segments=need_segments,
+                          scene_cards=scene_cards)
         if d:
             parts.append(d)
             if len(windows) > 1:
@@ -1382,7 +1430,8 @@ def _merge_overrides(base: dict, overrides: dict) -> dict:
 
 def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int = 1,
                     panels_per_page: int = 5, book_num: int = 0, total_episodes: int = 1,
-                    overrides: dict = None, segments: list = None, safety: str = "") -> None:
+                    overrides: dict = None, segments: list = None, safety: str = "",
+                    scene_cards: list = None) -> None:
     """추출 결과 → config 주입 (init_anima_tags 필수 10필드 + 컷 스크립트 입력)
 
     overrides : 시트 JSON 등에서 온 우선값 {"protagonist":{…},"partner":{…}} — LLM보다 앞선다
@@ -1484,6 +1533,11 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     # [2026-09-09] 사건(액션) 단위 + 컷 수 — 컷 배분의 저울을 '글자 수'에서 '사건'으로 옮긴다 (comic_gen)
     config.ep_action_units = {**(getattr(config, "ep_action_units", {}) or {}),
                               ep_num: normalize_units((data or {}).get("units"))}
+    # [2026-09-11] --special 장면 카드([LOCATION]/[SITUATION]/[TIME]/[CLOTHES]) — 원작이 정한
+    #   장소·시간·복장이다. 본문에 줄로 남아 있기도 하지만(컷 스크립트가 읽는다), 회차 시작 값과
+    #   막 전환 값을 구분해 쓰려면 구조화된본이 필요하므로 여기에 별도로 남긴다.
+    config.ep_scene_cards = {**(getattr(config, "ep_scene_cards", {}) or {}),
+                             ep_num: [dict(c) for c in (scene_cards or []) if isinstance(c, dict)]}
 
     # 에피소드 본문: progress/ 가 없으므로 config 폴백이 유일한 원천
     while len(config.episode_content) <= idx:
@@ -1520,7 +1574,8 @@ def load_inputs(episode_path: str, sheet_path: str = "", special=None) -> dict:
              "(권장: run_comic.py --special)")
     if not use:
         return {"episode_text": strip_markdown(ep_raw), "sheet_text": strip_markdown(sh_raw),
-                "segments": [], "overrides": {}, "ep_num": 0, "format": "plain", "notes": []}
+                "segments": [], "cards": [], "empty_body": False, "overrides": {}, "ep_num": 0,
+                "format": "plain", "notes": []}
     import novel_progress as NP                        # 어댑터는 선택적 — 코어 import 그래프에 넣지 않는다
     info = NP.load(episode_path, sheet_path)
     body = strip_markdown(info.get("episode_text") or "")
@@ -1528,11 +1583,15 @@ def load_inputs(episode_path: str, sheet_path: str = "", special=None) -> dict:
     for n in info.get("notes") or []:
         clog(f"⚠ 어댑터: {n}")
     _loss = (100.0 * (1 - len(body) / len(ep_raw))) if len(ep_raw) else 0.0
+    _cards = list(info.get("cards") or [])
+    _mid = [c for c in _cards if c.get("act")]
     clog(f"입력[progress]: {os.path.basename(episode_path)} → 본문 {len(body)}자"
          f"(원문 {len(ep_raw)}자, 어댑터 정리 {-_loss:.0f}%) / 시트 {len(sheet)}자 / 막 앵커 {len(info.get('segments') or [])}개"
+         f" / 장면 카드 {len(_cards)}장(시작 {len(_cards) - len(_mid)}·막 중간 {len(_mid)})"
          f" / 시트 우선주입 {sorted(((info.get('overrides') or {}).get('protagonist') or {}).keys())}")
     return {"episode_text": body, "sheet_text": sheet,
             "segments": list(info.get("segments") or []),
+            "cards": _cards, "empty_body": bool(info.get("empty_body")),
             "overrides": info.get("overrides") or {}, "ep_num": int(info.get("ep_num") or 0),
             "format": info.get("format") or "novel_progress", "notes": info.get("notes") or []}
 

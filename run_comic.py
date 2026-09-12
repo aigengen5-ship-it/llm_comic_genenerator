@@ -200,6 +200,7 @@ def perr(msg: str = ""):
 
 # 실패 코드 → 사람이 읽는 사유 (산출물 옆 스킵 메모의 내용)
 _RC_WHY = {1: "페이지 0장(렌더는 했는데 합성된 페이지가 없음)",
+           5: "에피소드 본문이 비어 있음(원작 생성 실패 — 컷을 그릴 근거가 없음)",
            2: "추출 실패 또는 컷 스크립트가 필수 상태를 채우지 못해 렌더 전에 중단",
            3: "프리플레이트(ollama/ComfyUI/폰트 등) 실패",
            4: "dry-run 태그 초기화 실패"}
@@ -519,15 +520,21 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     _prev_fail = (CI.load_extract_record(_xkey) or {}).get("failed") or []
     if _prev_fail and not getattr(args, "fresh_extract", False):
         p(f"  ○ 지난 실행에서 이 원고의 추출이 실패했습니다: {_prev_fail[-1][:90]}")
+    if inp.get("empty_body"):
+        # 원작 생성기가 본문 자리에 오류 문장만 남긴 회차(실측 ep05) — LLM을 태우지 않고 건너뜁니다
+        perr(f"  ✗ EP{ep_num:02d} 원고 없음({len(ep_text)}자 · 기승전결 앵커 없음) — 원작 생성 실패로 보입니다"
+             " (이 회차를 건너뛰고 다음 회차는 계속합니다)")
+        return 5
+    _cards = list(inp.get("cards") or [])       # --special 장면 카드([LOCATION]…) — 원작 지정값
     data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
-                      need_segments=not inp["segments"])   # 막 앵커를 파서가 확보했으면 LLM에게 시키지 않는다
+                      need_segments=not inp["segments"], scene_cards=_cards)   # 막 앵커를 파서가 확보했으면 LLM에게 시키지 않는다
     if not data and args.start_llm:
         host, port = _ollama_host_port()     # 기동 확인 후 죽은 경우(직전 실행 반납 경합) 한 번만 재시도
         if not _tcp(host, port, 1.0):
             p("  추출 중 ollama 사망 — 재기동 후 추출 1회 재시도")
             if start_ollama():
                 data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
-                                  need_segments=not inp["segments"])
+                                  need_segments=not inp["segments"], scene_cards=_cards)
     if not data:
         perr("✗ 필드 추출 실패 — LLM(textLLM) 상태와 plot.json을 확인하세요. 상세: log/comic_input.log")
         # [2026-09-10] 예전은 여기서 그냥 나가 체크포인트가 없었습니다(재실행이 0부터 시작).
@@ -561,6 +568,7 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     CI.apply_to_config(data, ep_text, sheet_text, ep_num=ep_num,
                        panels_per_page=args.panels_per_page, book_num=args.book,
                        total_episodes=total_eps, overrides=inp["overrides"],
+                       scene_cards=_cards,
                        segments=inp["segments"], safety=args.safety)
     if args.no_wide:
         CG.WIDE_ENABLE = False
@@ -1098,6 +1106,17 @@ def _resolve_jobs(args, ap):
 if __name__ == "__main__":
     try:
         rc = main()
+    except Exception as e:
+        # 예전엔 날것 traceback만 stdout에 남고 로그에는 아무 흔적이 없었습니다(2026-09-11 실측:
+        #   ComfyUI 중단 → compose_pages ValueError). 최소한 "어떤 예외로 죽었는지"는 남깁니다.
+        import traceback
+        perr(f"[오류] 실행 중 예외({type(e).__name__}): {e}")
+        try:
+            for _ln in traceback.format_exc().strip().split("\n"):
+                runlog.note(_ln, "RUN")
+        except Exception:
+            pass
+        raise
     finally:
         # [2026-09-08] 성공/실패/dry-run 어느 경로로 끝나도 LLM은 확실히 내린다.
         #   컷 스크립트가 0컷으로 early return되면comic_gen_episode의 반납 코드를 타지 않아

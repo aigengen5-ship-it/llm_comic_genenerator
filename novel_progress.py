@@ -8,16 +8,22 @@
     === Episode 3 ===                      {"protagonist": {"hair_color": "light brown hair", …},
     # 주인공 (오카다 유즈키) / 직업…          "partner": {"appearance": "회색 중간 머리", …}}
     --- 에피소드 내용 ---
-    [장소: … / 상황: … / 시간: … / …의 복장: …]
+    ##EPISODE 3:                           ← 구간 헤더(지문 아님)
+    [LOCATION]: …  [SITUATION]: …          ← 장면 카드 (2026-09-11 신형: 키마다 한 줄)
+    [TIME]: …  [CLOTHES]: …
     #####
     기:
-    [ACTION]: …  [TALK]: …  [INNER]: …
+    [ACTION] …  [TALK] …  [INNER] …
     승: … 전: … 결: …
     --- 주인공 캐릭터 시트 --- (꼬리에 시트가 한 번 더 있다)
 
+  장면 카드는 **회차 시작뿐 아니라 기승전결 중간에도** 올 수 있습니다(막 라벨 직전 = 그 막의 장면).
+  구형은 한 줄에 `[장소: … / 상황: … / 시간: … / …의 복장: …]`로 붙어 있었고, 두 종을 함께 받습니다.
+
 어댑터가 하는 일 (코어 파이프라인은 아무것도 모른다)
-  1) 본문 평문화 : 머리/꼬리 블록 제거, `#####` 구분선 제거, `[ACTION]`→서술, `[TALK]`→`이름: 대사`,
-     `[INNER]`→`(속마음) …`, `[장소/상황/시간/복장]` 메타 라인은 지문으로 살린다.
+  1) 본문 평문화 : 머리/꼬리 블록 제거, `#####` 구분선·`##EPISODE N:` 제거, `[ACTION]`→서술,
+     `[TALK]`→`이름: 대사`, `[INNER]`→`(속마음) …`. 장면 카드는 **지문이 아니라 상태 줄**로
+     잡은 자리에 그대로 놓는다(`장소: …` / `시간: …` / `…의 복장: …`).
   2) 기승전결 앵커 결정론 확보 : 막 첫 행을 **본문 원문 사본**으로 그대로 돌려준다.
      (지금까지 4줄 앵커는 LLM이 一字不사본으로 베껴와야 했고, 한 글자만 어긋나도
       기승전결 분할이 글자수 균등 분할로 후퇴했다 — comic_gen.py의 `ep_beat_segments` 경로)
@@ -27,7 +33,8 @@
      LLM 추정보다 우선한다. 10화 동안 캐릭터가 갈라지지 않는 실익이 있다.
      단 `clothes`(한글 산문)는 넣지 않는다 — Anima는 영문 태그만 알아, 번역은 LLM 몫으로 남긴다.
 
-여기서 만들지 못하는 것(=LLM에 남기는 일): guides 요약, $행동 키워드, 수위, 한글 복장→영문 태그.
+여기서 만들지 못하는 것(=LLM에 남기는 일): guides 요약, $행동 키워드, 수위, 한글 복장·장소→영문 태그.
+장면 카드의 한글 지문을 영문 태그로 옮기는 일은 추출/컷 스크립트 LLM이 한다(`config.ep_scene_cards`).
 
 실행: run_comic.py --special --episode <ep파일 또는 progress/ 디렉터리> [--sheet 시트.json]
 """
@@ -49,6 +56,14 @@ ACT_RE = re.compile(r"^\s*(기|승|전|결)\s*[:：]\s*$")
 LINE_RE = re.compile(r"^\s*\[(ACTION|TALK|INNER)\]\s*[:：]?\s*(.*)$", re.S)
 DIVIDER_RE = re.compile(r"^\s*(?:#{1,12}|[-=*_]{3,}|={3,})\s*$")     # '#####' · '===' 구분선
 META_HEAD_RE = re.compile(r"^\s*[（(\[]?\s*장소\s*[:：]", re.S)
+EP_HEAD_RE = re.compile(r"^\s*#+\s*EPISODE\b", re.I)                 # '##EPISODE 1:' — 지문이 아니라 구간 헤더
+# 장면 카드: [LOCATION]/[SITUATION]/[TIME]/[CLOTHES] (2026-09-11 신형) = 장소/상황/시간/복장 (구형)
+#   신형은 키마다 한 줄, 구형은 한 줄에 '장소: … / 상황: …'로 붙어 있다. 둘 다 받는다.
+_CARD_KEY_RE = re.compile(
+    r"^[\[\(（]?\s*(?P<k>시간의 흐름|시간|상황|장소|LOCATION|SITUATION|TIME|CLOTHES|복장"
+    r"|(?P<owner>.{1,20}?)의\s*복장)\s*[\]\)）]?\s*[:：]\s*(?P<v>.*)$", re.S | re.I)
+CARD_KEYS = {"location": "장소", "situation": "상황", "time": "시간", "clothes": "복장",
+             "장소": "장소", "상황": "상황", "시간": "시간", "복장": "복장"}
 ANCHOR_MAX = 120            # split_by_segments는 접두사 매칭이라 잘라도 붙는다( comic_input 주석)
 
 # ------------------------------------------------------------------ 시트 키 별칭 (회차마다 다른 두 종을 함께 받는다)
@@ -186,33 +201,71 @@ def sniff(text: str) -> bool:
 
 
 # ------------------------------------------------------------------ 본문 파서
-def _parse_meta(line: str) -> dict:
-    """[장소: … / 상황: … / 시간: … / 오카다 유즈키의 복장: …] → {키: 값} (키 명칭 회차별 상이)"""
-    s = line.strip().lstrip("[（(").rstrip("]）)]").strip()
-    out, misc = {}, []
-    for piece in re.split(r"\s*/\s*", s):
-        piece = piece.strip()
-        if not piece:
-            continue
-        m = re.match(r"^(시간의 흐름|시간|상황|장소|복장|(.{1,20}?)의\s*복장)\s*[:：]\s*(.*)$", piece, re.S)
-        if not m:
-            misc.append(piece)
-            continue
-        if m.group(1).startswith("시간"):
+def _parse_card_line(line: str) -> dict:
+    """장면 카드 한 줄 → {장소,상황,시간,복장,(복장 주인)} — 카드가 아니면 {}
+
+    2026-09-11 신형: `[LOCATION]: …` 처럼 **키마다 한 줄** (값에 '/'가 들어가도 쪼개지 않는다).
+    그 앞 구형: `[장소: … / 상황: … / 아야의 복장: …]` 처럼 **한 줄에 여러 필드**.
+    키는 한/영 모두 받는다 (LOCATION·SITUATION·TIME·CLOTHES / 장소·상황·시간·복장).
+    """
+    s = str(line or "").strip()
+    if not s:
+        return {}
+    cand = [p.strip() for p in re.split(r"\s*/\s*", s) if p.strip()]
+    pieces = cand if len(cand) > 1 and all(_CARD_KEY_RE.match(p) for p in cand) else [s]
+
+    def _put(out, m):
+        k = str(m.group("k") or "").strip()
+        # 값 꼬리에 남은 닫는 괄호(구형은 한 줄 전체가 [ … ] 로 감싸 있다)와 쉼표만 버린다.
+        #   '심야 (밤)' 처럼 짝이 맞는 괄호는 내용이다 — 열린 괄호 수보다 닫힌 것이 많을 때만 지운다.
+        v = re.sub(r"\s+", " ", str(m.group("v") or "")).strip().strip(" ,;")
+        _open_of = {")": "(", "）": "（", "]": "[", "］": "［", "〕": "［", "»": "«"}
+        while v and v[-1] in _open_of and v.count(v[-1]) > v.count(_open_of[v[-1]]):
+            v = v[:-1].rstrip().rstrip(" ,;")
+        ku = k.upper()
+        if ku == "LOCATION" or k == "장소":
+            key = "장소"
+        elif ku == "SITUATION" or k == "상황":
+            key = "상황"
+        elif ku == "TIME" or k.startswith("시간"):
             key = "시간"
-        elif m.group(1) in ("상황", "장소"):
-            key = m.group(1)
-        else:                                            # "복장" / "오카다 유즈키의 복장"
+        else:                                            # "복장" / "오카다 유즈키의 복장" / CLOTHES
             key = "복장"
-            out["복장 주인"] = out.get("복장 주인") or (m.group(2) or "")
-        out[key] = (out.get(key, "") + " " + m.group(3).strip()).strip()
+            own = re.sub(r"\s+", " ", str(m.group("owner") or "")).strip()
+            if own and not out.get("복장 주인"):
+                out["복장 주인"] = own
+        if v:
+            out[key] = (out.get(key, "") + " " + v).strip() if out.get(key) else v
+
+    out = {}
+    m0 = _CARD_KEY_RE.match(pieces[0])
+    if not m0:
+        return {}                                        # 첫 조각이 키가 아니면 카드가 아니다
+    _put(out, m0)
+    misc = []
+    for p in pieces[1:]:
+        m = _CARD_KEY_RE.match(p)
+        if m:
+            _put(out, m)
+        else:
+            misc.append(p)
     if misc:
         out["비고"] = " / ".join(misc)
     return out
 
 
+def _parse_meta(line: str) -> dict:
+    """[장소: … / 상황: … / …] → {키: 값} — 구형 한 줄 카드를 위한 호환 엔트리"""
+    return _parse_card_line(line)
+
+
 def parse_episode(path: str) -> dict:
-    """epNN_hash.txt → {"ep","plot_hash","names","meta","acts","tail_sheet","head"}"""
+    """epNN_hash.txt → {"ep","plot_hash","names","meta","cards","acts","tail_sheet","head"}
+
+    `cards`는 **장면 카드**(장소·상황·시간·복장) 목록이고 잡은 자리를 함께 갖는다:
+      {"장소":…, "상황":…, "시간":…, "복장":…, "act": "승"|"", "idx": 0}
+    회차 시작(막 라벨 앞) 카드는 `act=""`, 막 중간 카드는 그 막의 `idx`(몇 번재 항목 앞).
+    """
     raw = _read(path)
     m = EP_FILE_RE.match(os.path.basename(path or ""))
     head, rest = (raw.split(BODY_MARK, 1) + [raw])[:2] if BODY_MARK in raw else (raw, "")
@@ -232,31 +285,54 @@ def parse_episode(path: str) -> dict:
 
     lines = [x.rstrip() for x in body.splitlines()]
     meta, acts, act, stray = {}, {}, "", []
+    cards, pending, seen_acts = [], None, []
     for i, ln in enumerate(lines):
         s = ln.strip()
-        if not s or DIVIDER_RE.match(s):
-            continue
-        if not meta and META_HEAD_RE.match(s):
-            meta = _parse_meta(s)
-            continue
+        if not s or DIVIDER_RE.match(s) or EP_HEAD_RE.match(s):
+            continue                                    # '#####' · '=== Episode' · '##EPISODE 1:'
         am = ACT_RE.match(s)
         if am:
             act = am.group(1)
             acts.setdefault(act, [])
+            if pending:
+                # 회머리 카드(첫 막 라벨 앞)는 act="" — 본문 맨 앞에 놓고 막 앵커는 실제 사건 줄에 둔다.
+                # 그 뒤 막 라벨 직전의 카드는 **그 막의 장면 전환**(act에 붙인다).
+                cards.append(dict(pending, act="" if not seen_acts else act, idx=0))
+                pending = None
+            seen_acts.append(act)
             continue
         lm = LINE_RE.match(s)
         if lm:
             tag, txt = lm.group(1).upper(), re.sub(r"\s+", " ", lm.group(2)).strip()
             if txt:
-                acts.setdefault(act or "기", []).append((tag, txt))
+                _cur = act or "기"
+                # 막 라벨 **뒤**에 온 카드도 있다(실 입력은 라벨 앞/뒤 둘 다 쓴다) — 다음 항목이
+                # 시작하기 전에 반드시 흘려야 그 항목 앞에 카드가 놓인다. 안 그러면 카드가 다음 막으로 밀린다.
+                if pending:
+                    cards.append(dict(pending, act="" if not seen_acts else _cur,
+                                      idx=len(acts.get(_cur, []))))
+                    pending = None
+                acts.setdefault(_cur, []).append((tag, txt))
+            continue
+        card = _parse_card_line(s)                      # [LOCATION]/[TIME]/[CLOTHES] … (키별 한 줄)
+        if card:
+            if pending is None:
+                pending = dict(card)
+            else:                                       # 키마다 한 줄씩 → 한 장으로 합친다
+                for k, v in card.items():
+                    pending[k] = (pending.get(k, "") + " " + v).strip() if pending.get(k) else v
             continue
         stray.append(s)                                   # 라벨 없는 자유 서술 → 뒤에서 첫 막에 붙인다
+    if pending:                                           # 회차 끝에 카드만 남은 경우
+        cards.append(dict(pending, act="" if not seen_acts else act,
+                          idx=len(acts.get(act or "기", []))))
     for s in stray:
         acts.setdefault("기", []).append(("TEXT", s))
+    meta = next((dict(c) for c in cards if not c.get("act")), {})
 
     return {"ep": int(m.group(1)) if m else 1, "plot_hash": m.group(2) if m else "",
-            "names": names, "meta": meta, "acts": acts, "tail_sheet": tail.strip(),
-            "head": head.strip()}
+            "names": names, "meta": meta, "cards": cards, "acts": acts,
+            "tail_sheet": tail.strip(), "head": head.strip()}
 
 
 # ------------------------------------------------------------------ 평문화
@@ -266,70 +342,151 @@ def _tokens(name: str) -> list:
     return [n] + [t for t in n.split() if len(t) >= 2]
 
 
+def _tokens_all(name: str) -> list:
+    """1음절 이름도 남긴다 ('카즈키 렌' → ['카즈키 렌','카즈키','렌']) — **조사 검출용**.
+
+    호명/언급 검출은 2음절 이상만 쓴다(1음절은 '렌즈' 같은 단어 일부에 빨려 들어간다).
+    반면 조사와 붙는 검출(`렌이`/`렌가`)은 단어가 끝나야 걸리므로 1음절도 안전하다 —
+    이걸 빼면 '렌'이 아예 안 잡혀 화자가 뒤바뀐다(2026-09-11 실측).
+    """
+    n = re.sub(r"\s+", " ", str(name or "")).strip()
+    return [n] + [t for t in n.split() if t]
+
+
 class _Speakers:
-    """[TALK]에는 화자 표기가 없습니다 — 호명 어휘 > 교대 순서 순으로 추정해 이름을 붙여 줍니다.
+    """[TALK]에는 화자 표기가 없습니다 — **호명 > 직전 서술의 주어 > 교대 순서**로 추정합니다.
     (컷 스크립트는 `주인공:`/`상대방:` 2줄을 강제하지만, 본문에 이름이 없으면 화자가 뒤바뀝니다)"""
 
     def __init__(self, names: dict):
         self.disp = {"protagonist": names.get("protagonist") or "주인공",
                      "partner": names.get("partner") or "상대방"}
-        pro = [t for t in _tokens(names.get("protagonist", ""))]
-        par = [t for t in _tokens(names.get("partner", ""))]
+        pro, par = _tokens(names.get("protagonist", "")), _tokens(names.get("partner", ""))
+        pro_s, par_s = _tokens_all(names.get("protagonist", "")), _tokens_all(names.get("partner", ""))
         self.pro = [t for t in pro if t and t not in par]
         self.par = [t for t in par if t and t not in pro]
+        # 조사(이/가/께서)와 붙어 쓸 토큰은 **1음절도 넣는다** ('렌이'를 놓치면 화자가 뒤바뀐다).
+        #   단 '렌즈'처럼 단어 일부로 빨려 들어가는 호명 검출(plain substring)은 2음절 이상만 쓴다.
+        self.pro_s = [t for t in pro_s if t and t not in par_s]
+        self.par_s = [t for t in par_s if t and t not in pro_s]
         self.last = ""                      # 화자 미확정 상태 (회차 첫 발화는 주인공으로 본다)
+        self.actor = ""                     # 직전 서술([ACTION]/[INNER])의 **주어** — 발화 단서
+
+    def _mentioned(self, text: str) -> str:
+        hit_pro = any(t in text for t in self.pro)
+        hit_par = any(t in text for t in self.par)
+        if hit_pro and not hit_par:
+            return "protagonist"
+        if hit_par and not hit_pro:
+            return "partner"
+        return ""
+
+    def observe(self, text: str) -> None:
+        """[ACTION]/[INNER] 줄의 **주어**를 적어 둔다 — 화자 단서가 없는 [TALK]의 3순위 근거.
+
+        이름을 '불른 것'(목적어·관형어)과 '움직인 것'(주어)은 조사로 구분한다. 실측
+        (ep01_c09a…): `그 뒤를 따라 들어온 카즈키 렌이 … 소이치로의 가냘픈 뒷모습을 관찰한다.`
+        에서 화자는 렌(주어)인데, 이름 언급만 보면 둘 다 걸려 단서가 사라진다.
+        """
+        subj = set()
+        for who, toks in (("protagonist", self.pro_s), ("partner", self.par_s)):
+            for t in toks:
+                if re.search(re.escape(t) + r"\s*(?:이|가|께서)(?!\w)", text):
+                    subj.add(who)
+        if len(subj) == 1:
+            self.actor = next(iter(subj))
+            return
+        if not subj:
+            who = self._mentioned(text)          # 조사 단서가 없으면 홀로 언급된 인물을 따른다
+            if who:
+                self.actor = who
 
     def who(self, text: str) -> str:
+        """화자 추정: ① 발화 안의 호명(그 인물을 불렀다 → 상대 발화) → ② 직전 서술의 주어 → ③ 교대 순서.
+
+        2026-09-11 실측: `[ACTION] 카즈키 렌이 … 관찰한다.` 뒤의 발화가 "후훗, 저 고결해 보이는
+        선도부장님이…" — '선도부장님'은 사전에 없어 ③만 타면 회차 첫 발화가 주인공에 박혀
+        **두 발화가 통째로 뒤바뀐다**(렌 대사가 주인공 말풍선이 된다).
+        """
         hit_pro = any(t in text for t in self.pro)          # 주인공을 불렀다 → 상대방 발화
         hit_par = any(t in text for t in self.par)
         if hit_pro and not hit_par:
             spk = "partner"
         elif hit_par and not hit_pro:
             spk = "protagonist"
+        elif self.actor:
+            spk = self.actor                                # ② 화면에서 움직인 인물
         elif not self.last:
-            spk = "protagonist"                             # 화자 단서 없음 & 회차 첫 발화 → 주인공
+            spk = "protagonist"                             # ③ 화자 단서 없음 & 회차 첫 발화 → 주인공
         else:
             spk = "partner" if self.last == "protagonist" else "protagonist"
         self.last = spk
         return spk
 
 
+def _card_lines(card: dict, sp: "_Speakers") -> list:
+    """장면 카드 → 본문에 들어갈 상태 줄 (한글 원문 그대로 — 영문 태그로 옮기는 일은 LLM 몫)"""
+    out = []
+    for k in ("장소", "상황", "시간"):
+        if card.get(k):
+            out.append(f"{k}: {card[k]}")
+    if card.get("복장"):
+        owner = card.get("복장 주인") or sp.disp["protagonist"]
+        out.append(f"{owner}의 복장: {card['복장']}")
+    if card.get("비고"):
+        out.append(f"비고: {card['비고']}")
+    return out
+
+
 def render(parsed: dict) -> tuple:
     """본문 평문화 → (text, segments)
 
     segments는 **이 함수가 만든 본문 원문 사본**이라 split_by_segments가 반드시 찾습니다.
+    장면 카드는 잡은 자리에 그대로 놓는다 — 회차 시작 카드는 맨 앞, 막 카드(막 라벨 직전)는
+    라벨 바로 아래. 막 앵커는 라벨 다음에 오는 **첫 줄**(카드일 수도 있다)을 취하므로,
+    카드를 앞에 둬도 막 분할이 어긋나지 않는다.
     """
     sp = _Speakers(parsed.get("names") or {})
     lines, segments = [], []
-    meta = parsed.get("meta") or {}
-    if meta:
-        order = [k for k in ("장소", "상황", "시간") if meta.get(k)]
-        for k in order:
-            lines.append(f"{k}: {meta[k]}")
-        if meta.get("복장"):
-            owner = meta.get("복장 주인") or sp.disp["protagonist"]
-            lines.append(f"{owner}의 복장: {meta['복장']}")
-        if meta.get("비고"):
-            lines.append(f"비고: {meta['비고']}")
+    pre, per_act = [], {}
+    for c in parsed.get("cards") or []:
+        (per_act.setdefault(str(c.get("act") or ""), []).append(c)
+         if c.get("act") else pre.append(c))
+    for c in pre:
+        lines += _card_lines(c, sp)
     for act in ACTS:
         items = (parsed.get("acts") or {}).get(act) or []
-        if not items:
+        by_idx = {}
+        for c in per_act.get(act) or []:
+            try:
+                at = int(c.get("idx", 0) or 0)
+            except Exception:
+                at = 0
+            by_idx.setdefault(max(0, min(at, len(items))), []).append(c)
+        block = []
+        for j, (tag, txt) in enumerate(items):
+            for c in by_idx.get(j, []):               # 항목 앞에 낀 카드 = 이 지점의 장면 전환
+                block += _card_lines(c, sp)
+            if tag == "TALK":
+                out = f"{sp.disp[sp.who(txt)]}: {txt}"
+            elif tag == "INNER":
+                sp.observe(txt)                             # 속마음의 주어는 다음 발화의 단서가 된다
+                out = f"(속마음) {txt}"
+            else:
+                sp.observe(txt)                             # 서술의 주어(누가 움직이나)를 기억한다
+                out = txt
+            block.append(out)
+        for c in by_idx.get(len(items), []):          # 막 끝에 온 카드
+            block += _card_lines(c, sp)
+        if not block:
             continue
         if lines:
             lines.append("")
         lines.append(f"{act}:")
-        for j, (tag, txt) in enumerate(items):
-            if tag == "TALK":
-                out = f"{sp.disp[sp.who(txt)]}: {txt}"
-            elif tag == "INNER":
-                out = f"(속마음) {txt}"
-            else:
-                out = txt
-            if j == 0:
-                # 앵커에 막 라벨 줄을 함께 넣는다 — split_by_segments의 경계가 라벨 줄 맨 앞에서 잡히므로
-                # "승:"가 앞 막 꼬리에 남지 않는다(공백 무관 매칭이라 개행이 들어가도 붙는다).
-                segments.append(f"{act}:\n{out}"[:ANCHOR_MAX])
-            lines.append(out)
+        lines += block
+        # 앵커에 막 라벨 줄을 함께 넣는다 — split_by_segments의 경계가 라벨 줄 맨 앞에서 잡히므로
+        # "승:"가 앞 막 꼬리에 남지 않는다(공백 무관 매칭이라 개행이 들어가도 붙는다).
+        first = next((b for b in block if b.strip()), "")
+        segments.append(f"{act}:\n{first}"[:ANCHOR_MAX])
     body = "\n".join(lines).strip()
     return body, segments[:4] if len(segments) >= 2 else []
 
@@ -524,10 +681,23 @@ def load(episode_path: str, sheet_path: str = "") -> dict:
         notes.append("시트 JSON이 없어 본문 꼬리의 '--- 캐릭터 시트 ---'를 사용했습니다")
     else:
         sheet_text = ""
-    if not segments:
+    # [2026-09-11] 실측 ep05: 원작 생성기가 본문 자리에 "서버 응답 실패 (…)" 한 줄만 남긴 회차가
+    #   있었습니다. 이걸로 돌리면 근거 없는 컷 6개가 지어지니 런너가 회차를 건너뛸 수 있게 알립니다.
+    empty_body = bool(not segments and len(body) < 300)
+    if empty_body:
+        notes.append(f"에피소드 본문이 {len(body)}자(기승전결 앵커 없음)로 사실상 비어 있습니다"
+                     " — 원작 생성 실패로 보입니다(이 회차는 건너뜁니다)")
+    elif not segments:
         notes.append("기승전결 막 라벨을 찾지 못해 컷 분할은 글자수 균등 분할로 돌아갑니다")
+    cards = list(parsed.get("cards") or [])
+    if cards:
+        mid = [c for c in cards if c.get("act")]
+        notes.append(f"장면 카드 {len(cards)}장(회차 시작 {len(cards) - len(mid)}장"
+                     + (f" · 막 중간 {len(mid)}장" if mid else "")
+                     + " — 장소·시간·복장 상태의 원작 지정값입니다")
     if parsed.get("ep") and not parsed.get("names"):
         notes.append("머리 블록에서 이름을 찾지 못했습니다 — 시트 JSON의 이름을 씁니다")
     return {"episode_text": body, "sheet_text": sheet_text, "segments": segments,
             "overrides": overrides, "ep_num": parsed.get("ep", 1), "meta": parsed.get("meta", {}),
+            "cards": cards, "empty_body": empty_body,
             "format": "novel_progress", "notes": notes}

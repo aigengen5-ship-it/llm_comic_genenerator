@@ -2522,6 +2522,55 @@ def main() -> int:
         _q_resp["/queue"] = '{"queue_running": [[1,{},null,null,"c"]], "queue_pending": [[2,{},null,null,"c"]]}'
         check("comfy_wait_queue_idle: 대기열이 안 비추면 False(=아직 안 나온 이미지)",
               anima_gen.comfy_wait_queue_idle(1, log_fn=lambda m: None) is False, "")
+
+        # ── [2026-09-12] 제출 직전 최종 워크플로우 JSON을 회차당 1장 남긴다 (LoRA 디버깅용)
+        import struct
+        _wf_dir = os.path.join(_tmpq, "wfdump")
+        _tpl = json.load(open(os.path.join(ROOT, "data_comfyui", "anima_spectrum_July11.json"), encoding="utf-8"))
+        anima_gen._workflow_dumped.clear()
+        anima_gen._apply_lora_nodes(_tpl, ("lora_a.safetensors", 1.0, "lora_b.safetensors", 0.6,
+                                           "some_unet.safetensors", "@trig, "))
+        _wf1 = anima_gen.dump_workflow_once(_tpl, episode=41, prefix="probe_prefix",
+                                            template="data_comfyui/anima_spectrum_July11.json", log_dir=_wf_dir)
+        _wf_path = os.path.join(_wf_dir, "comfyui_workflow_ep42.json")
+        _wf_doc = {}
+        if _wf1 and os.path.isfile(_wf_path):
+            _wf_doc = json.load(open(_wf_path, encoding="utf-8"))
+        check("최종 워크플로우를 log에 회차당 1장 남긴다(comfyui_workflow_epNN.json)",
+              _wf1.endswith("comfyui_workflow_ep42.json") and os.path.isfile(_wf_path)
+              and _wf_doc.get("workflow"), str(_wf1))
+        _slots = (_wf_doc.get("_debug") or {}).get("lora_slots") or {}
+        check("저장된 요약에 LoRA 온/오프·파일명·강도가 그대로 적힌다(--lora1/--str1 확인용)",
+              _slots.get("lora_1", {}).get("on") is True
+              and _slots.get("lora_1", {}).get("lora") == "lora_a.safetensors"
+              and _slots.get("lora_1", {}).get("strength") == 1.0
+              and _slots.get("lora_2", {}).get("strength") == 0.6
+              and (_wf_doc.get("_debug") or {}).get("unet") == "some_unet.safetensors", str(_slots))
+        check("같은 회차는 다시 뽑지 않는다(25컷 × 그래프 = 로그 폭발 방지)",
+              anima_gen.dump_workflow_once(_tpl, episode=41, prefix="p", log_dir=_wf_dir) == "", "")
+        check("다른 회차는 따로 뽑는다(--all-eps에서 회차별 비교가 가능해야 한다)",
+              anima_gen.dump_workflow_once(_tpl, episode=42, log_dir=_wf_dir)
+              .endswith("comfyui_workflow_ep43.json"), "")
+        check("workflow 블록은 제출 그래프와 같다(디버깅 위해 값을 안 고친다)",
+              json.dumps(_wf_doc.get("workflow") or {}, sort_keys=True, ensure_ascii=False)
+              == json.dumps(_tpl, sort_keys=True, ensure_ascii=False), "")
+        # TE 텐서 수 읽기(safetensors 헤더만 본다) — 가짜 파일로
+        _fake_root = os.path.join(_tmpq, "fakeroot")
+        os.makedirs(os.path.join(_fake_root, "models", "loras"), exist_ok=True)
+        _fake_lora = os.path.join(_fake_root, "models", "loras", "fake_te.safetensors")
+        _hdr = {"lora_unet_a.alpha": {}, "lora_te1_text.a": {}, "lora_te1_text.b": {}, "__metadata__": {}}
+        _hb = json.dumps(_hdr).encode("utf-8")
+        with open(_fake_lora, "wb") as _ff:
+            _ff.write(struct.pack("<Q", len(_hb)) + _hb)
+        _roots_bak = anima_gen._comfyui_roots
+        anima_gen._comfyui_roots = lambda: [_fake_root]
+        anima_gen._lora_te_cache.clear()
+        check("LoRA 헤더에서 TE 텐서 수를 센다(clip 미연결인지 눈으로 확인하는 근거)",
+              anima_gen._lora_te_tensors("fake_te.safetensors") == (2, 3)
+              and anima_gen._lora_te_tensors("없는파일.safetensors") is None,
+              str(anima_gen._lora_te_tensors("fake_te.safetensors")))
+        anima_gen._comfyui_roots = _roots_bak
+        anima_gen._workflow_dumped.clear()
         # 검증 실패(400 — 없는 unet/lora 파일 등)는 조용히 넘어가면 안 된다(예전부터 유지)
         from urllib.error import HTTPError as _HE
         import io as _io_g

@@ -781,12 +781,51 @@ def _sync_artist_trigger(resolved):
     return resolved
 
 
+_lora_te_cache = {}                # 파일명 → (TE 텐서 수, 전체 텐서 수) | None — safetensors 헤더는 한 번만 편다
+
+
+def _lora_te_tensors(name: str):
+    """LoRA 파일의 safetensors 헤더만 읽어 (lora_te* 개수, 전체 텐서 수)를 돌려준다. 읽을 수 없으면 None.
+
+    이 워크플로우는 Power Lora Loader(122)가 **model만** 연결한다(39 CLIPLoader는 86/87로 바로 간다).
+    따라서 TE 텐서가 있는 파일은 텍스트 쪽 가중치가 적용되지 않는다 — 그래서 '적용 안 된 것 같다'를
+    조사할 때 이 숫자를先看면 된다(anima LoRA는 통상 TE 0개라 model 연결만으로 충분하다).
+    """
+    if not name:
+        return None
+    if name in _lora_te_cache:
+        return _lora_te_cache[name]
+    out = None
+    try:
+        import struct as _struct
+        for root in _comfyui_roots():
+            path = os.path.join(root, "models/loras", name)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as f:
+                n = _struct.unpack("<Q", f.read(8))[0]
+                head = json.loads(f.read(n).decode("utf-8", "ignore"))
+            keys = [k for k in head if k != "__metadata__"]
+            out = (sum(1 for k in keys if str(k).startswith("lora_te")), len(keys))
+            break
+    except Exception:
+        out = None
+    _lora_te_cache[name] = out
+    return out
+
+
 def _apply_lora_nodes(prompt, resolved):
     """resolved → ComfyUI 워크플로우 반영 (노드 122 슬롯 + 노드 46 UNet).
 
     ★ [2026-09-09] "--lora1이 안 먹힌다"의 1순위 원인: 템플릿의 lora_1/lora_2 기본값이
       on:false인데 기존 코드는 lora/strength만 넣고 on을 건드리지 않았다 → LoRA는 항상 꺼져 있었다.
       강도>0 이면 on=True를 여기서 반드시 켠다.
+
+    ★ [2026-09-12] 연결 설계(바꾸지 말 것): 122는 **MODEL 입력만** 받는다 — 46 UNETLoader → 122 →
+      1017(AnimaBlockCompile) → 1016(샘플러). CLIP(39)은 86/87 텍스트 인코더로 바로 간다.
+      anima LoRA는 텐서가 전부 `lora_unet_*`(TE 0개)라 model 연결만으로도 정답이고, 실제로도 그 모양으로 제출된다
+      (`GET /history/<id>`의 122 번을 보면 on/lora/strength가 들어 있다). TE 텐서가 있는 파일을
+      고르면 그 부분만 적용 안 되므로 아래 로그로 알려준다(워크플로우를 clip까지 묶지 않는다).
     """
     if not resolved:
         return
@@ -806,8 +845,21 @@ def _apply_lora_nodes(prompt, resolved):
     now = (lora1, str1, lora2, str2, unet)
     if now != anima_lora_logged:
         anima_lora_logged = now
+        # 켜진 슬롯의 TE 텐서 수를 함께 찍는다 — "LoRA가 안 먹힌다"를 로그 하나로 판정하게
+        _te = []
+        for fname in (lora1, lora2):
+            if not fname:
+                continue
+            t = _lora_te_tensors(fname)
+            if t is None:
+                _te.append(f"{os.path.basename(fname)}: TE 확인 불가")
+            elif t[0]:
+                _te.append(f"{os.path.basename(fname)}: TE {t[0]}/{t[1]} ← clip 미연결이라 텍스트 쪽은 미적용")
+            else:
+                _te.append(f"{os.path.basename(fname)}: TE 0/{t[1]} (model 전용 — 정상)")
         log(f"[ComfyUI LoRA] lora_1={lora1 or '-'}({str1}) lora_2={lora2 or '-'}({str2}) "
-            f"unet={unet or '-'} | trigger={_trigger!r}")
+            f"unet={unet or '-'} | trigger={_trigger!r}"
+            + (" | " + " · ".join(_te) if _te else ""))
 
 
 def _resolve_cli_lora(episode):
@@ -1701,6 +1753,77 @@ def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, 
     return
 
 
+# ============================================================================
+# [2026-09-12] 제출 직전 **최종 워크플로우 JSON**을 회차당 1장 남긴다 (디버깅용)
+#   "LoRA가 켜졌나", "어떤 UNet을 봤나", "이 컷에 무슨 태그가 들어갔나"를
+#   서버 히스토리를 뒤지지 않고 local 파일로 확인한다. (log/ 는 런타임 산출물)
+# ============================================================================
+_workflow_dumped = set()           # 회차 번호 → 이미 뽑았는지 (--all-eps에서도 회차당 1장)
+
+
+def dump_workflow_once(prompt: dict, episode=None, prefix: str = "", template: str = "",
+                       log_dir: str = "./log") -> str:
+    """최종 제출 프롬프트(그래프)를 `log/comfyui_workflow_epNN.json`에 회차당 1번 쓴다 → 파일 경로("" = 건너뜀)
+
+    형식: {"_debug": {회차·nametag·prefix·seed·unet·LoRA 슬롯 요약}, "workflow": {제출된 그대로}}
+    `workflow`는 제출 내용과 **100% 동일**해야 하므로 여기에 무엇을도 섞지 않는다(요약은 _debug로).
+    """
+    try:
+        ep = int(episode) if episode is not None else int(getattr(config, "episode_num", 0) or 0)
+    except (TypeError, ValueError):
+        ep = 0
+    if ep in _workflow_dumped:
+        return ""
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        nodes = prompt or {}
+        n122 = ((nodes.get("122") or {}).get("inputs") or {})
+        slots = {}
+        for k, v in n122.items():
+            if str(k).startswith("lora_") and isinstance(v, dict):
+                slots[str(k)] = {"on": bool(v.get("on")), "lora": str(v.get("lora") or ""),
+                                 "strength": v.get("strength")}
+        te = {}
+        for k, v in slots.items():
+            if v["on"] and v["lora"]:
+                r = _lora_te_tensors(v["lora"])
+                if r:
+                    te[v["lora"]] = {"te_tensors": r[0], "all_tensors": r[1]}
+        payload = {
+            "_debug": {
+                "written_at": time_mod.strftime("%Y-%m-%d %H:%M:%S"),
+                "episode": ep + 1,
+                "anima_nametag": anima_nametag,
+                "prefix": prefix,
+                "template": template,
+                "seed": ((nodes.get("1016") or {}).get("inputs") or {}).get("seed"),
+                "resolution": [((nodes.get("123") or {}).get("inputs") or {}).get("width"),
+                               ((nodes.get("123") or {}).get("inputs") or {}).get("height")],
+                "unet": ((nodes.get("46") or {}).get("inputs") or {}).get("unet_name"),
+                "lora_slots": slots,
+                "lora_te_tensors": te,
+            },
+            "workflow": nodes,
+        }
+        path = os.path.join(log_dir, "comfyui_workflow_ep%02d.json" % (ep + 1))
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        _workflow_dumped.add(ep)
+        _sw = ", ".join(f"{k}={'ON' if v['on'] else 'off'} {v['lora'] or '-'}@{v['strength']}"
+                        for k, v in sorted(slots.items()))
+        log(f"[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): {path}")
+        log(f"[ComfyUI DEBUG]   unet={payload['_debug']['unet']} | seed={payload['_debug']['seed']} | "
+            f"{_sw or 'LoRA 슬롯 없음'}")
+        for f_, t in te.items():
+            if t["te_tensors"]:
+                log(f"[ComfyUI DEBUG]   {f_}: TE 텐서 {t['te_tensors']}/{t['all_tensors']} — "
+                    f"122는 model만 연결하므로 텍스트 쪽은 적용되지 않습니다")
+        return path
+    except Exception as e:
+        log(f"[ComfyUI DEBUG] 워크플로우 저장 실패(렌더는 계속): {e}")
+        return ""
+
+
 def queue_prompt(prompt):
     """ComfyUI에 프롬프트 큐에 추가 → **prompt_id** (서버가 답을 안 주면 "")
 
@@ -1842,6 +1965,9 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
     with open("./image/tag_out.json", "a", encoding="utf-8") as tag_file:
         tag_file.write(json.dumps(my_dict, ensure_ascii=False) + "\n")
     
+    # [2026-09-12] 제출 직전의 최종 그래프를 회차당 1장 남긴다 (LoRA/UNet/시드/태그 확인용)
+    dump_workflow_once(prompt, episode=episode, prefix=prefix, template=json_file)
+
     # ComfyUI 큐에 추가 (queue_count장; 기본 2 = 기존 동작)
     _ids = [x for x in (queue_prompt(prompt),) if x]
     if int(queue_count) > 1:

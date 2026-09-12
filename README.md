@@ -319,6 +319,28 @@ python run_comic.py --episode inputs/ep01.txt --lora1 lora_mi1k --lora2 lora_sex
 
 - 범위는 0.0~2.0이며 넘는 값은 클램프됩니다(`--str2 9` → 2.0).
 - `--real`/`--sole`은 LoRA를 전부 끄는 모드이므로 `--str1/--str2`도 함께 무시됩니다.
+
+**"LoRA가 정말 켜졌나" 확인하는 법** — 렌더를 시작하면 회차당 1장씩 **제출 직전의 최종 그래프**가
+`log/comfyui_workflow_epNN.json`으로 남습니다. 첫 줄 요약을 보면 답이 바로 나옵니다.
+
+```jsonc
+{"_debug": {
+   "unet": "anima_aestheticV11.safetensors", "seed": 777, "resolution": [1280, 1280],
+   "lora_slots": {
+     "lora_1": {"on": true, "lora": "b529e7df-…TA_trained.safetensors", "strength": 1.0},   ← --lora1/--str1
+     "lora_2": {"on": true, "lora": "ren45_v1.safetensors", "strength": 0.8},               ← --lora2/--str2
+     "lora_3": {"on": true, "lora": "rendering_detailer_base10-000400.safetensors", "strength": 0.4},
+     "lora_4": {"on": true, "lora": "anima_context_detailer_base10.safetensors", "strength": 0.25}
+   },
+   "lora_te_tensors": {"ren45_v1.safetensors": {"te_tensors": 0, "all_tensors": 840}}
+ },
+ "workflow": { …제출한 그래프 그 자체… }}
+```
+
+- `workflow` 블록은 서버로 간 내용과 **100% 동일**합니다(요약만 `_debug`로 따로 뒀습니다). 같은 걸 서버에서도 볼 수 있습니다: `GET /history/<prompt_id>`의 노드 `122`.
+- **`122`(Power Lora Loader)는 `model`만 연결합니다** — `46 UNETLoader → 122 → 1017 → 1016(샘플러)`. `39`(CLIPLoader)는 86/87 텍스트 인코더로 바로 갑니다. anima LoRA는 텐서가 전부 `lora_unet_*`(텍스트 인코더 가중치가 아예 없음)라서 **model 연결만으로 충분합니다** — 그래서 `lora_te_tensors`가 0이면 정상입니다. TE 텐서가 0이 아닌 파일을 고르면 로그가 "텍스트 쪽은 적용되지 않습니다"라고 알려줍니다.
+- 로그 한 줄로도 보입니다: `[ComfyUI LoRA] lora_1=…(1.0) lora_2=…(0.8) unet=…` · `[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): …`.
+- 템플릿(`data_comfyui/anima_spectrum_July11.json`)의 `on:false`는 **UI 기본값**입니다. 코드가 강도>0이면 제출 직전 `on:true`로 켭니다 — 템플릿만 보고 "꺼져 있다"로 오해하지 마세요.
 - 실제로 ComfyUI에 들어간 값은 `log/anima_gen.log`의 `[ComfyUI LoRA] lora_1=…(강도) … | trigger=…` 한 줄에서 확인됩니다.
 
 ### 3-6) 캐릭터 시트 작성법 — `#캐릭터 태그#`로 캐릭터를 지정해 주세요
@@ -882,6 +904,7 @@ comic/bookNNN/episode_NN_comic.json        base_seed/seeds/컷/페이지 계획(
 comic/bookNNN/episode_NN_script.json       dry-run 컷 스크립트
 image/*.png                                컷 원본(렌더)
 log/comic_gen.log, log/anima_gen.log, log/tag_out.txt   최종 프롬프트 기록(append)
+log/comfyui_workflow_epNN.json             회차당 1장 — ComfyUI에 제출한 **최종 그래프 그대로**(LoRA/UNet/시드/해상도 포함)
 log/error.log                                   에러·경고 이력 (지우지 않고 쌓습니다, 줄마다 pid)
 log/.run.lock                                   지금 실행 중인 PID (동시 실행 시 본 로그를 지키는 열쇠)
 comic/bookNNN/episode_NN_SKIPPED.txt             페이지를 못 만든 회차의 사유 (성공하면 사라집니다)

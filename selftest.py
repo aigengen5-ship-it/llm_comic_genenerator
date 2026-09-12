@@ -2917,6 +2917,37 @@ def main() -> int:
           CI.episode_char_budget(sheet_text="가" * 4000) < CI.episode_char_budget()
           and CI.episode_char_budget(sheet_text="가" * 40000) >= CI.EPISODE_TEXT_CAP_MIN,
           f"{CI.episode_char_budget()} → {CI.episode_char_budget(sheet_text='가' * 4000)}")
+    # LaTeX로 감싼 값(ep04 실측: "kind": $\\text{속마음}$ — 0.2/0.0 두 번 다 같은 형태로 회차를 잃었다)
+    def _texfix(_raw):
+        _f = CI.json_soft_fix(_raw)
+        try:
+            return json.loads(_f)["units"][0]["kind"], _f
+        except Exception as _e:
+            return f"{type(_e).__name__}", _f
+    _v, _f = _texfix('{"units": [{"at": "x", "kind": $\\\\text{속마음}$}]}')
+    check("LaTeX로 감싼 값(**$\\\\text{속마음}$**)을 따옴표 값으로 고쳐 회차를 살린다", _v == "속마음", f"{_v} | {_f[-32:]}")
+    _v, _f = _texfix('{"units": [{"at": "x", "kind": $\\\\text{속마음"}$}]}')
+    check('LaTeX 안 따옴표가 어긋난 형태(**$\\\\text{속마음"}$**)도 복구한다', _v == "속마음", f"{_v} | {_f[-32:]}")
+    _v, _f = _texfix('{"units": [{"at": "x", "kind": \\\\text{action}}]}')
+    check("\\\\text{…}(달러 없는 형태)도 복구한다", _v == "action", f"{_v} | {_f[-32:]}")
+    _v, _f = _texfix('{"units": [{"at": "x", "kind": $행동$}]}')
+    check("$…$로만 감싼 값도 복구한다", _v == "행동", f"{_v} | {_f[-32:]}")
+    check("따옴표 **안**의 달러 표기는 LaTeX로 오인하지 않는다",
+          json.loads(CI.json_soft_fix('{"a": "cost $100 and $200 ok", "b": "x"}'))["a"] == "cost $100 and $200 ok", "")
+    # ComfyUI가 쓰는 도중 복사한 잘린 PNG는 흰 칸이 된다 — 사본을 검수하고 다시 기다린다
+    _md = _mkdtemp_rl(prefix="selftest_png_")
+    _good = os.path.join(_md, "good.png")
+    Image.new("RGB", (64, 64), (10, 20, 30)).save(_good)
+    _cutp = os.path.join(_md, "cut.png")
+    with open(_cutp, "wb") as _fh:
+        _fh.write(open(_good, "rb").read()[:-16])            # IEND 잘라내기(실측과 같은 형태)
+    check("잘린 PNG 사본을 감지한다(IEND 없음) — 완성본은 통과, 없는 파일도 실패",
+          anima_gen.png_complete(_good) is True and anima_gen.png_complete(_cutp) is False
+          and anima_gen.png_complete(os.path.join(_md, "nope.png")) is False, "")
+    _ag_src = open(os.path.join(ROOT, "anima_gen.py"), encoding="utf-8").read()
+    check("사본이 미완성이면 삭제하고 다음 순환에 다시 복사한다(흰 칸으로 페이지를 채우지 않는다)",
+          "if not png_complete(dst):" in _ag_src and "다시 기다립니다" in _ag_src, "")
+
     # [2026-09-11] ComfyUI가 렌더 도중 죽은 실측에서 나온 3가지 방어선
     _mp4 = _mkdtemp_rl(prefix="selftest_gone_")
     _pp4 = []

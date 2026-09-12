@@ -1379,6 +1379,28 @@ def _comfyui_output_dirs(json_value: dict = None) -> list:
     return out
 
 
+def png_complete(path: str) -> bool:
+    """PNG가 끝(IEND)까지 다 써졌는지 확인한다 — ComfyUI가 쓰는 도중에 복사하면 끝이 잘린다.
+
+    잘린 파일은 PIL이 "image file is truncated"로 일부만 디코딩하고, 페이지 합성은 그 칸을 흰
+    배경으로 그려버립니다(2026-09-11 실측: EP01 25컷 중 10장 → page02 20%, page05 53%가 흰 칸).
+    """
+    try:
+        if not os.path.exists(path) or os.path.getsize(path) < 32:
+            return False
+        with open(path, "rb") as fh:
+            fh.seek(-12, os.SEEK_END)
+            tail = fh.read(12)
+        if b"IEND" not in tail:
+            return False
+        from PIL import Image                       #anima_gen:37 렌더 경로에서 늦게 부른다(의존 주입 회피)
+        im = Image.open(path)
+        im.load()                                   # 트레일러만 있고 데이터가 없는 파일도 걸러낸다
+        return im.width > 0 and im.height > 0
+    except Exception:
+        return False
+
+
 def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, wait_seconds: int = 120):
     """ComfyUI 이미지 생성 대기 후 ./image로 복사
 
@@ -1438,7 +1460,18 @@ def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, 
                             continue
                         if min_mtime and mtime < min_mtime:
                             continue          # 이전 실행이 만든 파일 → 이번 결과가 아니다
-                        shutil.copy2(src, os.path.join(target_dir, f))
+                        dst = os.path.join(target_dir, f)
+                        shutil.copy2(src, dst)
+                        if not png_complete(dst):
+                            # ComfyUI가 **아직 쓰는 중**이다 — 잘린 사본은 페이지에서 흰 칸이 된다.
+                            #   (2026-09-11 실측: EP01 컷 10장이 IDAT 헤더에서 잘려 page02~05가 텅 빈 칸)
+                            #   삭제하고 다음 순환(1초 뒤)에 다시 복사한다 — 최대 wait_seconds까지 대기.
+                            log(f"[ComfyUI] 사본이 아직 미완성(IEND 없음) → 다시 기다립니다: {f}")
+                            try:
+                                os.remove(dst)
+                            except OSError:
+                                pass
+                            continue
                         log(f"[ComfyUI] Copied: {f} <- {comfyui_output} -> ./image/")
                         found = True
                         break

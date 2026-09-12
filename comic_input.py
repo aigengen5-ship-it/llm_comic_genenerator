@@ -798,6 +798,17 @@ def json_soft_fix(text: str) -> str:
     # [2026-09-11 실측] 줄 맨 앞에 붙은 잡토큰(`ns    {"at": …`) — 객체/배열 여는 글자 바로 앞에
     #   온 1~8글자짜리 단어는 JSON이 아니다(정상 응답은 줄이 `{`, `[`, `"키":`로 시작한다).
     t = re.sub(r'(?m)^[ \t]*[A-Za-z\uac00-\ud7af\u3131-\u318f\u3040-\u30ff]{1,8}[ \t]*(?=[{\[])', '', t)
+    # [2026-09-11 EP04 실측] 값을 LaTeX로 감싸서 내보낸다 — `"kind": $\\text{속마음}$`(두 번째 시도는
+    #   `"kind": $\\text{속마음"}$`). 온도는 0.2→0.0으로 내렸는데도 같은 형태가 나와 이 회차를 잃었다.
+    #   키/값 자리에서 $…$·\\text{…} 안의 글자를 꺼내 따옴표로 감싼다(따옴표 **안**의 $는 건드리지 않는다).
+    def _latex(m):
+        inner = re.sub(r'[\\{}$"]+', '', m.group(2) or '').strip()
+        return (m.group(1) or '') + '"' + inner + '"'
+    _tex = r'(?:text|mathrm|mathbf|mathtt|mathit|operatorname)'
+    #   실측은 역슬래시가 두 개(`$\\text{속마음}$`)였다 — 1~4개까지 허용한다.
+    t = re.sub(r'([:\{,\[]\s*)\$\\{1,4}' + _tex + r'\s*\{([^{}\n]{0,80})\}\$', _latex, t)
+    t = re.sub(r'([:\{,\[]\s*)\\{1,4}' + _tex + r'\s*\{([^{}\n]{0,80})\}', _latex, t)
+    t = re.sub(r'([:\{,\[]\s*)\$([^{}\n$"]{1,80})\$', _latex, t)
     t = re.sub(r",\s*([}\]])", r"\1", t)                                             # trailing comma
     return _repair_lines(t)
 

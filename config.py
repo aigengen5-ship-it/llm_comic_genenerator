@@ -58,6 +58,7 @@ hair_length2 = ""       # "짧은 머리/중간 머리/긴 머리" 또는 "대�
 glasses2 = ""           # "안경" / "안경없음"
 eye_color2 = ""         # danbooru English (예: "brown eyes")
 skin_color2 = ""        # 예: "fair skin"
+age2 = 0                # 상대방 나이 (anima_gen._partner_body_token의 체형 토큰 보정에만 쓴다)
 
 # 서브 캐릭터 사용 여부 (comic 컷 스크립트에서 3인모드 여부 판단에만 사용)
 chr_num3 = 0
@@ -135,6 +136,13 @@ comic_item_cuts = True
 #   false(--no-strict-state)면 경고만 하고 회차 태그로 대체한다(= 태그가 꼬일 수 있다).
 comic_strict_state = True
 comic_templates_pin = []
+# [2026-09-12] 상대방(BBB) 외모를 고정 그룹 하나로 닫는다 (llm_shortnovel_generator_gui와 같은 정책)
+#   True  = (bald featureless faceless naked nude <체형> invisible man:3.0) — 외모 태그 오염 원천 차단
+#   False = [BBB HAIR]/[BBB FACE]/[BBB CLOTHES]… 상세 태그 (run_comic.py --partner-full)
+comic_partner_invisible = True
+# [2026-09-12] 페이지 합성 게이트 — 컷이 **전부** 렌더된 회차만 페이지로 합친다.
+#   true(run_comic --merge-partial)면 예전 동작: 렌더된 컷만으로 합성(마지막 페이지가 짧아진다).
+comic_merge_partial = False
 comic_layout_rolls = 10         # 페이지 수마다 레이아웃을 몇 번 다시 추첨해 목표 컷 수에 가까운 것을 고르는가
 comic_wide_share_max = 0.5
 comic_variation = 0

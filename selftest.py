@@ -676,6 +676,10 @@ def main() -> int:
     check("POV: 헤더 solo(상대는 OBSERVER로만)",
           "solo" in pp and "2girl" not in pp and "two girls" not in pp, pp[:160])
     # [2026-09-08] 시트 #캐릭터 태그# 는 정제·LLM 재작성을 통과하지 못할 수 있어 마지막에 보장 주입한다
+    # [2026-09-12] 상대방을 최소 태그로 그리는 기본값에서는 상대방 #태그#를 넣지 않는다(아래 새 검사).
+    #             아래 검사들은 상세 태그(--partner-full) 경로다.
+    _pi0 = getattr(config, "comic_partner_invisible", True)
+    config.comic_partner_invisible = False
     config.char_tags = ["Usagi Tsukino from Sailor Moon"]
     config.partner_char_tags = ["Tuxedo Mask"]
     p_tag_face = dict(panel_t, no=21, type="face")
@@ -695,6 +699,13 @@ def main() -> int:
     check("ensure_char_tags: 빠지면 앞(주인공)·뒤(상대방)로 채운다",
           miss.startswith("Usagi Tsukino from Sailor Moon, 1girl")
           and miss.endswith("Tuxedo Mask"), miss)
+    # [2026-09-12] 상대방이 최소 태그로 바뀌면 시트의 상대방 정체 태그는 외모·복장을 불러와 고정 그룹과 싸운다
+    config.comic_partner_invisible = True
+    _pinv = CG.build_panel_prompt(0, p_pov_det, "nsfw", gloss={})
+    check("상대방 최소 태그 중에는 시트의 #상대방 태그#를 넣지 않는다(주인공 태그는 그대로)",
+          "Tuxedo Mask" not in _pinv and "Usagi Tsukino from Sailor Moon" in _pinv
+          and "invisible" in _pinv, _pinv[:160])
+    config.comic_partner_invisible = _pi0
     config.char_tags, config.partner_char_tags = [], []
     # [2026-09-07] portrait = 정확한 정면 풀페이스 초상화 (사용자 지시)
     # [2026-09-09] ★서두 요약/에필로그 규칙(컷 텍스트 문법)이 face 검사까지 바꾼다 — 스위치를 끈다
@@ -974,7 +985,8 @@ def main() -> int:
     cap = {}
     orig_run, orig_wait = anima_gen.comfyui_run_anima, anima_gen._wait_and_copy_image
 
-    def fake_run(json_value, ep_idx, full_prompt, res, client=None, seed=None, queue_count=2):
+    def fake_run(json_value, ep_idx, full_prompt, res, client=None, seed=None, queue_count=2,
+                 ids_out=None):
         cap.setdefault("res", []).append(res)
         return "episode_01_comic_e1_p01_x_anima_"
 
@@ -2341,19 +2353,69 @@ def main() -> int:
           and _pn[2]["_state"]["p_face"] == "shocked" and _pn[2]["_state"]["p_clothes"] == "white shirt",
           str(_pn[2]["_state"])[:90])
     _bbb = lambda s: " ".join(l for l in s.split("\n") if l.startswith("[BBB"))
+    # [2026-09-12] 기본은 상대방 최소 태그(invisible man)라 아래 상세 태그 검사는 --partner-full 경로다
+    _pi_bak = getattr(config, "comic_partner_invisible", True)
+    config.comic_partner_invisible = False
     _pb1 = anima_gen._build_tag_block(0, "she talks", "front_view", "multi", "", "", False,
                                       cut_state=_pn[0]["_state"])
     _pb2 = anima_gen._build_tag_block(0, "he answers", "front_view", "multi", "", "", False,
                                       cut_state=_pn[1]["_state"])
-    check("상대가 화면에 있는 컷은 컷 상태가 회차 상대 태그를 덮는다",
+    check("[BBB] 상세 태그 경로(--partner-full): 컷 상태가 회차 상대 태그를 덮는다",
           "[BBB FACE] angry" in _bbb(_pb1) and "[BBB CLOTHES] white shirt" in _bbb(_pb1)
           and "average face" not in _bbb(_pb1), _bbb(_pb1)[:170])
-    check("표정이 없는 다음 컷도 상대의 직전 표정·복장을 유지한다",
+    check("[BBB] 상세 태그 경로: 표정이 없는 다음 컷도 직전 표정·복장을 유지한다",
           "angry" in _bbb(_pb2) and "white shirt" in _bbb(_pb2), _bbb(_pb2)[:170])
     check("한글·일본어로 온 상대 항목은 지금 버린다(최종 프롬프트에서 파기되는 값)",
           "[BBB HAIR]" not in anima_gen._build_tag_block(
               0, "x", "front_view", "multi", "", "", False,
               cut_state={**_pn[2]["_state"], "p_hair": "짧은 먼리"}))
+    # ── [2026-09-12] 상대방(BBB) 최소 태그 — 외모를 고정 그룹 하나로 닫는다 (gui와 같은 계약)
+    config.comic_partner_invisible = True
+    _pk_bak = (config.name2, config.sex2, config.appearance2, config.outfit2)
+    config.name2, config.sex2, config.appearance2, config.outfit2 = "카즈키 렌", "남자", "뚱뚱함, 대머리", "고등학교 교복"
+    check("기본은 상대방 최소 태그(invisible)", anima_gen._partner_invisible() is True, "")
+    check("체형 토큰은 6종 제한 · '뚱뚱함' → fat · skinny 미사용",
+          anima_gen._partner_body_token(0) == "fat"
+          and anima_gen._partner_body_token(0) in anima_gen.PARTNER_SIMPLE_BODY_TOKENS
+          and "skinny" not in anima_gen._partner_simple_tag(0), anima_gen._partner_body_token(0))
+    _grp = anima_gen._partner_simple_tag(0)
+    check("고정 그룹 (bald featureless faceless naked nude <체형> invisible man:3.0)",
+          _grp == f"(bald featureless faceless naked nude fat invisible man:3.0)", _grp)
+    _bbb_inv = _bbb(anima_gen._build_tag_block(0, "she talks", "front_view", "multi", "", "", False,
+                                               cut_state=_pn[0]["_state"]))
+    check("상세 태그 라인은 사라지고 고정 그룹 + RULE + 포즈만 남는다",
+          _grp in _bbb_inv and "[BBB RULE]" in _bbb_inv and "standing behind a counter" in _bbb_inv
+          and not any(f"[BBB {_t}]" in _bbb_inv for _t in ("HAIR", "FACE", "MAKEUP", "BODY",
+                                                           "CLOTHES", "EXPOSURE", "EXPRESSION")),
+          _bbb_inv[:220])
+    config.sex2 = "여자"
+    check("여성 상대방은 invisible woman", anima_gen._partner_simple_tag(0).endswith("invisible woman:3.0)"),
+          anima_gen._partner_simple_tag(0))
+    _obs_in = ("The visible parts of the Kazuki Ren in the frame are:\n"
+               "(the man's large tan hand:1.7), (his bare hands pressing her shoulder:1.6), "
+               "(muscular forearms:1.4), (black hair:1.2)")
+    _obs_out = anima_gen.simplify_partner_section(_obs_in, "Kazuki Ren")
+    check("LLM이 observer 섹션에 지어낸 외모 태그는 후처리에서 걷는다 (포즈·행동은 보존)",
+          anima_gen._partner_simple_tag(0) in _obs_out.split("\n")[1] and "tan hand" not in _obs_out
+          and "muscular forearms" not in _obs_out and "black hair" not in _obs_out
+          and "his bare hands pressing her shoulder" in _obs_out, _obs_out[:220])
+    config.sex2, config.appearance2, config.outfit2 = "남자", "평범한 일상복", "일상복"
+    check("이미 고정 그룹이면 멱등(두 번 돌려도 그대로)",
+          anima_gen.simplify_partner_section(_obs_out, "Kazuki Ren") == _obs_out, _obs_out[:120])
+    check("관찰자가 프레임에 없는 컷에 invisible 그룹을 끌어오지 않는다",
+          "invisible" not in anima_gen.simplify_partner_section(
+              "The visible parts of the Kazuki Ren in the frame are:\n(not visible in the frame)",
+              "Kazuki Ren"))
+    check("multi 컷도 상대방 정보를 받는다 (partner_block = pov or multi)",
+          "[BBB]" in anima_gen._build_tag_block(0, "two talk", "front_view", "multi", "", "", False,
+                                                partner_block=True, observer_block=False),
+          "")
+    check("--partner-full 스위치가 CLI에 있다", "--partner-full" in open(
+            os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read())
+    check("배송 문서에 상대방 최소 태그 정책이 적혀 있다",
+          "invisible man" in open(os.path.join(ROOT, "README.md"), encoding="utf-8").read())
+    config.comic_partner_invisible = _pi_bak
+    config.name2, config.sex2, config.appearance2, config.outfit2 = _pk_bak
     config.location, config.background_tag = "city street, rooftop, mall", ["crowd"] * 12
     _sb3 = [{"no": 1, "pose": "establishing", "state": {}},          # ★도입 컷은 장소를 비운다(실측)
             {"no": 2, "pose": "she sells", "state": {"place": "shopping street corner"}},
@@ -2371,6 +2433,158 @@ def main() -> int:
           '"state": ' in _gs and "직전 컷과 동일" in _gs and "accessories" in _gs)
     (config.clothes, config.clothes_late, config.face_style, config.face_style_late,
      config.body_shape, config.exposure_tag) = _keep_state
+
+    # ── ⑬g [2026-09-12] ComfyUI 큐 확인 — '이미지가 전부 만들어졌을 때만' 페이지를 합친다
+    #   (ComfyUI 없이도 도는 테스트: /queue·/history 응답을 통째로 짜깁는다)
+    import urllib.request as _UR
+    _UR_open = _UR.urlopen
+
+    class _Resp:
+        def __init__(self, body=b""): self._b = body
+        def read(self, *a): return self._b
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    import time as _time_g
+    _tmpq = os.path.join(tempfile.mkdtemp(prefix="st_q_"), "out")
+    os.makedirs(_tmpq, exist_ok=True)
+    _dstq = os.path.join(tempfile.mkdtemp(prefix="st_q_dst_"))
+    Image.new("RGB", (64, 64), (200, 30, 30)).save(os.path.join(_tmpq, "ep1_cut07_anima__00001_.png"))
+    _q_resp = {"/prompt": '{"prompt_id": "aaaa-1111", "number": 7}',
+               "/queue": '{"queue_running": [], "queue_pending": []}',
+               "/history/aaaa-1111": '{"aaaa-1111":{"status":{"status_str":"success","completed":true},'
+                                     '"outputs":{"91":{"images":[{"filename":"ep1_cut07_anima__00001_.png",'
+                                     '"subfolder":"","type":"output"}]}}}}',
+               "/history/dead-0000": '{"dead-0000":{"status":{"status_str":"error","completed":true},'
+                                     '"outputs":{}}}',
+               "/history/running-1": '{"running-1":{"status":{"status_str":"running","completed":false},'
+                                     '"outputs":{}}}'}
+
+    def _fake_open(req, timeout=None, **kw):
+        u = req if isinstance(req, str) else req.full_url
+        for k, v in _q_resp.items():
+            if u.endswith(k):
+                return _Resp(v.encode("utf-8"))
+        return _Resp(b"{}")
+
+    _dirs_bak = anima_gen._comfyui_output_dirs
+    anima_gen._comfyui_output_dirs = lambda json_value=None: [_tmpq]
+    _UR.urlopen = _fake_open
+    try:
+        check("queue_prompt는 큐에서 prompt_id를 받아 돌아온다(이 id로 결과를 확인한다)",
+              anima_gen.queue_prompt({"x": 1}) == "aaaa-1111", anima_gen.queue_prompt({"x": 1}))
+        check("comfy_prompt_status: 성공 = done", anima_gen.comfy_prompt_status("aaaa-1111") == "done", "")
+        check("comfy_prompt_status: 실행 실패 = failed", anima_gen.comfy_prompt_status("dead-0000") == "failed", "")
+        check("comfy_prompt_status: 아직 도는 중 = queued", anima_gen.comfy_prompt_status("running-1") == "queued", "")
+        check("comfy_prompt_status: 모르는 id = unknown", anima_gen.comfy_prompt_status("nope-9") == "unknown", "")
+        check("comfy_queue_depth: 대기열을 숫자로 읽는다", anima_gen.comfy_queue_depth() == (0, 0),
+              str(anima_gen.comfy_queue_depth()))
+        check("comfy_prompt_files: 히스토리가 파일명을 알려준다(이름 추측 불필요)",
+              anima_gen.comfy_prompt_files("aaaa-1111") == [("ep1_cut07_anima__00001_.png", "")], "")
+        _gotq, _fin = anima_gen._wait_and_copy_by_history(["aaaa-1111"], {}, _dstq, 20)
+        check("히스토리로 파일을 정확히 받는다(50자 절단·mtime 추측 없이)",
+              _fin and len(_gotq) == 1 and os.path.basename(_gotq[0]) == "ep1_cut07_anima__00001_.png"
+              and anima_gen.png_complete(_gotq[0]), str(_gotq))
+        _t0q = _time_g.time()
+        _gotf, _finf = anima_gen._wait_and_copy_by_history(["dead-0000"], {}, _dstq, 120)
+        check("실행 실패는 120초를 낭비하지 않고 즉시 알린다",
+              _finf and not _gotf and _time_g.time() - _t0q < 5, f"{_time_g.time() - _t0q:.1f}s")
+        check("서버를 못 보는 id는 최종 판정 아님(예전 이름 검색으로 폴백)",
+              anima_gen._wait_and_copy_by_history(["nope-9"], {}, _dstq, 5) == ([], False), "")
+        check("comfy_wait_queue_idle: 빈 대기열이면 True", anima_gen.comfy_wait_queue_idle(2) is True, "")
+        _q_resp["/queue"] = '{"queue_running": [[1,{},null,null,"c"]], "queue_pending": [[2,{},null,null,"c"]]}'
+        check("comfy_wait_queue_idle: 대기열이 안 비추면 False(=아직 안 나온 이미지)",
+              anima_gen.comfy_wait_queue_idle(1, log_fn=lambda m: None) is False, "")
+        # 검증 실패(400 — 없는 unet/lora 파일 등)는 조용히 넘어가면 안 된다(예전부터 유지)
+        from urllib.error import HTTPError as _HE
+        import io as _io_g
+
+        def _boom(req, timeout=None, **kw):
+            raise _HE("http://x/prompt", 400, "Bad Request", None, _io_g.BytesIO(b'{"error":"no lora"}'))
+        _UR.urlopen = _boom
+        try:
+            anima_gen.queue_prompt({"x": 1})
+            _http_ok = False
+        except _UR.HTTPError:
+            _http_ok = True
+        finally:
+            _UR.urlopen = _fake_open
+        check("검증 실패(400)는 그대로 예외로 올린다(조용히 성공 처리 금지)", _http_ok, "")
+    finally:
+        _UR.urlopen = _UR_open
+        anima_gen._comfyui_output_dirs = _dirs_bak
+
+    # ── ⑬g2 [2026-09-12] 페이지 합성 게이트 — 컷이 전부 안 모인 회차는 합치지 않는다
+    _script_g = {"panels": [{"no": i, "type": "action", "pose": f"She moves {i}.", "camera": "front_view",
+                             "position": "NONE", "climax": "", "caption_ko": "", "dialog": [],
+                             "wide": False, "facing": "front"} for i in (1, 2, 3)],
+                 "page_plans": [], "notes": []}
+    _paths_g = {}
+    for i in (1, 2, 3):
+        _paths_g[i] = os.path.join(_tmpq, f"gate_cut{i}.png")
+        Image.new("RGB", (1024, 1344), (30 * i, 90, 150)).save(_paths_g[i])
+    _bake = (CG.render_panel, CG.anima_gen.init_anima_tags, CG.request_ko_glossary,
+             CG.release_llm_for_gpu, CG.anima_gen.comfy_wait_queue_idle, CG.build_panel_prompt,
+             config.comic_merge_partial, CG.comic_out_dir)
+    _drop_g = {"n": 0}
+
+    def _gate_run(available, renderer=None):
+        """렌더가 available번 컷까지만 성공시키는 회차 실행 → comic_gen_episode의 판정
+
+        renderer를 주면 그 함수를 렌더로 씁니다(재전송 경로 테스트용)."""
+        def _rp(ep_idx, panel, seed, safety_tag, json_value, **kw):
+            return _paths_g[panel["no"]] if panel["no"] <= available else None
+        if renderer is not None:
+            _rp = renderer
+        CG.render_panel = _rp
+        CG.anima_gen.init_anima_tags = lambda *a, **k: {"status": "ok"}
+        CG.request_ko_glossary = lambda *a, **k: {}
+        CG.release_llm_for_gpu = lambda *a, **k: None
+        CG.anima_gen.comfy_wait_queue_idle = lambda *a, **k: True
+        CG.build_panel_prompt = lambda *a, **k: "1girl, test"
+        CG.comic_out_dir = lambda: _dstq
+        return CG.comic_gen_episode(0, script=dict(_script_g), do_render=True)
+
+    try:
+        config.comic_merge_partial = False
+        _m_bad = _gate_run(2)                      # 3컷 중 2컷만
+        check("컷이 모자란 회차는 페이지를 합치지 않는다(합성 보류)",
+              _m_bad.get("incomplete") and _m_bad.get("missing") == [3] and _m_bad.get("pages") == []
+              and len(_m_bad.get("files") or []) == 2, str(_m_bad.get("missing")))
+        check("합성 보류한 회차에도 렌더된 컷 이미지는 남는다(재실행에 버리지 않는다)",
+              len(_m_bad.get("files") or []) == 2, str(_m_bad.get("files")))
+        config.comic_merge_partial = True
+        _m_ok = _gate_run(2)
+        check("--merge-partial는 예전 동작(빠진 컷을 빼고 합성)을 되돌린다",
+              not _m_ok.get("incomplete") and _m_ok.get("missing") == [3] and len(_m_ok.get("pages") or []) >= 1,
+              str(_m_ok.get("pages")))
+        config.comic_merge_partial = False
+        # 모자란 컷은 한 번 더 보낸다 — 두 번째 시도에서 성공하면 회차가 완전히 나온다
+        _calls = {}
+
+        def _rp2(ep_idx, panel, seed, safety_tag, json_value, **kw):
+            _n = panel["no"]
+            _calls[_n] = _calls.get(_n, 0) + 1
+            return _paths_g[_n] if _n != 3 or _calls[_n] >= 2 else None
+
+        _m_retry = _gate_run(0, renderer=_rp2)
+        check("모자란 컷을 한 번 더 부른다(재전송으로 메운 뒤에 페이지 합성)",
+              _calls.get(3) == 2 and not _m_retry.get("incomplete") and _m_retry.get("missing") == []
+              and len(_m_retry.get("pages") or []) >= 1, str(_calls) + " " + str(_m_retry.get("missing")))
+
+        _m_all = _gate_run(3)                      # 전부 성공
+        check("컷이 전부 만들어진 회차만 페이지가 나온다", not _m_all.get("incomplete")
+              and _m_all.get("missing") == [] and len(_m_all.get("pages") or []) >= 1,
+              str(_m_all.get("pages")))
+        check("--merge-partial 플래그가 CLI에 있다", "--merge-partial" in open(
+            os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read())
+        check("불완전 회차는 전용 실패 코드로 알린다(rc=6 · 스킵 메모 사유)",
+              "incomplete" in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+              and "6:" in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read(), "")
+    finally:
+        (CG.render_panel, CG.anima_gen.init_anima_tags, CG.request_ko_glossary,
+         CG.release_llm_for_gpu, CG.anima_gen.comfy_wait_queue_idle, CG.build_panel_prompt,
+         config.comic_merge_partial, CG.comic_out_dir) = _bake
 
     # ── ⑬h [2026-09-09] 페이지 템플릿 고정 (--template)
     _tm_all = CG.load_cut_templates()

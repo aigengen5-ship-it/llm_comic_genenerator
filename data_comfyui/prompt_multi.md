@@ -15,6 +15,14 @@
    - 상의 이너 예시: "shirt and white shirt and collared shirt and dress shirt, long sleeves"
    - 상의 장식 예시: "red bowtie"
    이처럼 디테일한 속성 태그(색상, 형태, 스타일)들을 'and'로 아낌없이 나열하여 채우도록 하세요.
+10. [상대방(Subject 2 / boy1)은 고정 태그 그룹 하나만]: 상대방 모듈의 외모는 요청 태그에 주어진 단일 그룹
+   "(bald featureless faceless naked nude <체형> invisible man:3.0)" (또는 "invisible woman") **하나가 전부**입니다.
+   그 그룹을 문자 그대로(단어·순서·:3.0 가중치 유지) 먼저 적고, 뒤에는 자세·행동·시선 구문만 붙이세요.
+   상대방에게 머리색·머리 길이·눈 색·피부색·얼굴·수염·메이크업·안경·옷(교복/셔츠)·체형 어휘(skinny, thin,
+   muscular, masculine body, flat chest)을 **새로 쓰거나 번역해서 넣지 않습니다**. 주어를 "the boy1 is wearing ..."
+   같은 외모 문장으로 풀지 말고, 외모 문장(has / is wearing / under the jacket / revealing / on her feet)은
+   통째로 생략하고 "is posing in / doing / interacting with / looking at / showing facial expressions" 계열만 남기세요.
+   (성별은 그룹 안의 "invisible man/woman"이 이미 담당합니다 — 외모 태그를 늘릴 이유가 되지 않습니다.)
 ---
 [Global Context & Layout Scene]
 [전체 인원수 선언 (예: 2girls, 1boy)]!, [전체적인 공간 및 물리적 위치 관계 (예: sitting closely together at a cafe table)], 

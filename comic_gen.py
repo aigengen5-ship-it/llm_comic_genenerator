@@ -2407,8 +2407,21 @@ def flatten_tag_block(block: str, is_face: bool) -> str:
         if not rest or " apply ONLY to" in rest or rest.lower().startswith("("):
             continue
         tag = label[1:].strip().upper()
-        if tag in ("AAA", "BBB"):                     # 라벨 전용 라인
+        if tag.startswith("BBB"):
+            # [2026-09-12] 상대방 블록은 지시문이 태그 수프에 새지 않는다.
+            #   [BBB]/[BBB RULE] → 고정 그룹 "(bald featureless … invisible man:3.0)"만 남긴다
+            #   (지시문 안의 "(partner)"나 금지 예시 괄호가 잡히지 않도록 invisible을 요구한다),
+            #   [BBB HAIR]/[BBB ACTION] … 실제 태그 라인은 그대로 지난다.
+            if tag in ("BBB", "BBB RULE"):
+                g = next((x for x in re.findall(r"\((?:[^()]|\([^()]*\))*\)", rest)
+                          if "invisible" in x.lower()), "")
+                if g:
+                    keep.append(g)
+                continue
+            keep.append(rest)
             continue
+        if tag in ("AAA",):
+            continue                                   # 라벨 전용 라인
         if tag == "CAMERA":
             continue                                  # 앵글은 헤더 [ANGLE]에서 처리
         keep.append(rest)
@@ -2628,7 +2641,8 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
                                            cut_state=(panel.get("_state") if isinstance(panel.get("_state"), dict) else None),
                                            climax_tag=climax_tag,
                                            clothes_override=str(panel.get("clothes") or ""),
-                                           partner_block=is_pov, observer_block=is_pov)
+                                           partner_block=(is_pov or bool(panel.get("multi"))),
+                                           observer_block=is_pov)
     header = anima_gen._build_simple_prompt_header(config.sex, safety_tag, is_side=False,
                                                    position_sentence="", pose_text=pose_text)
     header = strip_duplicate_counters(header)
@@ -2652,7 +2666,11 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     composed = _llm_compose_panel_prompt(ep_idx, tag_block, angle.strip(), guide_kind,
                                          safety_tag) if guide_kind else None
     if composed:
-        body = composed   # 가이드 산출물이 구도/시선을 이미 소유 → facing 태그 강제 주입 생략
+        # [2026-09-12] 상대방 섹션은 LLM이 외모를 다시 풀어썼어도 고정 그룹으로 되돌린다
+        #   (실측: "(the man's large tan hand:1.7)" — 상대방 피부색이 손에 붙었다.)
+        #   가이드 산출물이 구도/시선을 이미 소유하므로 facing 태그 강제 주입은 생략한다.
+        body = anima_gen.simplify_partner_section(
+            composed, str(getattr(config, "name2", "") or "the man"), ep_idx)
     else:
         body = flatten_tag_block(tag_block, is_face)
         # 시선/구도 정책 강제:
@@ -2775,10 +2793,13 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
     if res is None:
         res = WIDE_RES if panel.get("wide") else PANEL_RES        # wide 컷 = 1366x1024
     t_queue = time.time() - 2        # 이 시각 이후에 만들어진 파일만 '이번 컷의 결과'로 인정
+    ids = []
     try:
         prefix = anima_gen.comfyui_run_anima(json_value, ep_idx, full_prompt, res,
-                                             seed=seed, queue_count=1) or ""
-        anima_gen._wait_and_copy_image(prefix, json_value, min_mtime=t_queue, wait_seconds=wait_seconds)
+                                             seed=seed, queue_count=1, ids_out=ids) or ""
+        # [2026-09-12] prompt_id를 넘긴다 — 큐가 진짜 끝났는지 ComfyUI에 확인받고 파일명도 받는다
+        anima_gen._wait_and_copy_image(prefix, json_value, min_mtime=t_queue,
+                                       wait_seconds=wait_seconds, prompt_ids=ids)
     except Exception as e:
         _clog(f"EP{ep_idx+1} 컷{panel['no']} 렌더 실패: {e}")
         return None
@@ -2892,6 +2913,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
         safety_tag = ""
 
     rendered = files is None
+    missing = []                              # 렌더가 안 된 컷 번호 (합성 게이트의 근거)
     if files is None:
         files = []
     if rendered and do_render:
@@ -2925,11 +2947,12 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
         except Exception as e:
             _clog(f"EP{ep_num_1} LLM 메모리 반납 실패(무시, 렌더 계속): {e}")
         _miss_run = 0
+        got = []                              # 컷별 결과 (None = 이 컷은 아직 없음)
         for p, sd, pr in zip(panels, seeds, prompts):
             f = render_panel(ep_idx, p, sd, safety_tag, json_value, gloss=gloss,
                              angle_preset=_pick_panel_angle(p), prompt=pr)
+            got.append(f)
             if f:
-                files.append(f)
                 _miss_run = 0
                 continue
             _miss_run += 1
@@ -2937,17 +2960,52 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
                 # ComfyUI가 도중 죽으면(실측 17:04: 컷21~27 전부 Connection refused) 남은 컷도
                 #   전부 실패합니다 — 20번을 더 대기하지 않고 이 회차의 렌더를 접습니다.
                 _clog(f"EP{ep_num_1} 컷 {_miss_run}개 연속 렌더 실패 — ComfyUI가 중단된 것으로 보여 "
-                      f"남은 {len(panels) - len(files) - _miss_run}컷의 렌더를 접습니다")
+                      f"남은 {len(panels) - len([x for x in got if x]) - _miss_run}컷의 렌더를 접습니다")
                 break
-        if files and len(files) < len(panels):
-            _clog(f"EP{ep_num_1} 컷 {len(files)}/{len(panels)}장만 렌더되었습니다"
-                  " — 페이지는 렌더된 컷으로만 짭니다(실패 컷은 페이지에서 빠집니다)")
+        got += [None] * (len(panels) - len(got))
+        # [2026-09-12] ① ComfyUI 대기열이 비는 것을 먼저 확인한다 — 남아있다는 것은 아직 안 나온 컷이다.
+        if [x for x in got if not x]:
+            anima_gen.comfy_wait_queue_idle(90, log_fn=_clog)
+        # ② 모자란 컷은 **한 번 더 보낸다** — 프롬프트는 이미 조립돼 있어 LLM 호출 없이 렌더만 돈다.
+        #    (실측: ComfyUI가 잠시 멈췄던 회차는 대부분 여기서 다 복구된다.)
+        _retry = [i for i, f in enumerate(got) if not f]
+        if _retry:
+            _clog(f"EP{ep_num_1} 모자란 컷 {len(_retry)}개를 다시 보냅니다: "
+                  + ", ".join(str(panels[i]["no"]) for i in _retry[:12]) + (" 외" if len(_retry) > 12 else ""))
+            _miss2 = 0
+            for i in _retry:
+                got[i] = render_panel(ep_idx, panels[i], seeds[i], safety_tag, json_value,
+                                      gloss=gloss, angle_preset=_pick_panel_angle(panels[i]),
+                                      prompt=prompts[i])
+                _miss2 = 0 if got[i] else _miss2 + 1
+                if _miss2 >= 3:
+                    _clog(f"EP{ep_num_1} 재전송에서도 3컷 연속 실패 — ComfyUI가 멈춰 있는 것으로 보여 재전송을 접습니다")
+                    break
+            if anima_gen.comfy_wait_queue_idle(30, log_fn=_clog) is False and [x for x in got if not x]:
+                _clog(f"EP{ep_num_1} ComfyUI 대기열이 여전히 차 있습니다 — 늦게 나오는 컷은 다음 실행에서 반영됩니다")
+        files.extend([f for f in got if f])
+        missing = [int(panels[i].get("no") or i + 1) for i, f in enumerate(got) if not f]
+        if files and missing:
+            _clog(f"EP{ep_num_1} 컷 {len(files)}/{len(panels)}장만 렌더되었습니다 — 빠진 컷 {missing}")
         if not files:
             _clog(f"EP{ep_num_1} 생성된 컷 이미지 0장 (ComfyUI 확인 필요)")
             return {"ep": ep_num_1, "panels": panels, "files": [], "pages": [],
-                    "notes": notes + ["이미지 0장"]}
+                    "notes": notes + ["이미지 0장"], "missing": missing}
     elif rendered and not do_render:
         _clog(f"EP{ep_num_1} 렌더 생략(do_render=False) → 컷 {len(panels)}개 스크립트만 확보")
+
+    # [2026-09-12] 페이지 합성 게이트 — **한 회차의 컷이 전부 만들어졌을 때만** 합친다.
+    #   예전은 빠진 컷을 그냥 빼고 페이지를 짰다(--all-eps에서 '왜 마지막 페이지가 비었지?'의 답).
+    #   반쪽짜리 페이지는 완성과 구별이 안 가서 그 다음 회차까지 같은 책에 쌓였다.
+    #   --merge-partial로 예전 동작(렌더된 컷으로만 합성)을 되돌릴 수 있다.
+    if rendered and do_render and files and len(files) < len(panels) \
+            and not bool(getattr(config, "comic_merge_partial", False)):
+        _clog(f"EP{ep_num_1} 컷 {len(files)}/{len(panels)}장 — 전부가 아니어서 페이지 합성을 미룹니다 "
+              f"(빠진 컷 {missing}). 같은 회차를 다시 돌리거나 --merge-partial로 지금 있는 만큼만 합치세요.")
+        return {"ep": ep_num_1, "panels": panels, "files": files, "pages": [], "notes": notes,
+                "missing": missing, "incomplete": True, "base_seed": base, "seeds": seeds,
+                "beats": script.get("beats"), "target_panels": script.get("target_panels"),
+                "page_plans": (script.get("page_plans") or None)}
 
     _prompt_san_flush(ep_num_1)      # [2026-09-09] 컷마다 찍던 정제 로그를 회차 끝 한 줄로 모은다
     out_dir = comic_out_dir()
@@ -2979,7 +3037,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
                               # 한글 폰트는 OS별로 다르다 — 없을 때만 별도 지정(--font / config.comic_font)
                               font_path=(getattr(config, "comic_font", "") or None))
     meta = {"ep": ep_num_1, "base_seed": base, "seeds": seeds, "panels": panels,
-            "files": files, "pages": pages, "notes": notes,
+            "files": files, "pages": pages, "notes": notes, "missing": missing,
             "beats": script.get("beats"), "target_panels": script.get("target_panels"),
             "page_plans": page_plans or None}
     try:

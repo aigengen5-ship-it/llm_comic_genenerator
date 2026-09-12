@@ -1521,6 +1521,13 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     config.name2 = _pn2 or part.get("name") or "상대"
     config.sex2 = "남자" if part.get("sex") == "male" else "여자"
     config.outfit2 = part.get("clothes") or "casual"
+    # [2026-09-12] 상대방을 최소 태그로 그리는 지금, 시트의 외모 문장은 **체형 토큰 1개**로만 쓰인다
+    #   (anima_gen._partner_body_token → '뚱뚱함' → fat). 나머지 외모 태그는 고정 그룹이 대신한다.
+    if str(part.get("appearance") or "").strip():
+        config.appearance2 = str(part["appearance"]).strip()
+    _age2 = re.search(r"\d+", str(part.get("age") or ""))
+    if _age2:
+        config.age2 = int(_age2.group(0))
 
     # 컷 스프프트가 읽는 시트/가이드/$키워드 (comic_gen._sheet_texts / _guides_for)
     while len(config.episode_protagonist_sheets) <= idx:

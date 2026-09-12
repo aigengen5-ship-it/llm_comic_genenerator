@@ -203,7 +203,8 @@ _RC_WHY = {1: "페이지 0장(렌더는 했는데 합성된 페이지가 없음)
            5: "에피소드 본문이 비어 있음(원작 생성 실패 — 컷을 그릴 근거가 없음)",
            2: "추출 실패 또는 컷 스크립트가 필수 상태를 채우지 못해 렌더 전에 중단",
            3: "프리플레이트(ollama/ComfyUI/폰트 등) 실패",
-           4: "dry-run 태그 초기화 실패"}
+           4: "dry-run 태그 초기화 실패",
+           6: "렌더 불완전 — 컷이 전부 만들어지지 않아 페이지 합성을 보류했습니다 (--merge-partial로 합성 가능)"}
 
 
 def _skip_note(ep_num: int, ep_path: str, rc: int) -> str:
@@ -701,7 +702,16 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     for n in meta.get("notes", []):
         p(f"  보정      : {n}")
     p(f"  소요      : {time.time() - t0:.1f}s")
-    return 0 if pages else 1
+    # [2026-09-12] 컷이 전부 만들어지지 않았으면 페이지를 합치지 않고 여기서 접는다 (--all-eps에서 반쪽 권 방지)
+    if meta.get("incomplete"):
+        _miss = list(meta.get("missing") or [])
+        _np = len(meta.get("panels") or [])
+        perr(f"  ✗ EP{meta.get('ep')} 렌더 불완전 — 컷 {len(meta.get('files', []))}/{_np}장"
+             f" (빠진 컷 {', '.join(map(str, _miss[:12]))}{' 외' if len(_miss) > 12 else ''})"
+             f" → 페이지 합성 보류")
+        p("  ComfyUI 대기열·오류(log/error.log)를 확인 같은 회차를 다시 돌려 주세요.")
+        p("  지금 있는 컷으로라도 합치고 싶으시면 --merge-partial 를 쓰세요(합성된 페이지는 완성이 아닙니다).")
+        return 6
     return 0 if pages else 1
 
 
@@ -793,6 +803,14 @@ def main() -> int:
                     help="★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷 = 배경만 + 큰 지문)를 붙이지 않는다")
     ap.add_argument("--no-emo-marks", action="store_true", dest="no_emo_marks",
                     help="감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끄는다")
+    # [2026-09-12] 상대방(BBB) 외모를 닫는 스위치 — 상세 태그로 되돌리고 싶을 때만 쓴다
+    ap.add_argument("--partner-full", action="store_false", dest="partner_full", default=True,
+                    help="상대방을 최소 태그 (bald featureless faceless naked nude <체형> invisible man:3.0)로 "
+                         "그리지 않고 시트의 상세 태그(머리·눈·피부·복장)로 그립니다")
+    # [2026-09-12] 페이지 합성 게이트 — 기본은 '컷이 전부 렌더된 회차만' 합성한다
+    ap.add_argument("--merge-partial", action="store_true", dest="merge_partial",
+                    help="컷이 몇 장 빠졌어도 렌더된 것만으로 페이지를 합성합니다 "
+                         "(기본: 전부 만들어졌을 때만 합성하고, 모자라면 이 회차를 합성 없이 접습니다)")
     ap.add_argument("--get-fonts", dest="get_fonts", action="store_true",
                     help="만화 화면 문법 폰트(설명/대사/속마음/의성어, 전부 OFL)를 data/fonts/로 받고 종료")
     ap.add_argument("--angle", action="store_true", help="action 컷에 angle.txt 구도 적용")
@@ -918,6 +936,10 @@ def main() -> int:
         config.comic_summary_cuts = False
     if args.no_emo_marks:
         config.comic_emo_marks = False
+    if not args.partner_full:                   # [2026-09-12] 상대방 상세 태그로 되돌리기
+        config.comic_partner_invisible = False
+    if getattr(args, "merge_partial", False):   # [2026-09-12] 빠진 컷이 있어도 합성하기
+        config.comic_merge_partial = True
     if args.no_prologue:
         config.comic_prologue_cut = False
     if getattr(args, "no_strict_state", False):
@@ -963,6 +985,8 @@ def main() -> int:
     p(f"  컷 배분 변동   : {_var if _var else '0 (같은 입력 → 같은 배분)'}"
       + (f" — 같은 배분을 고정이면 --variation {_var}" if _var else " — 매번 다르게 원하면 --vary"))
     p(f"  수다장이 모드  : {'ON (모든 컷 하단에 설명)' if config.comic_chatty else 'off (지문이 있는 컷만 설명)'}")
+    p(f"  상대방 외모    : {'최소 태그 (invisible man/woman 고정 그룹) — 외모 태그 오염 차단' if getattr(config, 'comic_partner_invisible', True) else '상세 태그 (--partner-full)'}")
+    p(f"  페이지 합성    : {'컷이 전부 렌더된 회차만 합성합니다 (모자라면 합성 보류)' if not getattr(config, 'comic_merge_partial', False) else '--merge-partial: 빠진 컷이 있어도 렌더된 것만으로 합성합니다'}")
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.
     #   우선순위: CLI 인자 > env(COMIC_ALLOW_EXPLICIT) > local_settings.yaml > 기본 — CLI 주입은 아래에서 된다.
     if config.local_settings:

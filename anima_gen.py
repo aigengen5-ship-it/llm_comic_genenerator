@@ -13,6 +13,7 @@ import shutil
 import config
 import comic_input as CI
 import runlog
+import urllib.parse
 import urllib.request as request
 
 from openai import OpenAI
@@ -1401,7 +1402,201 @@ def png_complete(path: str) -> bool:
         return False
 
 
-def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, wait_seconds: int = 120):
+# =====================================================================================
+# [2026-09-12] ComfyUI 큐/히스토리 확인 — "이미지가 전부 만들어졌을 때만" 페이지를 합친다
+# -------------------------------------------------------------------------------------
+# 실측 문제: --special --all-eps에서 몇 컷이 늦게/빠진 채로 페이지가 합쳐졌습니다.
+#   이름+mtime 추측 대기(컷당 120초)는 '아직 큐에 돌아가는 중'과 '실패'를 구분하지 못합니다.
+# ComfyUI는 그 답을 API로 줍니다(이 장치를 붙이기 전에 실측 확인):
+#   POST /prompt        → {"prompt_id": "…"}                             큐에 들어간 고유 id
+#   GET  /queue         → {"queue_running": […], "queue_pending": […]}   대기열
+#   GET  /history/<id>  → status{completed, status_str} + outputs{노드:{"images":[{"filename",…}]}}
+# 이 세 응답으로 ① 컷 완료 대기 ② 실패 즉시 감지(120초 낭비 제거) ③ 생성 파일명의 정확한 확보
+# ④ 회차 끝에서 대기열이 비는지 확인(페이지 합성 게이트)을 한다.
+# 서버가 답하지 않으면 예전의 이름+mtime 검색으로 조용히 돌아간다(파이프라인는 안 죽는다).
+# =====================================================================================
+COMFYUI_API_DEFAULT = "http://localhost:8188"
+
+
+def _comfy_api() -> str:
+    """ComfyUI REST 주소 — queue_prompt가 쓰는 주소와 같아야 한다 (env COMIC_COMFY_API로 변경)."""
+    return (os.environ.get("COMIC_COMFY_API", "").strip() or COMFYUI_API_DEFAULT).rstrip("/")
+
+
+def comfy_get_json(path: str, timeout: float = 6.0):
+    """ComfyUI GET(/queue·/history·/view). 서버 없음·오류는 None — 호출측이 폴백을 가진다."""
+    try:
+        with request.urlopen(_comfy_api() + path, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8", "ignore") or "{}")
+    except Exception as e:
+        log(f"[ComfyUI] GET {path} 실패: {e}")
+        return None
+
+
+def comfy_queue_depth():
+    """(running, pending) 대기열 길이 | None(서버 확인 불가)"""
+    d = comfy_get_json("/queue")
+    if not isinstance(d, dict):
+        return None
+    return (len(d.get("queue_running") or []), len(d.get("queue_pending") or []))
+
+
+def comfy_wait_queue_idle(max_seconds: int = 90, log_fn=None) -> bool:
+    """렌더를 끝낸 뒤 대기열이 비는지 본다 — 남아 있다는 것은 **아직 안 나온 이미지**다.
+
+    '이 회차의 이미지가 전부 만들어졌을 때만 페이지를 합친다'의 첫 번째 확인이다.
+    (내 컷이 아니어도 기다린다 — 같은 서버를 쓰기 때문이다.) 확인 불가·초과는 False.
+    """
+    deadline = time_mod.time() + max(0, int(max_seconds))
+    said = False
+    while True:
+        q = comfy_queue_depth()
+        if q is None:
+            return False                                   # 서버를 못 본다 → 파일 수로 판단한다
+        if q[0] == 0 and q[1] == 0:
+            return True
+        if time_mod.time() >= deadline:
+            if log_fn:
+                log_fn(f"ComfyUI 대기열이 끝나지 않았습니다(running/pending={q}) — "
+                       f"최대 {int(max_seconds)}초만 기다립니다")
+            return False
+        if not said:
+            if log_fn:
+                log_fn(f"ComfyUI 대기열 확인: 실행 {q[0]} / 대기 {q[1]} — 페이지 합성 전에 기다립니다")
+            said = True
+        time_mod.sleep(1)
+
+
+def comfy_prompt_status(prompt_id: str) -> str:
+    """그 큐가 얼마나 진행됐나 → "done" | "failed" | "queued" | "unknown"(서버가 모른다)"""
+    if not prompt_id:
+        return "unknown"
+    d = comfy_get_json("/history/" + urllib.parse.quote(str(prompt_id)))
+    if isinstance(d, dict) and d.get(prompt_id):
+        st = d[prompt_id].get("status") or {}
+        if st.get("completed"):
+            return "done" if str(st.get("status_str")) == "success" else "failed"
+        return "queued"
+    q = comfy_queue_depth()
+    if q and (q[0] or q[1]):
+        return "queued"                       # 아직 히스토리에 없는 실행/대기 중
+    return "unknown"
+
+
+def comfy_prompt_files(prompt_id: str) -> list:
+    """히스토리가 알려주는 저장 파일 → [(filename, subfolder)] (SaveImage 노드 출력 전부, 순서 유지)"""
+    d = comfy_get_json("/history/" + urllib.parse.quote(str(prompt_id)))
+    out = []
+    if not isinstance(d, dict):
+        return out
+    for node in ((d.get(prompt_id) or {}).get("outputs") or {}).values():
+        for img in (node or {}).get("images") or []:
+            if str(img.get("type") or "output") != "output":
+                continue                      # temp(미저장) 산물은 넘긴다
+            fn = str(img.get("filename") or "").strip()
+            if fn:
+                out.append((fn, str(img.get("subfolder") or "")))
+    return out
+
+
+def _fetch_comfy_output(name: str, subfolder: str, json_value: dict, target_dir: str) -> str:
+    """ComfyUI가 저장한 파일을 ./image로 — 출력 디렉터리 → /view(HTTP) 순. 잘린 파일은 버린다."""
+    rel = "/".join([p for p in str(subfolder or "").replace("\\", "/").split("/") if p] + [name])
+    dst = os.path.join(target_dir, os.path.basename(name))
+    for out_dir in _comfyui_output_dirs(json_value):
+        src = os.path.join(out_dir, *rel.split("/"))
+        if not os.path.isfile(src):
+            continue
+        try:
+            shutil.copy2(src, dst)
+        except OSError:
+            continue
+        if png_complete(dst):
+            log(f"[ComfyUI] Copied(큐 히스토리): {name} <- {out_dir} -> {target_dir}/")
+            return dst
+        log(f"[ComfyUI] 사본이 아직 미완성(IEND 없음): {name}")
+        try:
+            os.remove(dst)
+        except OSError:
+            pass
+    # 출력이 다른 기기/다른 경로에 있어도 이미지는 받을 수 있다
+    try:
+        url = f"{_comfy_api()}/view?type=output&filename={urllib.parse.quote(rel)}"
+        with request.urlopen(url, timeout=30) as r:
+            data = r.read()
+    except Exception as e:
+        log(f"[ComfyUI] /view 수신 실패 {name}: {e}")
+        return ""
+    try:
+        with open(dst, "wb") as fh:
+            fh.write(data)
+    except OSError:
+        return ""
+    if png_complete(dst):
+        log(f"[ComfyUI] Copied(/view): {name} -> {target_dir}/ ({len(data)}B)")
+        return dst
+    try:
+        os.remove(dst)
+    except OSError:
+        pass
+    return ""
+
+
+def _wait_and_copy_by_history(prompt_ids, json_value: dict, target_dir: str, wait_seconds: int = 120):
+    """큐에 넣은 id가 끝날 때까지 기다리고, 히스토리가 알려준 파일을 ./image로 받아온다.
+
+    반환: (받은 파일 경로 목록, 서버가 분명히 판정했는지)
+      판정 True  = 완료/실패를 서버가 분명히 말했다 → 이름 검색을 할 필요가 없다
+      판정 False = 서버를 못 믿었다(시간 초과 포함) → 호출측이 이름 검색으로 확인한다
+    """
+    deadline = time_mod.time() + max(1, int(wait_seconds))
+    got, pending, tick = [], list(prompt_ids), 0
+    while pending:
+        if time_mod.time() >= deadline:
+            break
+        for pid in list(pending):
+            st = comfy_prompt_status(pid)
+            if st == "unknown":
+                log("[ComfyUI] /history · /queue 응답이 없어 이름 검색으로 되돌아갑니다")
+                return got, False
+            if st == "failed":
+                log(f"[ComfyUI] 큐 실행이 실패했습니다(prompt_id={pid}) — 대기를 접고 이 컷을 실패로 봅니다")
+                return got, True
+            if st != "done":
+                continue                                    # queued: 아직 돌고 있다
+            files = comfy_prompt_files(pid)
+            copied = []
+            for _try in range(3):                           # SaveImage가 아직 쓰는 중일 수 있다
+                copied = [x for x in (_fetch_comfy_output(n, sf, json_value, target_dir)
+                                      for n, sf in files) if x]
+                if copied or not files:
+                    break
+                time_mod.sleep(1)
+            if copied or files:
+                got.extend(copied)
+                pending.remove(pid)
+                continue
+            # done인데 파일이 없다 → 아직 반영 전일 수 있으니 다음 순환에서 다시 본다
+        if not pending:
+            break
+        tick += 1
+        if tick % 15 == 0:
+            log(f"[ComfyUI] 큐에서 아직 안 끝났습니다 — 남은 큐 {len(pending)}개 "
+                f"(running/pending={comfy_queue_depth()})")
+        time_mod.sleep(1)
+    if pending:
+        log(f"[ComfyUI] {int(wait_seconds)}초 안에 큐가 끝나지 않았습니다 — 남은 {len(pending)}개는 "
+            f"이름 검색으로 확인합니다")
+        return got, False
+    if not got:
+        # 서버는 "완료"라고 했는데 받은 파일이 없다(경로 다른 경우 등) — 이름 검색 한 번은 더 해본다
+        log("[ComfyUI] 큐는 완료라고 했는데 받은 파일이 없습니다 — 이름 검색으로 확인합니다")
+        return got, False
+    return got, True
+
+
+def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, wait_seconds: int = 120,
+                         prompt_ids=None):
     """ComfyUI 이미지 생성 대기 후 ./image로 복사
 
     [2026-09-07] 출력 디렉토리를 하드코딩 하나(`~/AI/ComfyUI/output`)로만 보면
@@ -1412,13 +1607,16 @@ def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, 
     min_mtime: 큐 시각보다 이전 파일은 '이전 실행의 결과'다. SaveImage는 같은 prefix에서
     _00001_ → _00002_ 로 번호만 올릴 뿐 옛 파일을 남기므로, 이름만 보면 옛 이미지를 집어와버린다
     (실측: 재렌더가 4.6초 만에 '완료'). → mtime으로 새 생성분만 받는다.
+
+    [2026-09-12] prompt_ids를 받으면 **파일 이름 추측을 포기하고 ComfyUI에 직접 묻는다**:
+      GET /history/<id> → status + outputs의 저장 파일명. 큐에서 돌아가는 중이면 기다리고,
+      실패(execution_error)면 120초를 낭비하지 않고 바로 알린다. 이 정보로 '이 컷이 아직
+      큐에 있다'와 '이 컷은 실패했다'가 구분된다 — 페이지 합성 게이트의 근거다.
+      (히스토리를 못 읽으면 아래 이름+mtime 루프로 조용히 돌아간다 — 파이프라인는 안 죽는다.)
     """
     target_dir = "./image"
     os.makedirs(target_dir, exist_ok=True)
-    dirs = _comfyui_output_dirs(json_value)
-    if not dirs:
-        log(f"[ComfyUI] 출력 후보 디렉토리가 없음 — 복사 생략 (prefix={prefix})")
-        return
+    ids = [str(x) for x in (prompt_ids or []) if x]
     # [2026-09-07] 파일명이 되는 prefix는 SaveImage에서 50자로 잘린다(comfyui_run_anima의 prefix[:50]).
     # comic 접두어(episode_N_comic_eN_pNN_…_anima_)는 50자를 넘어 잘린 형태로 저장되므로
     # 원본 prefix와 50자 절단형 둘 다 매치한다. (이것 때문에 이미지가 있는데도 '실패'로 보였다.)
@@ -1430,13 +1628,32 @@ def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, 
     # '이전 실행의 이미지'를 그대로 쓴다(실측: 8컷 재렌더가 4.8초 만에 '완료').
     # → 먼저 옛 사본을 지우고, 이번 큐에서 새로 만들어진 파일을 받아온다
     #   (ComfyUI SaveImage는 output에서 이름을 _00001_ → _00002_로 증가시키므로 덮어쓰지 않는다).
-    for f in os.listdir(target_dir):
+    try:
+        _old = os.listdir(target_dir)
+    except OSError:
+        _old = []
+    for f in _old:
         if f.endswith(".png") and any(k and f.startswith(k) for k in keys):
             try:
                 os.remove(os.path.join(target_dir, f))
                 log(f"[ComfyUI] 옛 사본 제거: {f}")
             except OSError:
                 pass
+
+    t_start = time_mod.time()
+    if ids:
+        got, decided = _wait_and_copy_by_history(ids, json_value, target_dir, wait_seconds)
+        if got or decided:
+            if not got:
+                log(f"[ComfyUI] 큐는 끝났지만 받은 파일이 없습니다 (prefix={prefix})")
+            return
+        log(f"[ComfyUI] 히스토리로 파일을 받지 못해 이름 검색으로 되돌아갑니다 (prefix={prefix})")
+        wait_seconds = max(3, int(wait_seconds - (time_mod.time() - t_start)))   # 시간을 두 번 쓴다
+
+    dirs = _comfyui_output_dirs(json_value)
+    if not dirs:
+        log(f"[ComfyUI] 출력 후보 디렉토리가 없음 — 복사 생략 (prefix={prefix})")
+        return
 
     # 최대 wait_seconds 대기
     for i in range(max(1, int(wait_seconds))):
@@ -1485,16 +1702,21 @@ def _wait_and_copy_image(prefix: str, json_value: dict, min_mtime: float = 0.0, 
 
 
 def queue_prompt(prompt):
-    """ComfyUI에 프롬프트 큐에 추가
+    """ComfyUI에 프롬프트 큐에 추가 → **prompt_id** (서버가 답을 안 주면 "")
 
     [2026-09-07] 400(검증 실패 — 예: 없는 unet/lora 파일)의 원문이 버려지고 있었다.
     body를 로그에 남긴다 (모델 파일명 오타/미다운로드 진단용).
+
+    [2026-09-12] 예전엔 urlopen 객체 그대로 돌려 누가 버렸다. 그 안에 들어 있는
+    prompt_id가 곧 "내 컷이 큐에 들어갔다"는 영수증이고, /history/<id>로 결과·파일명을
+    확인하는 열쇠다. (대기열을 보고 기다리는 장치는 이 id 위에서 돈다.)
     """
     p = {"prompt": prompt}
     data = json.dumps(p).encode('utf-8')
-    req = request.Request("http://localhost:8188/prompt", data=data)
+    req = request.Request(_comfy_api() + "/prompt", data=data)
     try:
-        return request.urlopen(req)
+        with request.urlopen(req) as r:
+            body = r.read().decode("utf-8", "ignore")
     except request.HTTPError as e:
         try:
             detail = e.read().decode("utf-8", "ignore")[:2000]
@@ -1502,11 +1724,22 @@ def queue_prompt(prompt):
             detail = ""
         log(f"[ComfyUI] /prompt HTTP {e.code}: {detail}")
         raise
+    try:
+        pid = str(json.loads(body or "{}").get("prompt_id") or "")
+    except Exception:
+        pid = ""
+    if not pid:
+        log(f"[ComfyUI] /prompt 응답에 prompt_id가 없습니다: {body[:200]}")
+    return pid
 
 
 def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
-                       seed=None, queue_count: int = 2) -> str:
+                       seed=None, queue_count: int = 2, ids_out: list = None) -> str:
     """[2026-09-08⑥] 만화(comic)용 확장: seed/queue_count 지정 가능, 생성 prefix 반환
+
+    [2026-09-12] `ids_out=[]`를 넘기면 큐에 들어간 **prompt_id**를 그 자리에 담는다.
+      → "이미지가 전부 만들어졌는지" ComfyUI에 확인하는 데 쓴다 (`_wait_and_copy_by_history`).
+      반환 타입은 예전과 같이 prefix 문자열 그대로다(호출자 호환).
 
     seed=None, queue_count=2 → 기존 동작과 100% 동일(랜덤 시드 2장 큐). 만화는 (seed, 1)을 쓴다.
     (본래: ComfyUI 실행 함수 — llm_def.py에서 가져옴)
@@ -1610,15 +1843,23 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
         tag_file.write(json.dumps(my_dict, ensure_ascii=False) + "\n")
     
     # ComfyUI 큐에 추가 (queue_count장; 기본 2 = 기존 동작)
-    queue_prompt(prompt)
+    _ids = [x for x in (queue_prompt(prompt),) if x]
     if int(queue_count) > 1:
         a = rand.randint(0, 18446744073709551615)
         prompt["1016"]["inputs"]["seed"] = a
 
         # 두 번째 이미지 (다른 시드)
-        queue_prompt(prompt)
+        _pid2 = queue_prompt(prompt)
+        if _pid2:
+            _ids.append(_pid2)
+    if ids_out is not None:
+        try:
+            ids_out.extend(_ids)
+        except Exception:
+            pass
 
-    log(f"[ComfyUI] Queue sent! mode={res}, episode={config.episode_num+1}, nametag={anima_nametag}")
+    log(f"[ComfyUI] Queue sent! mode={res}, episode={config.episode_num+1}, nametag={anima_nametag}"
+        f"{', prompt_id=' + ','.join(_ids) if _ids else ''}")
 
     # 이미지 생성 대기 후 ./image로 복사 (아카이브에서 일괄 복사하므로 스킵)
     # _wait_and_copy_image(prefix, json_value)
@@ -1684,6 +1925,186 @@ _PARTNER_BODY_MAP = {
 _PARTNER_LOOK_MAP = {
     "추남": "ugly face", "평범": "average face", "잘생김": "handsome face",
 }
+
+# ============================================================================
+# [2026-09-12] 상대방(BBB) 최소 태그 세트 — 외모 태그를 폐기하고 체형 토큰 1개로 닫는다
+# ----------------------------------------------------------------------------
+# (llm_shortnovel_generator_gui의 2026-09-11 수정을 같은 계약으로 이식했습니다)
+# 문제: 2인물 컷에서 상대방 외모 태그(hair/eyes/skin/uniform/skinny body…)가
+#   ① 플랫 태그화(comic은 섹션을 평문 태그로 납작게 전개한다)에서 **주인공에게 새고**,
+#   ② 이미지 모델은 그 얼굴을 회마다 다르게 그렸다(실측 POV: "the man's large tan hand"
+#     — 상대방 피부색 'tan'이 손에 붙었다).
+# 해결: 상대방의 '외모'를 단일 고정 그룹으로 닫는다.
+#   포맷: (bald featureless faceless naked nude <체형> invisible man:3.0)
+#   - <체형>은 shota/petite/thin/fat/muscle/old 6개만 (skinny는 이 프로젝트에서 쓰지 않는다)
+#   - 성별은 invisible man / invisible woman 이 대신하므로 man/woman 태그를 따로 주지 않는다
+#   - 포즈·행동은 [ACTION]/[POSITION]/[BBB ACTION]에서 그대로 온다 (닫는 것은 외모뿐)
+# 끄는 법: config.comic_partner_invisible = False (run_comic.py --partner-full)
+#   → 아래 상세 태그 블록([BBB HAIR]/[BBB FACE]/[BBB CLOTHES]…)으로 돌아간다.
+# ============================================================================
+PARTNER_SIMPLE_BODY_TOKENS = ("shota", "petite", "thin", "fat", "muscle", "old")
+_PARTNER_SIMPLE_BODY_KEYWORDS = (
+    ("muscle", ("근육", "muscle", "탄탄", "건장", "muscular")),
+    ("fat", ("뚱뚱", "비만", "살집", "포동", "fat", "chubby")),
+    ("old", ("노인", "할아버지", "할머니", "노년", "old", "노안")),
+    ("petite", ("petite", "소녀 체구", "작은 체구")),
+    # 왜소한 체구: 남성→shota, 여성→petite (아래 sex2 보정)
+    ("shota", ("소년", "shota", "왜소", "작은 몸", "작은체구")),
+    ("thin", ("마름", "마른", "날씬", "slim", "thin")),
+)
+# 상대방 섹션에서 제거할 외모/복장 계열 태그 (포즈·행동 구문은 보존한다)
+_PARTNER_APPEARANCE_BAN_RE = re.compile(
+    r'(hair|bald|eyes?|eyebrows?|face|facial|skin|skinny|thin|fat|chubby|average build|body|'
+    r'muscul|muscle|chest|pecs?|shoulders|beard|shaven|makeup|eyeliner|lipstick|eyeshadow|lashes|'
+    r'glasses|glasses on head|uniform|shirt|blouse|collar|sleeve|trousers|pants|slacks|skirt|dress|'
+    r'suit|tie|jacket|blazer|coat|shoes|loafers|socks|sneakers|clothes|clothed|undressed|naked|nude|'
+    r'underwear|boxers|briefs|pants unbuttoned|open shirt|bare chest|bare shoulders|tanned|tan skin|'
+    r'olive skin|\btan\b|masculine|feminine|male features|flat chest|handsome|ugly|average face|tall male|'
+    r'short male)',
+    re.IGNORECASE,
+)
+
+
+def _partner_invisible() -> bool:
+    """[2026-09-12] 상대방을 최소 태그(invisible man/woman)로 그리는지 (기본 켬)."""
+    return bool(getattr(config, "comic_partner_invisible", True))
+
+
+def _partner_body_token(episode: int = -1) -> str:
+    """상대방 체형 토큰 1개 — shota/petite/thin/fat/muscle/old (skinny 미사용)."""
+    bits = [(getattr(config, 'appearance2', '') or ''),
+            (getattr(config, 'job2', '') or ''),
+            (getattr(config, 'outfit2', '') or '')]
+    sheets = getattr(config, 'episode_partner_sheets', None) or []
+    if 0 <= episode < len(sheets):
+        bits.append(str(sheets[episode] or ''))
+    text = " ".join(bits).lower()
+    is_female = getattr(config, 'sex2', '남자') in ("female", "여자", "여성")
+    for token, keys in _PARTNER_SIMPLE_BODY_KEYWORDS:
+        if any(k.lower() in text for k in keys):
+            if token == "shota" and is_female:
+                return "petite"
+            return token
+    age2 = getattr(config, 'age2', 0) or 0
+    try:
+        age2 = int(age2)
+    except (TypeError, ValueError):
+        age2 = 0
+    if age2 >= 50:
+        return "old"
+    if age2 and age2 <= 14:
+        return "petite" if is_female else "shota"
+    return "petite" if is_female else "thin"
+
+
+def _partner_simple_tag(episode: int = -1) -> str:
+    """상대방 최소 태그 그룹 (소괄호 단일 그룹, weight 3.0) — 외모의 전부."""
+    figure = "man" if getattr(config, 'sex2', '남자') in ("male", "남자", "남성") else "woman"
+    return f"(bald featureless faceless naked nude {_partner_body_token(episode)} invisible {figure}:3.0)"
+
+
+def _split_top_level_commas(text: str) -> list:
+    """쉼표 분리(괄호 내부 쉼표 보존) — '(a b:1.5), c, (d (e):1.2)' → 3조각."""
+    parts, depth, cur = [], 0, []
+    for ch in text or "":
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth = max(0, depth - 1)
+        if ch == ',' and depth == 0:
+            parts.append(''.join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    tail = ''.join(cur).strip()
+    if tail:
+        parts.append(tail)
+    return [p for p in parts if p]
+
+
+def _partner_kept_phrases(body: str) -> list:
+    """상대 구문에서 외모/복장 조각만 걷고 포즈·행동 조각만 남긴다 (고정 그룹은 넣지 않는다)."""
+    kept = []
+    for ph in _split_top_level_commas(body):
+        # '(the man's large tan hand:1.7)' → 내부에서 skin 계열어가 걸리면 조각을 버린다
+        if _PARTNER_APPEARANCE_BAN_RE.search(ph):
+            continue
+        if ph.strip().upper() == 'BREAK' or not ph.strip():
+            continue
+        kept.append(ph.strip())
+    return kept
+
+
+def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -> str:
+    """[2026-09-12] LLM이 다시 풀어쓴 상대방 섹션을 고정 그룹 + 포즈/행동으로 되돌린다.
+
+    [BBB] 고정 그룹을 줘도 LLM은 observer/Subject 섹스에 외모 태그를 지어냅니다
+    (실측: '(the man's large tan hand:1.7), (not visible in the frame:1.3)').
+    조립부(`_build_partner_block`)가 닫았으니 **후처리**로 한 번 더 닫는다.
+
+      대상 섹션: POV "The visible parts of … in the frame are:"
+                 multi "[Subject 2: …]" / "[Subject M1: …]" (이름으로 부르는 헤더도)
+      결과:      (bald featureless faceless naked nude <체형> invisible man:3.0), <포즈/행동 구문…>
+
+    외모/복장 계열이 아닌 구문(looking up at X, hands gripping…)은 보존합니다.
+    """
+    if not prompt or not _partner_invisible():
+        return prompt
+    group = _partner_simple_tag(episode)
+    lines = prompt.split("\n")
+    changed = 0
+
+    def _is_partner_header(low: str) -> bool:
+        if ("visible parts of" in low) or ("in the frame are" in low) or \
+           ("on the right are" in low) or ("right side are" in low):
+            return True
+        if name_b and name_b.lower() in low and ("character" in low or "subject" in low) \
+                and "left" not in low and "protagonist" not in low and "subject 1" not in low:
+            return True
+        return bool(re.match(r"\s*\[\s*subject\s*(2|m1)\b", low))
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        low = line.lower()
+        multi = bool(re.match(r"\s*\[\s*subject\s*(2|m1)\b", low))
+        header = bool(line.strip().endswith(":")) or line.strip().upper().startswith("---")
+        if not multi and not (header and _is_partner_header(low)):
+            i += 1
+            continue
+        # 섹션 본문 범위 잡기: multi 모듈은 '---'/'=='/'[' 까지, 일반 섹션은 다음 비어있지 않은 줄 하나
+        j = i + 1
+        if multi:
+            while j < len(lines) and lines[j].strip() in ("", "---"):
+                j += 1
+            end = j
+            while end < len(lines) and not re.match(r"\s*(---|==|\[)", lines[end]) \
+                    and not re.match(r"\s*\[\s*subject", lines[end].lower()):
+                end += 1
+            src = "\n".join(lines[j:end])
+        else:
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j >= len(lines) or lines[j].strip().upper() == "BREAK":
+                i += 1
+                continue
+            end = j + 1
+            src = lines[j].strip()
+        if "invisible man" in src or "invisible woman" in src:
+            i = end
+            continue                                    # 이미 고정 그룹 → 멱등
+        if "not visible in the frame" in src.lower():
+            i = end
+            continue        # 관찰자가 프레임에 없는 컷 — invisible 그룹을 불러와 사람이 늘어나면 안 된다
+        kept = _partner_kept_phrases(src)
+        new_body = group + (", " + ", ".join(kept) if kept else "")
+        log(f"[PARTNER TAGS] {name_b or 'BBB'} 섹션을 고정 그룹으로 단순화: "
+            f"{len(_split_top_level_commas(src))}조각 → {1 + len(kept)}조각\n")
+        lines[j:end] = [new_body]
+        changed += 1
+        i = j + 1
+    return "\n".join(lines) if changed else prompt
+
 
 # 상대방 EP별 노출 풀 — 주인공 stats[1] '두근거림(L)' level(0~5) 기반
 # [2026-09-07] 청년향: 상체는 topless(bare chest)까지, 성기는 노출 풀에 넣지 않는다(프롬프트 필터가 보장)
@@ -1814,6 +2235,8 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
     캐릭터 태그가 빠질 수 있습니다. 그래서 정제(dedupe/sanitize/anatomy)를 **모두 통과한 뒤** 여기서
     보장 주입합니다. 이미 들어가 있으면(대소문자·'_' 차이 무시) 중복을 만들지 않습니다.
     주인공 태그는 맨 앞(모델이 먼저 읽는 자리), 상대방 태그는 맨 뒤(POV 컷만 해당)에 붙입니다.
+    [2026-09-12] 상대방을 최소 태그(invisible man/woman)로 그리는 중에는 시트의 #상대방 태그#를
+    넣지 않습니다 — 캐릭터 정체 태그는 머리와 복장을 통째로 불러와 고정 그룹과 싸웁니다.
     """
     text = str(body or "")
     low = re.sub(r"\s+", " ", text.lower()).replace("_", " ")
@@ -1824,7 +2247,7 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
 
     head_add = [t for t in _char_tag_list("char_tags") if not present(t)]
     tail_add = [t for t in _char_tag_list("partner_char_tags") if not present(t)] \
-        if include_partner else []
+        if (include_partner and not _partner_invisible()) else []
     out = text.strip().strip(", ")
     if head_add:
         out = ", ".join(head_add) + (", " + out if out else "")
@@ -1836,12 +2259,35 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
 def _build_partner_block(episode: int, name_b: str, cut_state: dict = None) -> list:
     """[2026-08-28] 상대방(BBB) 태그 블록 — 주인공(AAA)과 물리 분리.
 
-    [BBB ...] 라인의 태그는 상대방에게만 적용됨을 명시 (LLM 프롬프트 생성용).
-    EP별 노출(partner_exposure_tag)/표정(partner_expression_tag) 포함.
+    [2026-09-12] 기본(`comic_partner_invisible=True`)은 **고정 최소 그룹 1개**다.
+        [BBB] … appearance is COMPLETE and FINAL: (bald featureless faceless naked nude <체형> invisible man:3.0)
+        [BBB RULE] 그 그룹을 그대로 내보내고 외모 태그는 새로 쓰지 말라는 지시
+        [BBB ACTION]/[BBB PROPS] 컷 상태 시트에서 온 포즈·소지품 (외모 항목은 폐기)
+    `--partner-full`(config.comic_partner_invisible=False)로 켜면 아래 상세 태그 블록
+    ([BBB HAIR]/[BBB FACE]/[BBB MAKEUP]/[BBB CLOTHES]…)으로 돌아간다.
 
     Returns:
         ["[BBB] ...", "[BBB HAIR] ...", ...] 라인 리스트
     """
+    if _partner_invisible():
+        # 외모는 고정 그룹이 전부 — 컷 상태에서는 포즈·소지품만 살린다(한글/외모 항목은 버린다).
+        lines = [
+            f"[BBB] {name_b} (partner) - appearance is COMPLETE and FINAL: {_partner_simple_tag(episode)}",
+            f"[BBB RULE] Output the {name_b} tag group above VERBATIM. Do NOT add or invent any "
+            f"hair / eye / skin / face / beard / makeup / glasses / clothing / body-shape tags for "
+            f"{name_b} (skinny, thin, masculine body, uniform, shirt, hair color 등 금지). "
+            f"{name_b}에게 허용하는 나머지 구문은 [ACTION]/[POSITION]/[BBB ACTION]의 포즈·행동뿐입니다.",
+        ]
+        _cs = cut_state or {}
+        for _lab, _k in (("[BBB ACTION]", "p_posture"), ("[BBB PROPS]", "p_props")):
+            _v = _dedupe_csv(str(_cs.get(_k) or "").strip())
+            _v = ",".join(t for t in _v.split(",")
+                          if t and not re.search(r"[\u3131-\u318e\uac00-\ud7af\u4e00-\u9fff]", t)
+                          and not _PARTNER_APPEARANCE_BAN_RE.search(t))
+            if _v:
+                lines.append(f"{_lab} {_v}")
+        return lines
+
     pbase = _build_partner_base_tags()
     lines = [f"[BBB] {name_b} (partner) - tags in [BBB ...] lines apply ONLY to {name_b}, NEVER to "
              f"the protagonist, and [BBB TRIGGER] tags must be kept verbatim"]

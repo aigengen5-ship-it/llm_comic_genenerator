@@ -38,10 +38,12 @@
         │      #4 한글 gloss 번역(EP당 1회)                                  comic_gen.request_ko_glossary (1778)
         │      #5 POV/multi 컷 프롬프트 재작성                               comic_gen.py:1999
         ▼
- [I] ComfyUI 렌더 : /prompt POST → output 순회 수집, 컷별 seed               comic_gen.render_panel (2271)
+ [I] ComfyUI 렌더 : /prompt POST(prompt_id) → 큐/히스토리로 완성 확인, 컷별 seed   comic_gen.render_panel
+        │      모자란 컷 1회 재전송 → 대기열이 비는지 확인(comfy_wait_queue_idle)
+        │      그래도 모자라면 합성 보류(rc 6) — --merge-partial로 예전 동작
         │
         ▼
- [J] 페이지 합성 : 얼굴 중심 크롭 + 행/열 + 설명/말풍선/속마음/의성어         comic_page_merge.compose_pages (1459)
+ [J] 페이지 합성 : 컷이 전부 만들어진 회차만 — 얼굴 중심 크롭 + 행/열 + 설명/말풍선/속마음/의성어   comic_page_merge.compose_pages
         │
         ▼
  산출물: comic/bookNNN/episode_NN_pageXX.png · comic/bookNNN/episode_NN_script.json · log/comic_gen.log
@@ -177,15 +179,30 @@
 ### 3.5 [H] 컷 → 이미지 프롬프트 — `build_panel_prompt` (2110)
 - 결정론 경로: 태그 블록(`[AAA FACE]/[AAA CLOTHES]/[BACKGROUND]/[SAFETY]`…) + 정석 뷰 토큰(`ANGLE` 프리셋) + 시선 정책(말풍선이 오른쪽이면 인물은 왼쪽).
 - 예외 경로: `camera=pov` 또는 `multi` 컷만 **LLM#5**로 자연어 재작성(`prompt_pov.md` / `prompt_multi.md` 가이드).
+- **상대방(BBB) 외모는 고정 그룹 하나로 닫습니다**(`comic_partner_invisible`, 기본 켬). 조립부는 `[BBB] … COMPLETE and FINAL: (bald featureless faceless naked nude <체형> invisible man:3.0)` + `[BBB RULE]` + 포즈/소지품만 내보냅니다. LLM이 외모를 다시 풀어쓴 POV/multi 섹션은 `simplify_partner_section`이 후처리에서 고정 그룹으로 되돌립니다(포즈·행동 구문은 보존하고, "not visible in the frame" 컷은 건드리지 않습니다). 체형 토큰은 회차 시트에서 결정론적으로 고릅니다(`_partner_body_token`: 뚱뚱함→fat 등 6종 — `skinny`는 `fat`과 충돌해 쓰지 않습니다). 되돌릴 때는 `--partner-full`.
 - 얼굴 표정: 컷 감정이 있으면 그것을 쓰고, 회차 `face_tag`는 **클라이맥스 컷에만** 적용(일상 컷이 한 표정으로 고정되던 증상 방지). 극단 표정 어휘는 `local_settings.yaml`의 `extreme_face`로만 켜집니다.
 - 복장: 컷 레벨 `clothes`는 회차 의상 태그와 **같은 종류면 병합**, 종류가 다르면 교체. 의류어가 하나도 남지 않으면 회차 의상을 되돌립니다(`_undress_guard`).
 - 정제: `dedupe_flat`(중복 태그) → `sanitize_english`(한글 → gloss or 제거) → `strip_anatomy_tags`(성기 계열만 제거) → `ensure_char_tags`(#캐릭터 태그 보장 주입).
 - 안전: 기본 `safe`(청년향) — 노출 상한 nsfw, 성기 태그는 양쪽에서 제거. `--allow-explicit`(local)에서만 `CLIMAX_VOCAB_EXPLICIT`이 살아납니다.
 
-### 3.6 [I] 렌더 — `render_panel` (2271)
-- ComfyUI `http://localhost:8188/prompt` POST (`anima_gen.py:1440`), 결과는 `~/AI/ComfyUI/output` 계열 디렉터리를 순회하며 newest 수집(`_comfyui_output_dirs`).
+### 3.6 [I] 렌더 — `render_panel`
+- ComfyUI `POST /prompt`에 넣고 **응답의 `prompt_id`를 받아 둡니다**(`anima_gen.queue_prompt`). 그 뒤는 서버에 직접 묻습니다.
+
+  | 확인 | API | 조력자 |
+  |---|---|---|
+  | 아직 도는 중? | `GET /queue` → `queue_running` / `queue_pending` | `comfy_queue_depth`, `comfy_wait_queue_idle` |
+  | 끝났나 / 실패했나 | `GET /history/<prompt_id>` → `status{completed, status_str}` | `comfy_prompt_status` |
+  | 저장된 파일명 | 같은 응답의 `outputs[노드]["images"]` | `comfy_prompt_files` → `_fetch_comfy_output` |
+
+  즉 이름 잘림(50자)·옛 파일·`mtime` 추측 없이 **정확한 파일**을 받습니다(출력 경로가 달라도 `GET /view?type=output`로 내립니다). 잘린 PNG(IEND 없음)는 받아도 버립니다(`png_complete`). 실행 실패(`status_str != success`)는 120초 대기를 접고 즉시 실패로 봅니다. 서버가 응답하지 않으면 예전 방식(`_comfyui_output_dirs` 순회 + `mtime`)으로 조용히 돌아갑니다.
+- 렌더 루프가 끝난 뒤에 ① 모자란 컷을 **한 번 더 보냅니다**(프롬프트는 이미 조립돼 있어 렌더만 돌고) ② **대기열이 비는지** 확인합니다(`comfy_wait_queue_idle`).
 - 해상도는 **슬롯 화면비에 가장 가까운 것**을 고릅니다(`_res_for_aspect`) — 전폭은 1360x1024 계열, 세로 컷은 1024x1344 계열.
 - seed 정책(요구사항): `base_seed = 컷 스크립트 해시` (`_base_seed`, 2212) → `컷 seed = base_seed + 컷 번호`. 같은 스크립트면 같은 이미지가 나옵니다.
+
+### 3.6b [I′] 페이지 합성 게이트 — 컷이 전부일 때만 합친다
+- 컷 수가 모자라면 **페이지를 합치지 않고 그 회차를 접습니다**(`comic_gen_episode`가 `incomplete`/`missing`을 반환) → `run_comic`은 종료 코드 **6**으로 알리고 `comic/bookNNN/episode_NN_SKIPPED.txt`에 사유를 남깁니다. 렌더된 컷 이미지는 그대로 남습니다.
+- `--merge-partial`(`config.comic_merge_partial`)이면 예전 동작: 렌더된 컷 기준 레이아웃으로 합성합니다(합성물은 완성이 아닙니다).
+- 근거: `--special --all-eps`에서 빠진 컷을 빼고 짠 반쪽 페이지가 완성으로 보였고, 그 다음 회차가 같은 권에 이어 쌓였습니다.
 
 ### 3.7 [J] 페이지 합성 — `comic_page_merge.compose_pages` (1459)
 - 페이지 고정 크기 1024x1454. 행 계획은 `_plan_rows` (859): cut.yaml의 `shares`(행 안 폭)·`height`(행 높이)·`center`를 따르고, spec 밖 컷은 2열로 토막.
@@ -247,6 +264,8 @@
 | 추출 프롬프트에서 본문 블록이 빠져 시트만 갔다(`units.at`가 본문에 없는 문장 → 앵커 실패 → guides 지어짐) | `[에피소드 N 본문]` 복원 + selftest로 블록 존재 고정(본문은 `episode_char_budget` 안에서만 자른다) | `comic_input.build_extract_prompt` |
 | 키 자리에 따옴표+홀 글자가 붙었다(`{"의 "at": …`, 2026-09-11 실측) — 줄 중간이라 행 두께 규칙을 못 탔다 | `{`·`[`·`,` 뒤 키 자리만 보는 복구 규칙 추가(값 안 곡선 따옴표·줄임표는 여전히 안 건드림) | `comic_input.json_soft_fix` |
 | ComfyUI가 렌더 도중 죽으면(실측 17:04) 빈 페이지 슬롯이 생겨 `ValueError`로 회차가 통째로 죽었다 | 빈 슬롯은 건너뛰고, 렌더 5연속 실패로 중단으로 판정해 남은 컷 대기를 접고, 페이지는 렌더된 컷 기준 레이아웃으로 짠다 | `comic_page_merge.compose_pages`, `comic_gen.comic_gen_episode` |
+| 이름+`mtime` 추측 대기는 '아직 큐에 있는 것'과 '실패'를 구분 못 했다 → 일부 컷이 빠진 채로 페이지가 합쳐졌고(`--all-eps`에서 반쪽 권), 실패 컷은 컷당 120초를 기다렸다 | 큐에 넣은 `prompt_id`로 `/queue`·`/history/<id>`를 물어 **완성 확인 + 파일명 확보 + 실패 즉시 감지**, 모자란 컷 1회 재전송, 대기열이 비는 것을 본 뒤에도 모자라면 **합성 보류(rc 6)** | `anima_gen.comfy_*`, `anima_gen._wait_and_copy_by_history`, `comic_gen.comic_gen_episode`, `run_comic._RC_WHY[6]` |
+| 상대방 외모 태그가 주인공에게 새고 상대방 얼굴이 회마다 달랐다(실측 POV 컷: `the man's large tan hand`) | 상대방 외모를 고정 그룹 하나로 닫는다 — `(bald featureless faceless naked nude <체형> invisible man:3.0)`, 조립부(`_build_partner_block`) + 후처리(`simplify_partner_section`) | `anima_gen._partner_simple_tag`, `comic_gen.build_panel_prompt`, `comic_gen.flatten_tag_block` |
 | 원작 생성기가 `서버 응답 실패 (…)` 한 줄만 남긴 회차(ep05 실측) | 본문 300자 미만 + 막 앵커 없으면 회차를 건너뜀(rc 5) — 근거 없는 컷 6개를 지우지 않는다 | `novel_progress.load`, `run_comic._RC_WHY[5]` |
 | 잡히지 않은 예외가 날것 traceback만 남기고 조용히 끝남 | 예외도 error.log에 복제(트레이스 Lines 포함) 후 재던진다 | `run_comic.__main__` |
 | 컷이 state를 안 채워 회차 태그가 상태를 대체 | 엄격 게이트 + 보충 호출(빈 항목만 / 첫 컷만) → `PanelScriptError` | `comic_gen.validate_panel_script`, `fill_first_cut` |

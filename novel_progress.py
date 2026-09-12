@@ -641,7 +641,12 @@ def sheet_overrides(sheet: dict) -> dict:
            "body_shape": ", ".join(body_bits)}
     # clothes는 일부러 넣지 않는다: 원작의 복장은 한글 산문("…실크 슬립 원피스")이고
     # anima는 영문 태그만 읽는다 → 번역은 build_extract_prompt가 LLM에게 맡긴다.
-    part = {"name": _flat(_sheet_get(pa, "name")).strip(), "sex": _sex(_sheet_get(pa, "sex"))}
+    # 외모·나이는 예외: 상대방은 [2026-09-12]부터 고정 최소 태그로 그려지는데, 그 그룹의
+    #   체형 토큰(shota/petite/thin/fat/muscle/old)은 시트의 한글 외모에서 결정론으로 뽑는다
+    #   (anima_gen._partner_body_token). LLM 경유가 없으니 산문이 태그에 새지도 않는다.
+    part = {"name": _flat(_sheet_get(pa, "name")).strip(), "sex": _sex(_sheet_get(pa, "sex")),
+            "appearance": _flat(_sheet_join_pa(pa, PARTNER_ALIAS["외모"])).strip(),
+            "age": _flat(_sheet_join_pa(pa, PARTNER_ALIAS["나이"])).strip()}
     ov = {"protagonist": {k: v for k, v in pro.items() if v},
           "partner": {k: v for k, v in part.items() if v}}
     return {k: v for k, v in ov.items() if v}

@@ -7,7 +7,7 @@
   1) **설명(지문)** : 컷 **하단 왼쪽** 흰 박스 + 검은 테두리 + 검은 글씨 (`_draw_caption_box`).
      박스는 **글자 덩치에 맞추어** 작아지고, 대사가 있는 컷(`narrow`)은 폭·줄 수를 더 줄여
      대화 자리를 남긴다. ★서두 요약/에필로그만 예외로 컷 면적의 ~70%를 채운다(`narr_large`).
-  2) **대사** : 만화 말풍선 = 직사각형 / **속마음** : 타원 (`_draw_balloon`, ≤2개).
+  2) **대사** : 만화 말풍선 = 직사각형 / **속마음** : 타원 (`_draw_balloon`, ≤BALLOON_MAX개).
      자리는 화자별로 고정 — `speaker="me"`(주인공)는 **왼쪽 위 → 왼쪽 아래**, `speaker="other"`
      (상대방)는 **오른쪽 위 → 오른쪽 아래**(`_balloon_slot_pref`).
      [2026-09-10] 사용자 지시: 꼬리(화살표)·속마음 화살표·생각 물방울(작은 원)은 정상 동작하지
@@ -129,9 +129,10 @@ BUNDLED_FONTS = {
 font_role_paths = {}                     # role → 사용자 지정 경로(--font-narration 등)
 
 # 화면 문법 상수
-BALLOON_MAX = 3                          # 컷당 풍선 최대 2개(사용자 지시)
+BALLOON_MAX = 3                          # 컷당 풍선 최대 3개(2026-09-11 사용자 지시 2→3)
+                                           #   컷 스크립트 쪽 상한(comic_gen.DIALOG_LINES)이 이 값을 그대로 따른다
 BALLOON_FONT_SIZE = 18                   # 말풍선/속마음 글자 — 풍선이 좁아졌으니 크게 둘 이유가 없다(2026-09-09)
-NARR_LARGE_FONT_SIZE = 25                # 서두 요약/에필로그의 큰 지문
+NARR_LARGE_FONT_SIZE = 25                # 서두 요약/에필로그의 큰 지문(2026-09-11 사용자 지시 30→25)
 SFX_FONT_SIZE = 54                       # 의성어 대형
 NARR_LARGE_COVER = 0.70                  # 요약 지문이 컷 면적의 70%를 채운다(사용자 지시)
 NARR_MAX_LINES = 99                      # [2026-09-09] 줄 수로 설명을 자르지 않는다(글자가 다 보여야 한다)
@@ -139,8 +140,9 @@ NARR_MAX_LINES_WITH_BALLOON = 99         #   대신 대사가 있는 컷은 **�
 NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스는 컷 높이의 55% 이내(나머지는 풍선)
 # [2026-09-10] 사용자 지시: 풍선 폭을 **절반으로**(20%→10%) — 세로가 더 길어지고 얼굴을 덜 가린다.
 #   (최소 폭 하한도 96→48px로 함께 내려, 하한이 비율을 삼키지 않게 한다)
-BALLOON_W_RATIO = 0.15                   # 말풍선(직사각형) 폭 = 컷 폭의 10%
-THOUGHT_W_RATIO = 0.15                   # 속ma음(타원) 폭 = 컷 폭의 10%
+# [2026-09-11] 사용자 지시: 10%는 세로를 지나치게 늘린다 → **15%로 완화**(풍선을 3개로 늘린 같은 조정)
+BALLOON_W_RATIO = 0.15                   # 말풍선(직사각형) 폭 = 컷 폭의 15%
+THOUGHT_W_RATIO = 0.15                   # 속마음(타원) 폭 = 컷 폭의 15%
 
 # [2026-09-10] 말풍선·속마음 **이미지 은행** — 형태를 미리 그린 RGBA 자산으로 붙인다.
 #  · 크기 변형이 아니라 **모양·분위기 변형**을 은행으로 둔다(크기는 9슬라이스가 처리한다).
@@ -514,7 +516,7 @@ def text_payload(item) -> dict:
 
       {"narration": 설명(지문), "narr_large": 컷 70% 큰 지문(서두 요약/에필로그),
        "balloons": [{"kind":"speech|thought","text":…, "side":"left|right|None",
-                     "speaker":"me(주인공)|other(상대방)|None", "emo":"anger|surprise|…"}] ≤2,
+                     "speaker":"me(주인공)|other(상대방)|None", "emo":"anger|surprise|…"}] ≤BALLOON_MAX,
        "sfx": 의성어, "fade": 이벤트신을 반투명하게 하는 정도(0~0.9)}
 
     str → 설명 하나 / [a,b,c] → [설명, 대사, 대사] 하위호환(옛 selftest·재조립 경로).
@@ -600,8 +602,9 @@ def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
 def _balloon_slot_pref(balloon, facing: str = None):
     """(풍선 자리 순서, 방향 키) — 사용자 지시:
 
-      주인공(me)    : 왼쪽 위 → 왼쪽 아래(2개일 때)
-      상대방(other) : 오른쪽 위 → 오른쪽 아래(2개일 때)
+      주인공(me)    : 왼쪽 위 → 왼쪽 아래 → 왼쪽 가운데(3번째)
+      상대방(other) : 오른쪽 위 → 오른쪽 아래 → 오른쪽 가운데(3번째)
+      (세 자리가 다 차면 다른 쪽 자리·가운데로 피하고, 그래도 자리가 없으면 그 풍선은 그리지 않는다)
       화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
     방향 키(_dkey)는 꼬리를 폐지한 뒤로는 **자산 좌우 반전**에만 쓴다.
     """
@@ -1402,8 +1405,8 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                   facing: str = None, canvas=None, bank_used=None, idx: int = 0):
     """[2026-09-09] 말풍선(speech) / 속마음 풍선(thought).
 
-    speech  : **직사각형** — 폭은 컷의 10%, 글자는 그 폭에 맞춰 접고 세로로 늘린다(얼굴 가림 방지)
-    thought : **타원** — 폭은 컷의 10%, 세로는 그 폭에 글자를 넣는 데 필요한 만큼만
+    speech  : **직사각형** — 폭은 컷의 BALLOON_W_RATIO, 글자는 그 폭에 맞춰 접고 세로로 늘린다(얼굴 가림 방지)
+    thought : **타원** — 폭은 컷의 THOUGHT_W_RATIO, 세로는 그 폭에 글자를 넣는 데 필요한 만큼만
     [2026-09-10] 꼬리(화살표)·생각 물방울(작은 원)은 정상 동작하지 않아 삭제 — 몸체만 그린다.
     배치는 `_place_in_panel`(결정론 후보 순회) — 설명 박스·다른 풍선과 안 겹치게.
     → 그린 상자 (x0,y0,x1,y1) 또는 None(자리가 없으면 그리지 않는다)
@@ -1421,7 +1424,8 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     box_w = box_h = 0
     lines, font, fs, line_h = [], None, font_size, _text_line_height(font_size)
-    # [2026-09-10] 사용자 지시: 풍선은 **가로 10% · 세로로 길게**(예전 20%의 절반). 글자를 그 폭에 맞춰 접는다.
+    # [2026-09-10] 사용자 지시: 풍선은 **가로로 좁게 · 세로로 길게**(20%→10%). 글자를 그 폭에 맞춰 접는다.
+    #   [2026-09-11] 10%는 세로를 너무 늘려 BALLOON_W_RATIO/THOUGHT_W_RATIO = 15%로 완화(사용자 지시).
     #   (예전은 글자 폭에 맞춰 가로로 넓어지고 4줄에서 접혀, 얼굴을 덮는 넓은 풍선이 나왔다)
     pad = BALLOON_PAD
     wr = THOUGHT_W_RATIO if kind == "thought" else BALLOON_W_RATIO
@@ -1456,7 +1460,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         th = len(ls) * lh
         if kind == "thought":
             bw = int(min(max(bw_target, tw + 2 * pad_h), iw - 16))
-            # [2026-09-10] 10% 폭은 세로를 부른다 — 세로가 컷 높이의 THOUGHT_H_CAP을 넘으면
+            # [2026-09-10] 좁은 폭은 세로를 부른다 — 세로가 컷 높이의 THOUGHT_H_CAP을 넘으면
             #   폭을 THOUGHT_W_RELIEF까지 넓혀 줄 수를 줄인다(글자를 버리는 대신 폭을 쓴다).
             if bh_ratio(th, bw, tw) > THOUGHT_H_CAP and bw_target < iw * THOUGHT_W_RELIEF:
                 bw2 = int(min(iw * THOUGHT_W_RELIEF, iw - 16))
@@ -1473,7 +1477,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             if art_id:                # 자산은 몸통 전체가 플레이트 — 최소한 이만큼은 크게
                 bh = max(bh, int(ih * BALLOON_MIN_H_RATIO), int(th + 2 * pad_v))
         else:
-            bw = int(max(bw_target, min(iw - 16, tw + 2 * pad_h)))     # 직사각형은 컷의 10% 폭을 쓴다
+            bw = int(max(bw_target, min(iw - 16, tw + 2 * pad_h)))     # 직사각형은 컷 폭 비율(BALLOON_W_RATIO)을 쓴다
             bh = int(th + 2 * pad_v)
             if art_id:
                 bh = max(bh, int(ih * BALLOON_MIN_H_RATIO))
@@ -1587,7 +1591,7 @@ def _draw_panel_text(canvas, d, ix: int, iy: int, iw: int, ih: int, item, *,
                      plate=DEFAULT_PLATE, frame=DEFAULT_FRAME,
                      frame_width: int = DEFAULT_FRAME_WIDTH, text_color=DEFAULT_TEXT,
                      facing: str = None, bank_used=None) -> list:
-    """[2026-09-09] 컷 하나에 화면 문법을 그린다 — 의성어 → 설명 박스 → 풍선(≤2개).
+    """[2026-09-09] 컷 하나에 화면 문법을 그린다 — 의성어 → 설명 박스 → 풍선(≤BALLOON_MAX개).
 
     모든 요소는 컷 안에서만 쓰이고(컷 밖으로 안 나감), 서로 안 겹치게 배치한다.
     반환: 그린 상자 [(x0,y0,x1,y1), …] (자기 점검/진단용)

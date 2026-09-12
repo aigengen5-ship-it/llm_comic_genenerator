@@ -57,7 +57,8 @@ FACE_RATIO_MIN, FACE_RATIO_MAX = 0.40, 0.60     # face:action 5:5 목표, 허용
 CAPTION_MAX_LEN = 40                            # 설명(지문) 1줄 최대 길이 (완전한 문장 기준)
 SUMMARY_CAPTION_MAX_LEN = 150                   # [2026-09-09] 서두 요약·에필로그 큰 지문(컷 70%를 채운다)
 DIALOG_MAX_LEN = 24                             # 풍선 1개 최대 글자 (길면 두 번째 풍선으로 나눔)
-DIALOG_LINES = 2                                # 컷당 풍선 최대 개수 (0~2 — 2026-09-09부터 '정확히 2줄'이 아님)
+DIALOG_LINES = CPM.BALLOON_MAX                  # 컷당 풍선 최대 개수 — **개수의 출처는 comic_page_merge.BALLOON_MAX 하나**
+                                                #   (2026-09-11 사용자 지시 2→3, 예전은 여기서 2로 잘라 렌더 상한과 어긋났다)
 SFX_MAX_LEN = 10                                # 의성어/의태어 최대 길이
 WIDE_ENABLE = True          # False면 wide 컷을 전부 portrait로 강등 (런너 --no-wide 스위치)
 
@@ -1176,7 +1177,7 @@ def _norm_lines(v) -> list:
     """[2026-09-09] 컷 화면 텍스트(대사/속마음) → [{"kind":"speech|thought","who":str,"text":str}]
 
     받는 것: {"kind","who","text"} dict / "유즈키: 대사" 문자열 / "(속마음)" 문자열 / 그 조합 리스트.
-    규칙: 풍선은 최대 DIALOG_LINES(2)개, 한 풍선 DIALOG_MAX_LEN자(넘으면 …), 화자 이름은 text에서
+    규칙: 풍선은 최대 DIALOG_LINES개, 한 풍선 DIALOG_MAX_LEN자(넘으면 …), 화자 이름은 text에서
     떼어 who로 옮긴다(화면에 이름이 안 찍힌다), (…)·'속마음:' 표시는 thought로 본다.
     """
     if v is None:
@@ -1250,7 +1251,7 @@ def _split_dialog(s: str):
 
 
 def panel_text_payload(panel) -> dict:
-    """컷 1개 → comic_page_merge 화면 문법 페이로드 (설명 박스 + 풍선 ≤2 + 의성어)."""
+    """컷 1개 → comic_page_merge 화면 문법 페이로드 (설명 박스 + 풍선 ≤DIALOG_LINES + 의성어)."""
     p = panel or {}
     role = str(p.get("text_role") or "")
     emo_on = bool(getattr(config, "comic_emo_marks", True))
@@ -1367,7 +1368,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         pos = str(it.get("position") or "NONE").strip()
         clim = str(it.get("climax") or "").strip()
         p = {"no": i, "type": _norm_type(it.get("type")), "caption_ko": cap,
-             "lines": lns,                                                   # [2026-09-09] 풍선 ≤2
+             "lines": lns,                                                   # [2026-09-09] 풍선 ≤DIALOG_LINES
              "dialog": [f"{b['who']}: {b['text']}" if b["who"] else b["text"] for b in lns],
              "sfx": sfx, "text_role": "", "narr_large": False,
              "bg_only": False, "fade": 0.0,                                  # ★요약/에필로그 슬롯용
@@ -3010,7 +3011,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     _prompt_san_flush(ep_num_1)      # [2026-09-09] 컷마다 찍던 정제 로그를 회차 끝 한 줄로 모은다
     out_dir = comic_out_dir()
     os.makedirs(out_dir, exist_ok=True)
-    # 화면 텍스트 = 설명(하단 왼쪽 박스) + 풍선(말풍선/속마음 ≤2) + 의성어 (comic_page_merge가 그린다)
+    # 화면 텍스트 = 설명(하단 왼쪽 박스) + 풍선(말풍선/속마음 ≤DIALOG_LINES) + 의성어 (comic_page_merge가 그린다)
     texts = [panel_text_payload(p) for p in panels][:len(files)]
     # [2026-09-07] 레이아웃 v2 입력: wide 플래그 + face 여부(혼합 행 축소 페어링) + 텍스트 존
     wide_flags = [bool(p.get("wide")) for p in panels][:len(files)]

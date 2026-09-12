@@ -1542,7 +1542,7 @@ def main() -> int:
           str(jobs_one))
 
     # ============================== [2026-09-09] 화면 문법 (설명 / 말풍선 / 속마음 / 의성어)
-    print("\n== ⑩ 화면 문법: 설명 박스 + 풍선(≤2) + 의성어 + ★서두요약·에필로그 ==")
+    print("\n== ⑩ 화면 문법: 설명 박스 + 풍선(≤3) + 의성어 + ★서두요약·에필로그 ==")
     ln = CG._norm_lines(["소타: 무거운 건 저에게 맡기세요.", "(이 사람, 아까부터 알고 있었다.)",
                          {"kind": "thought", "who": "유즈키", "text": "세 번째 호흡"},
                          "너무 긴 대사 " * 8])
@@ -1550,7 +1550,8 @@ def main() -> int:
           ln[0]["who"] == "소타" and ln[0]["text"].startswith("무거운") and "소타" not in ln[0]["text"],
           str(ln[:1]))
     check("_norm_lines: (괄호) 표기는 속마음 풍선으로 본다", ln[1]["kind"] == "thought", str(ln[1]))
-    check("_norm_lines: 풍선은 최대 2개(3번째부터 버린다)", len(ln) == 2, str(len(ln)))
+    check("_norm_lines: 풍선은 최대 " + str(CG.DIALOG_LINES) + "개(4번째부터 버린다)",
+          len(ln) == CG.DIALOG_LINES, str(len(ln)))
     check("_norm_lines: 한 풍선은 최대 DIALOG_MAX_LEN자(길면 … 로 자른다 → 두 번째 풍선으로)",
           all(len(x["text"]) <= CG.DIALOG_MAX_LEN for x in ln), str([len(x["text"]) for x in ln]))
     check("_norm_lines: {kind,who,text} dict 입력도 받는다",
@@ -1560,7 +1561,7 @@ def main() -> int:
           str(CG._norm_dialog([{"kind": "speech", "who": "유즈키", "text": "안 돼"}])))
     check("text_payload 하위호환: str/list 입력도 화면 문법으로 번역된다",
           CPM.text_payload("지문")["narration"] == "지문"
-          and len(CPM.text_payload(["지문", "대사1", "대사2", "대사3"])["balloons"]) == 2)
+          and len(CPM.text_payload(["지문", "대사1", "대사2", "대사3"])["balloons"]) == CPM.BALLOON_MAX)
 
     pnl = {"no": 1, "caption_ko": "지문", "sfx": "쿵", "facing": "right", "fade": 0.0,
            "lines": [{"kind": "speech", "who": "소타", "text": "대사"}]}
@@ -1764,6 +1765,32 @@ def main() -> int:
     check("풍선은 컷 밖으로 나가지 않는다",
           all(r[0] >= PX and r[1] >= PY and r[2] <= PX + PW and r[3] <= PY + PH for r in _rects),
           str(_rects))
+
+    # [2026-09-11] 사용자 지시로 컷당 풍선 2→3 — 개수의 출처는 comic_page_merge.BALLOON_MAX 하나다
+    check("컷 스크립트의 풍선 상한이 렌더 상한과 같다(DIALOG_LINES == BALLOON_MAX == 3)",
+          CG.DIALOG_LINES == CPM.BALLOON_MAX == 3, f"{CG.DIALOG_LINES}/{CPM.BALLOON_MAX}")
+
+    def _ovl(a, b):
+        return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+    _cv3b = Image.new("RGB", (PW, PH), (70, 130, 190))
+    _dd3b = ImageDraw.Draw(_cv3b)
+    _r3 = []
+    for _b in ({"kind": "speech", "text": "먼저 한 마디", "speaker": "me"},
+               {"kind": "speech", "text": "상대 말", "speaker": "other"},
+               {"kind": "thought", "text": "세 번째 속마음", "speaker": "me"}):
+        _rr = CPM._draw_balloon(_dd3b, PX, PY, PW, PH, _b, avoid=_r3)
+        if _rr:
+            _r3.append(_rr)
+    check("풍선 3개가 실제로 그려진다(세 번째는 왼쪽 가운데 자리까지 쓴다)",
+          len(_r3) == 3, str(len(_r3)))
+    check("풍선 3개는 서로 안 겹치고 컷 안에 있다",
+          not any(_ovl(x, y) for i, x in enumerate(_r3) for y in _r3[i + 1:])
+          and all(r[0] >= PX and r[1] >= PY and r[2] <= PX + PW and r[3] <= PY + PH for r in _r3),
+          str(_r3))
+    check("3번째 풍선은 앞 두 개와 다른 화자 자리로 피한다(주인공 = 왼쪽 유지)",
+          len(_r3) == 3 and (_r3[2][0] + _r3[2][2]) / 2 < PX + PW * 0.5,
+          str(_r3[2] if len(_r3) == 3 else _r3))
 
     # 꼬리·생각 물방울은 삭제됐다 — 몸체만 그린다(아래 설명 박스 검사로 이어진다)
 

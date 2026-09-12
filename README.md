@@ -790,6 +790,9 @@ venv/bin/python run_comic.py ... --balloon-style image
   불러와 고정 그룹과 싸우기 때문입니다(주인공 태그는 모든 컷에 그대로 들어갑니다).
 - 확인: 실행 첫 줄의 `상대방 외모 : 최소 태그 (invisible man/woman 고정 그룹)`, 컷 프롬프트에서는
   `log/tag_out.txt`의 해당 컷 `Prompt` 블록, 로그의 `[PARTNER TAGS] … 섹션을 고정 그룹으로 단순화`.
+- **멀티 컷의 `Subject 2:`도 같은 규칙입니다.** 라벨·인원 태그·고정 그룹을 각각 쉼표로 분리해
+  `Subject 2: 1boy, (bald featureless faceless naked nude <체형> invisible man:3.0), interacting with …`
+  형태로 씁니다(줄 중간에 붙은 것도 잡습니다). 그룹이 이미 있으면 체형 토큰·강도를 그대로 둡니다.
 
 `--partner-full`를 켜면 예전처럼 시트의 상세 태그(`[BBB HAIR]`·`[BBB FACE]`·`[BBB MAKEUP]`·`[BBB CLOTHES]`…)
 로 그립니다. 상대방을 **그려야 하는** 회차(상대 얼굴 클로즈업이 필요한 컷 템플릿 등)에서 쓰시면 됩니다.
@@ -824,6 +827,23 @@ venv/bin/python run_comic.py ... --balloon-style image
   `ComfyUI 대기열 확인: 실행 N / 대기 M`, `[ComfyUI] Copied(큐 히스토리): …`, `모자란 컷 N개를 다시 보냅니다`.
 - 지금 있는 컷으로라도 합치고 싶으시면 `--merge-partial`를 쓰세요. 합성된 페이지는 **완성이 아닙니다.**
 - 서버가 응답하지 않으면 예전 방식(이름+시각 검색)으로 조용히 돌아갑니다 — 파이프라인는 죽지 않습니다.
+
+### 3-8i) 성별이 프롬프트에 새지 않게 — 대명사 · 하체 · `anal`
+
+10화를 뽑은 실측(`log/tag_out.txt`)에서 **남자 주인공** 컷에 이런 문장이 그대로 들어가 있었습니다.
+
+| 증상 | 실측 | 이제 |
+|---|---|---|
+| 대명사가 여성 | `She is facing to the right, … reaching her slender arm` | `He is facing … his slender arm` |
+| 수위 태그가 두 번 | 헤더 `…, explicit, from_side` + 본문 끝 `…, explicit` | 본문에서는 걷습니다(헤더가 단독 소유) |
+| 남성 하체가 여성처럼 | 팬티를 입었는데도 cameltoe, 하의가 없으면 질 묘사 | 팬티 착용 → `(bulge)`, 하의 없음 → `(futanari, glans)` + negative `(vagina)`, `(cameltoe)` |
+| 남자 × 인데 질교 | `His penis is in her vagina.`(자세 시트에 213회) | `His penis is in his anus.` + `(anal:1.6)` |
+
+- 미션러리·기승위·후배위는 **자세 문장을 그대로 두고** 삽입만 항으로 바꿉니다(사용자 지시).
+- 대명사는 **상대방이 같은 성별일 때만** 통째로 바꿉니다. 남자 주인공 × 여자 상대방에서 `her`는 상대방 소유일 수 있어 자동으로 건드리지 않습니다(`comic_gen.fix_pronoun_gender`).
+- 두 인물이 모두 남자라는 것을 태그로도 견제합니다 — 삽입 컷에 `(males_only:1.4)`.
+- 하체 보안 태그는 노출이 있는 수위에서 켜집니다. 청년향(기본)은 성기를 그리지 않으므로 붙지 않습니다.
+- 추가 negative는 `anima_gen.set_extra_negative()`로 음성 프롬프트(노드 87)에 중복 없이 덧붙습니다.
 
 ### 3-9) 로컬 전용 입력 — 단편 생성기 `progress/` 포맷 (`--special`)
 

@@ -1868,6 +1868,31 @@ def dump_workflow_once(prompt: dict, episode=None, prefix: str = "", template: s
         return ""
 
 
+_extra_negative = ""           # [2026-09-12] 컷 단위 음성 태그 (comic_gen이 성별/노출에 맞춰 세팅)
+
+
+def set_extra_negative(text: str):
+    """커프롬프트와 함께 갈 **추가 negative**를 한 번 세운다 (comic_gen.render_panel이 컷마다 호출).
+
+    `comfyui_run_anima`는 노드 87에 고정 템플릿만 넣었는데, 그래서 "남자 주인공인데 cameltoe로
+    그려진다"류에 컷별 부정 태그를 끼워넣을 곳이 없었다. 노드 87 텍스트 끝에 중복 없이 붙인다.
+    """
+    global _extra_negative
+    _extra_negative = str(text or "").strip()
+
+
+def _merge_extra_negative(text: str) -> str:
+    add = [t.strip() for t in re.split(r",\s*", _extra_negative) if t.strip()]
+    if not add:
+        return text
+    have = {t.strip().lower() for t in str(text or "").split(",") if t.strip()}
+    extra = [t for t in add if t.lower() not in have]
+    if not extra:
+        return text
+    log(f"[ComfyUI negative] 컷별 음성 태그 추가: {', '.join(extra)}")
+    return (str(text or "").strip() + ", " + ", ".join(extra)).strip(", ")
+
+
 def queue_prompt(prompt):
     """ComfyUI에 프롬프트 큐에 추가 → **prompt_id** (서버가 답을 안 주면 "")
 
@@ -1967,10 +1992,13 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
         prompt["87"]["inputs"]["text"] = f"""
 2girls, 2boys, 3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
 """.strip()
-    else:        
+    else:
         prompt["87"]["inputs"]["text"] = f"""
 3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
 """.strip()
+
+    # [2026-09-12] 컷별 음성 태그(성별·하체 노출 보안)를 고정 템플릿 뒤에 붙인다
+    prompt["87"]["inputs"]["text"] = _merge_extra_negative(prompt["87"]["inputs"]["text"])
 
     # 파일명 (./image 디렉토리로 저장)
     # event{숫자} 제거, 특수 기호 제거, 중복 언더스코어 정리
@@ -2137,6 +2165,14 @@ _PARTNER_APPEARANCE_BAN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# [2026-09-12] "hands gripping her shoulders"는 상대방 외모가 아니라 **행동**이다.
+#   외모 금지어가 걸려도 행동 동사가 있으면 살린다(예시: "interacting with by holding her hand …").
+_PARTNER_ACTION_RE = re.compile(
+    r"(?i)\b(interact\w*|hold\w*|grip\w*|press\w*|touch\w*|look\w*|show\w*|rest\w*|wrap\w*|pin\w*|"
+    r"grab\w*|squeez\w*|trac\w*|lean\w*|kiss\w*|block\w*|pull\w*|push\w*|strok\w*|caress\w*|feel\w*|"
+    r"slid\w*|interlock\w*|pinion\w*)\b"
+)
+
 
 def _partner_invisible() -> bool:
     """[2026-09-12] 상대방을 최소 태그(invisible man/woman)로 그리는지 (기본 켬)."""
@@ -2200,10 +2236,15 @@ def _partner_kept_phrases(body: str) -> list:
     kept = []
     for ph in _split_top_level_commas(body):
         # '(the man's large tan hand:1.7)' → 내부에서 skin 계열어가 걸리면 조각을 버린다
+        if _PARTNER_ACTION_RE.search(ph):
+            kept.append(ph.strip())      # "hands gripping her shoulders"류는 외모가 아니라 **행동**이다
+            continue
         if _PARTNER_APPEARANCE_BAN_RE.search(ph):
             continue
         if ph.strip().upper() == 'BREAK' or not ph.strip():
             continue
+        if "not visible in the frame" in ph.lower():
+            continue          # 프레임 밖 잔해 문장(태그로 들어가면 사람이 준다)
         kept.append(ph.strip())
     return kept
 
@@ -2224,6 +2265,9 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
     if not prompt or not _partner_invisible():
         return prompt
     group = _partner_simple_tag(episode)
+    # [2026-09-12] "…, Subject 2: 1boy, …"처럼 **줄 중간**에 붙은 상대방 섹션도 있다(log 실측 EP1 p14).
+    #   이 정규화는 줄 단위이므로 앞에 줄바꿈을 심어 둔다. Subject 1(주인공)은 건드리지 않는다.
+    prompt = re.sub(r"(?i)([.,;])\s*(subject\s*2\b\s*[:\-]?\s*)", r"\1\n\2\n", prompt)
     lines = prompt.split("\n")
     changed = 0
 
@@ -2234,13 +2278,17 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
         if name_b and name_b.lower() in low and ("character" in low or "subject" in low) \
                 and "left" not in low and "protagonist" not in low and "subject 1" not in low:
             return True
-        return bool(re.match(r"\s*\[\s*subject\s*(2|m1)\b", low))
+        return bool(re.match(r"\s*[\[(]?\s*subject\s*(2|m1)\b", low))
 
     i = 0
     while i < len(lines):
         line = lines[i]
         low = line.lower()
-        multi = bool(re.match(r"\s*\[\s*subject\s*(2|m1)\b", low))
+        multi = bool(re.match(r"\s*[\[(]?\s*subject\s*(2|m1)\b", low))
+        # "Subject 2:" 라벨은 살린다(주인공/상대방 서술이 뒤섞이는 걸 막는다). 대괄호 모듈은 그대로.
+        label = ""
+        if multi and not low.lstrip().startswith("[") and ":" in line:
+            label = line.strip().split(":", 1)[0].strip().capitalize() + ":"
         header = bool(line.strip().endswith(":")) or line.strip().upper().startswith("---")
         if not multi and not (header and _is_partner_header(low)):
             i += 1
@@ -2252,7 +2300,7 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
                 j += 1
             end = j
             while end < len(lines) and not re.match(r"\s*(---|==|\[)", lines[end]) \
-                    and not re.match(r"\s*\[\s*subject", lines[end].lower()):
+                    and not re.match(r"\s*(\[\s*)?subject\s*\d", lines[end].lower()):
                 end += 1
             src = "\n".join(lines[j:end])
         else:
@@ -2263,17 +2311,30 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
                 continue
             end = j + 1
             src = lines[j].strip()
-        if "invisible man" in src or "invisible woman" in src:
-            i = end
-            continue                                    # 이미 고정 그룹 → 멱등
-        if "not visible in the frame" in src.lower():
+        if not multi and "not visible in the frame" in src.lower():
             i = end
             continue        # 관찰자가 프레임에 없는 컷 — invisible 그룹을 불러와 사람이 늘어나면 안 된다
-        kept = _partner_kept_phrases(src)
-        new_body = group + (", " + ", ".join(kept) if kept else "")
-        log(f"[PARTNER TAGS] {name_b or 'BBB'} 섹션을 고정 그룹으로 단순화: "
-            f"{len(_split_top_level_commas(src))}조각 → {1 + len(kept)}조각\n")
-        lines[j:end] = [new_body]
+        first = src.strip().split(",")[0].strip()
+        head = first if re.fullmatch(r"(?i)\s*\d+(girls?|boys?|animals?)\s*", first) else ""
+        # 이미 고정 그룹이 있으면 **그 그룹을 그대로** 쓴다(체형 토큰·강도를 임의로 바꾸지 않는다 → 멱등)
+        existing = next((x.strip() for x in _split_top_level_commas(src) if "invisible man" in x.lower()
+                         or "invisible woman" in x.lower()), "")
+        kept = [k for k in _partner_kept_phrases(src) if k.lower() != head.lower()]
+        items = ([head] if head else []) + [existing or group] + kept   # 고정 그룹은 인원 태그 다음 **독립 태그**
+        new_body = ", ".join(items)
+        same = new_body.strip() == "\n".join(lines[j:end]).strip()
+        if same and not label:
+            i = end
+            continue                                    # 이미 고정 그룹 + 포즈뿐(멱등)
+        if label:
+            new_body = label + " " + new_body           # 헤더 라벨은 본문에 합친다
+        if not same:
+            log(f"[PARTNER TAGS] {name_b or 'BBB'} 섹션을 고정 그룹으로 단순화: "
+                f"{len(_split_top_level_commas(src))}조각 → {1 + len(kept)}조각\n")
+        if label:
+            lines[i:end] = [new_body]        # 헤더 라벨은 본문에 합친다(독립 라벨 줄을 남기지 않는다)
+        else:
+            lines[j:end] = [new_body]
         changed += 1
         i = j + 1
     return "\n".join(lines) if changed else prompt

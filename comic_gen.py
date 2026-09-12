@@ -69,8 +69,15 @@ WIDE_ENABLE = True          # False면 wide 컷을 전부 portrait로 강등 (�
 # [2026-09-08] 어구 다듬기: "is looking to the right"은 주어 없는 파편이라 주어만 보강했다.
 #   `subject on left` / `negative space` 는 잘못된 어구라고 판단해 없앴다(사용자 지시).
 #   시선 어구는 어디까지나 그림의 구도 이야기다(화면 텍스트는 comic_page_merge가 컷 안에서 배치한다).
-RIGHT_FACING_TAGS = "She is facing to the right, she is looking to the right, "
-FRONT_FACING_TAGS = "she is looking at viewer, "
+# [2026-09-12] "She is facing…"이 하드코딩되어 남자 주인공 컷에도 붙었다(log 실측 p06~p15) → 성별 파생으로 바꿨다.
+def _facing_tags_right() -> str:
+    cap, low, _ = _protagonist_pronouns()
+    return f"{cap} is facing to the right, {low} is looking to the right, "
+
+
+def _facing_tags_front() -> str:
+    _, low, _ = _protagonist_pronouns()
+    return f"{low} is looking at viewer, "
 
 # ------------------------------------------------------------------ cut.yaml 페이지 레이아웃
 # [2026-09-07 A안] data/cut.yaml = 페이지 템플릿 DB(situation: 기/승/전/결 태그 + tier별 행 사양).
@@ -2506,16 +2513,153 @@ def _llm_compose_panel_prompt(ep_idx: int, tag_block: str, angle: str, kind: str
 
 _JUNK_PHRASES = ("not visible in the frame",)   # 상대방 없는 컷에서 도는 잔해(태그로 들어가 화면을 흐린다)
 _DANGLING_VERB = r"(looking|facing|standing|sitting|lying|turning|reaching)"
+
+
+# ── [2026-09-12] 성별 안전장치 4종 (log/tag_out.txt 실측 기준) ────────────────────────────
+#   A1) 주인공이 남자인데 "She is facing to the right…"처럼 대명사가 여성으로 나간다
+#   A2) 수위 태그가 헤더와 본문에 두 번 잡힌다("explicit, … , explicit")
+#   C) 남자 주인공 하체 — 팬티를 입으면 bulge, 안 입으면 (futanari, glans) + negative 보안
+#   D) 남자 × 남자 커플은 삽입 장면을 전부 anal로(미션러리·기승위·후배위 모두 그대로, 자세는 유지)
+
+_MALE_WORDS = ("male", "남자", "남성", "boy", "m")
+_FEMALE_WORDS = ("female", "여자", "여성", "girl", "f")
+
+
+def _is_male(value) -> bool:
+    return str(value or "").strip().lower() in _MALE_WORDS
+
+
+def _is_female(value) -> bool:
+    return str(value or "").strip().lower() in _FEMALE_WORDS
+
+
+def protagonist_male() -> bool:
+    """주인공(AAA)이 남자인가 — config.sex가 기준이다."""
+    return _is_male(getattr(config, "sex", ""))
+
+
+def partner_male() -> bool:
+    """상대방(BBB)이 남자인가 — sex2가 비어 있으면 이 프로젝트 기본값(남자)을 따른다."""
+    v = str(getattr(config, "sex2", "") or "남자").strip().lower()
+    return not _is_female(v)
+
+
+def _protagonist_pronouns():
+    return ("He", "he", "his") if protagonist_male() else ("She", "she", "her")
+
+
+_F2M = ((r"\bHerself\b", "Himself"), (r"\bherself\b", "himself"),
+        (r"\bHers\b", "His"), (r"\bhers\b", "his"),
+        (r"\bShe\b", "He"), (r"\bshe\b", "he"),
+        (r"\bHer\b", "His"), (r"\bher\b", "his"))
+_M2F = ((r"\bHimself\b", "Herself"), (r"\bhimself\b", "herself"),
+        (r"\bHis\b", "Her"), (r"\bhis\b", "her"),
+        (r"\bHim\b", "Her"), (r"\bhim\b", "her"),
+        (r"\bHe\b", "She"), (r"\bhe\b", "she"))
+
+_pron_warned = [False]
+
+
+def fix_pronoun_gender(text: str) -> str:
+    """주인공 성별에 맞춰 대명사를 고친다 — **상대방이 같은 성별일 때만** 통째로 바꾼다.
+
+    남자 주인공 × 여자 상대방에서 'her'는 상대방을 가리킬 수 있어 blanket 치환이 위험하다.
+    그 조합은 우리가 만드는 결정적 문장(facing/자세 문장)만 성별을 지킨다(아래 호출부 참조).
+    """
+    if not text:
+        return text
+    male = protagonist_male()
+    same_sex = (male and partner_male()) or (not male and not partner_male())
+    if not same_sex:
+        return text
+    out = text
+    for pat, rep in (_F2M if male else _M2F):
+        out = re.sub(pat, rep, out)
+    if out != text and not _pron_warned[0]:
+        _pron_warned[0] = True
+        _clog("대명사를 주인공 성별(" + ("male" if male else "female") + ")로 통일했습니다 — "
+              "예: " + text.split(",")[0][:60] + " → " + out.split(",")[0][:60])
+    return out
+
+
+_SAFETY_TOKENS = ("explicit", "nsfw", "safe", "sensitive")
+
+
+def strip_safety_token(body: str, safety_tag: str = "") -> str:
+    """수위 태그를 본문에서 걷는다 — 헤더가 이미 갖고 있어 'explicit, …, explicit'로 중복됐다."""
+    if not body:
+        return body
+    drop = {str(safety_tag or "").strip().lower()} | set(_SAFETY_TOKENS)
+    drop.discard("")
+    kept = []
+    for ph in anima_gen._split_top_level_commas(body):
+        if ph.strip().strip(".").strip().lower() in drop:
+            continue
+        kept.append(ph.strip())
+    return ", ".join(kept)
+
+
+_UNDERWEAR_RE = re.compile(r"(?i)\b(panties|underwear|briefs|boxer|boxers|thong|bloomers|knickers|lingerie)\b")
+_BOTTOMLESS_RE = re.compile(r"(?i)\b(bottomless|no panties|without panties|naked|nude|fully nude|"
+                            r"completely naked|without clothes|no clothes|streaking)\b")
+
+
+def male_lower_body(clothes_text: str) -> tuple:
+    """[2026-09-12] C) 남자 주인공의 하체 — 여성으로 그려지는 걸 막는다. (추가 태그, 추가 negative)
+
+      팬티 등 하의 착용  → (bulge)        + negative (cameltoe), (vagina)
+      하의 없음(bottomless) → (futanari, glans) + negative (vagina), (cameltoe)
+    노출이 없는 청년향(기본)에서는 성기를 그리지 않으므로 --allow-explicit일 때만 켠다.
+    """
+    if not protagonist_male() or not anima_gen.explicit_allowed():
+        return "", ""
+    t = str(clothes_text or "")
+    if _BOTTOMLESS_RE.search(t):
+        return "(futanari:1.4, glans:1.4)", "(vagina:1.5), (cameltoe:1.5), (pussy:1.4)"
+    if _UNDERWEAR_RE.search(t):
+        return "(bulge:1.4)", "(cameltoe:1.5), (vagina:1.4)"
+    return "", ""
+
+
+_PENETRATION_RE = re.compile(r"(?i)\b(missionary|doggy|cowgirl|riding|all fours|from behind|having sex|"
+                             r"having [a-z]+ sex|penis is in|penetrat\w*|creampie|anal)\b")
+
+
+def mm_anal_fix(text: str) -> str:
+    """[2026-09-12] D) 남자 × 남자 커플은 삽입 장면을 전부 anal로 바꾼다(자세는 그대로 둔다).
+
+    actions.yaml은 여성 주인공 시점으로 써 두었다(실측 213회: 'His penis is in her vagina.').
+    미션러리·기승위·후배위 모두 자세 문장은 살리고 **항문 삽입**만 치환한다.
+    """
+    if not text or not (protagonist_male() and partner_male()):
+        return text
+    out = text
+    out = re.sub(r"(?i)\bher vagina\b", "his anus", out)
+    out = re.sub(r"(?i)\bhis vagina\b", "his anus", out)
+    out = re.sub(r"(?i)\bvaginal\b", "anal", out)
+    out = re.sub(r"(?i)\bvagina\b", "anus", out)
+    out = re.sub(r"(?i)\b(?:in|inside) her (?:pussy|cunt)\b", "inside his asshole", out)
+    out = re.sub(r"(?i)\bcreampie\b(?! creampie)", "anal creampie", out)
+    out = re.sub(r"(?i)\banal anal creampie\b", "anal creampie", out)
+    if _PENETRATION_RE.search(out) and not re.search(r"(?i)\banal\b", out):
+        out = f"{out}, (anal:1.6)"
+    if _PENETRATION_RE.search(out) and "males_only" not in out.lower():
+        out = f"{out}, (males_only:1.4)"
+    return out
+
+
 _SUBJECT_TAIL = re.compile(r"(?i)\b(she|he|they|it|girl|boy|woman|man|person)\s*$")
 
 
 def _fix_dangling_subject(s: str) -> str:
-    """주어 없는 "is looking to the right" 류 절에 she를 보강한다. 앞에 이미 주어가 있으면 그대로 둔다."""
+    """주어 없는 "is looking to the right" 류 절에 **주인공 대명사**를 보강한다. 앞에 이미 주어가 있으면 그대로 둔다."""
+    subj = _protagonist_pronouns()[1]
+
     def rep(m):
         pre = s[:m.start()].rstrip(", ")
         if _SUBJECT_TAIL.search(pre):
             return m.group(0)
-        return f"she is {m.group(1)}"
+        return f"{subj} is {m.group(1)}"
     return re.sub(rf"(?<![A-Za-z])is {_DANGLING_VERB}\b", rep, s)
 
 
@@ -2615,7 +2759,8 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     #   빈 pose는 렌더에서 아무 자세도 없는 그림으로 이어졌다.
     if not str(pose_text or "").strip():
         _st0 = panel.get("_state") if isinstance(panel.get("_state"), dict) else {}
-        pose_text = "She is %s." % (str(_st0.get("posture") or "standing").strip() or "standing")
+        pose_text = "%s is %s." % (_protagonist_pronouns()[0],
+                                   str(_st0.get("posture") or "standing").strip() or "standing")
     is_face = panel["type"] == "face"
     if is_face:
         # [2026-09-07] portrait 정면 정책: "tilted head / looking away" 류 각도 어구를 pose에서 제거
@@ -2678,9 +2823,9 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         #   right(오른쪽文本) = 인물 왼쪽 배치 + 왼쪽→오른쪽 시선 / front(아래文本) = 정면
         facing = str(panel.get("facing") or ("right" if panel.get("wide") else "front")).lower()
         if panel.get("wide") or facing.startswith("r"):
-            body = RIGHT_FACING_TAGS + body
+            body = _facing_tags_right() + body
         else:
-            body = FRONT_FACING_TAGS + body
+            body = _facing_tags_front() + body
     body, removed = dedupe_flat(body)
     body, dropped = sanitize_english(body, gloss)
     # [2026-09-07] 해부학 정책(갱신): 성기 계열(vagina/penis 등)만 최종 필터로 제거.
@@ -2698,7 +2843,19 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     if ct_added:
         _clog(f"EP{ep_idx+1} 컷{panel['no']} #캐릭터 태그 보장 주입: {', '.join(ct_added)}")
     # [2026-09-08] 헤더末尾 마침표와 본문 첫 단어('center.subject')가 붙는 것 → 공백으로 잇는다
+    # [2026-09-12] 성별 안전장치 — 수위 태그 중복 제거 / 남자 주인공 하체 보안 / 남×남 anal
+    body = strip_safety_token(body, safety_tag)
+    _cloth = " ".join([str(panel.get("clothes") or ""),
+                       str((panel.get("_state") or {}).get("clothes") if isinstance(panel.get("_state"), dict) else ""),
+                       str(getattr(config, "clothes", "") or ""), body])
+    _x_tags, _x_neg = male_lower_body(_cloth)
+    if _x_tags:
+        body = f"{body}, {_x_tags}"
+    panel["_neg_extra"] = _x_neg
+    body = mm_anal_fix(body)
+
     joined = f"{header.rstrip()} {' ' if header.rstrip().endswith('.') else ', '}{body}"
+    joined = fix_pronoun_gender(joined)          # A1) 주인공이 남자면 she/her → he/his
     return _tidy_prompt(joined) if tidy else joined
 
 
@@ -2710,7 +2867,7 @@ def _panel_slug(pose: str, limit: int = 18) -> str:
     'episode_N_'(11) + 'comic_eN_pNN_'(14) + slug + '_anima_'(7) ≤ 50 을 유지해야
     잘리지 않은 온전한 파일명이 된다(22자면 53자에서 3자 잘림 → 매치 실패의 방아쇠).
     """
-    s = re.sub(r"[^a-zA-Z0-9_]", "_", pose.split(".")[0])
+    s = re.sub(r"[^a-zA-Z0-9_]", "_", fix_pronoun_gender(pose).split(".")[0])   # 남자 주인공인데 she_is_… 로 새던 파일명
     s = re.sub(r"_+", "_", s).strip("_").lower()
     return s[:limit]
 
@@ -2783,7 +2940,9 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
             LLM 호출이라 렌더 루프 안에서 돌리면 모델이 VRAM에 다시 올라온다.
     """
     full_prompt = prompt if prompt else build_panel_prompt(ep_idx, panel, safety_tag,
-                                                           gloss=gloss, angle_preset=angle_preset)
+                                                          gloss=gloss, angle_preset=angle_preset)
+    # [2026-09-12] 컷별 음성 태그(남자 주인공 하체 보안 등)를 서버 요청에 태운다
+    anima_gen.set_extra_negative(str(panel.get("_neg_extra") or ""))
     old_nametag = getattr(anima_gen, "anima_nametag", "")
     old_epnum = getattr(config, "episode_num", 0)
     anima_gen.anima_nametag = f"comic_e{ep_idx+1}_p{panel['no']:02d}_{_panel_slug(panel['pose'])}"

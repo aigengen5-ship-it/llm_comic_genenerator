@@ -2627,6 +2627,97 @@ def main() -> int:
         _UR.urlopen = _UR_open
         anima_gen._comfyui_output_dirs = _dirs_bak
 
+    # ── ⑬g3 [2026-09-12] 성별 안전장치 — 대명사 / 수위 태그 중복 / 남자 하체 / 남×남 anal ──
+    #   근거: log/tag_out.txt — 남자 주인공인데 "She is facing…", "explicit"이 헤더+본문 2회
+    _sex_saved = (config.sex, config.sex2, config.explicit_cli, getattr(config, "clothes", ""))
+    try:
+        config.sex, config.sex2, config.clothes = "male", "남자", "white shirt, school uniform"
+        _fx = CG.fix_pronoun_gender("She is facing to the right, she is looking at her hand.")
+        check("A1) 남자 주인공: she/her → he/his",
+              "He is facing to the right" in _fx and "his hand" in _fx and " she " not in _fx.lower(), _fx[:60])
+        check("A1) 우리가 만드는 시선 어구도 성별을 따른다",
+              CG._facing_tags_right().startswith("He is facing")
+              and CG._facing_tags_front().startswith("he is looking"),
+              CG._facing_tags_right()[:40])
+        check("A1) 파일명 slug도 성별을 따른다(she_is_… → he_is_…)",
+              CG._panel_slug("She is on the left of the frame.").startswith("he_is"),
+              CG._panel_slug("She is on the left of the frame."))
+        config.sex2 = "여자"
+        check("A1) 혼합 커플(남주×여상)은 'her'를 함부로 안 바꾼다(상대방 소유일 수 있다)",
+              CG.fix_pronoun_gender("His penis is in her vagina, she is breathing.")
+              == "His penis is in her vagina, she is breathing.")
+        config.sex2 = "남자"
+
+        check("A2) 본문에서 수위 태그를 걷는다 — 헤더가 이미 들고 있다(log 실측: explicit 2회)",
+              CG.strip_safety_token("pharmacy, night, explicit", "explicit") == "pharmacy, night"
+              and CG.strip_safety_token("girl, explicit content", "explicit") == "girl, explicit content",
+              CG.strip_safety_token("pharmacy, night, explicit", "explicit"))
+
+        config.explicit_cli = True
+        _u = CG.male_lower_body("white shirt, black panties")
+        check("C) 팬티 착용 + 남자 → bulge + negative에 cameltoe",
+              "bulge" in _u[0] and "cameltoe" in _u[1] and "vagina" in _u[1], str(_u))
+        _b = CG.male_lower_body("naked, no clothes")
+        check("C) 하의 없음(bottomless) + 남자 → (futanari, glans) + negative에 vagina/cameltoe",
+              "futanari" in _b[0] and "glans" in _b[0] and "vagina" in _b[1] and "cameltoe" in _b[1], str(_b))
+        config.explicit_cli = False
+        check("C) 청년향(기본 수위)은 하체 태그를 붙이지 않는다", CG.male_lower_body("naked") == ("", ""))
+        config.explicit_cli = True
+        config.sex = "female"
+        check("C) 여자 주인공에게는 남자 하체 태그를 붙이지 않는다", CG.male_lower_body("naked") == ("", ""))
+        config.sex = "male"
+
+        _yaml = ("She has missionary sex. She is lying on her back, legs spread. His penis is in her vagina. "
+                 "#front_view #wide #He is lying on top of her.")
+        _d = CG.mm_anal_fix(_yaml)
+        check("D) 남×남: 'in her vagina' → 'in his anus' + (anal) 태그",
+              "his anus" in _d and "vagina" not in _d.lower() and "(anal:1.6)" in _d, _d[:110])
+        check("D) 남×남: creampie → anal creampie", "anal creampie" in CG.mm_anal_fix("creampie, on sheets"))
+        check("D) 남×남: 자세(미션러리·기승위·후배위)는 살리고 삽입만 바꾼다",
+              "missionary" in _d and "doggy style" in CG.mm_anal_fix("She has doggy style sex.")
+              and "reverse cowgirl" in CG.mm_anal_fix("She has reverse cowgirl sex."))
+        check("D) 남×남: males_only로 여성 해부학 견제", "males_only" in _d)
+        config.sex2 = "여자"
+        check("D) 혼합 커플(남주×여상)은 질내를 그대로 둔다",
+              CG.mm_anal_fix("His penis is in her vagina.") == "His penis is in her vagina.")
+        config.sex2 = "남자"
+        config.sex = "female"
+        check("D) 여성 주인공(이 프로젝트 기본) 프롬프트는 그대로다",
+              CG.mm_anal_fix("His penis is in her vagina.") == "His penis is in her vagina.")
+        config.sex = "male"
+
+        _n0 = anima_gen._merge_extra_negative("blurry, worst quality")
+        anima_gen.set_extra_negative("(cameltoe:1.5), blurry")
+        _n1 = anima_gen._merge_extra_negative("blurry, worst quality")
+        check("컷별 negative가 노드 87에 붙고 중복되지 않는다",
+              "(cameltoe:1.5)" in _n1 and _n1.count("blurry") == 1 and "(cameltoe" not in _n0, _n1[-40:])
+        anima_gen.set_extra_negative("")
+
+        _p14 = ("[Global Context & Layout Scene]\n"
+                "1girl and 1boy, sitting together, Subject 1: the girl1 has green hair, "
+                "Subject 2: 1boy, (bald featureless faceless naked nude fat invisible man:3.0), "
+                "interacting with by holding her hand with firm pressure\n--- [Modules: Visuals]")
+        _r = anima_gen.simplify_partner_section(_p14, name_b="Big Boy")
+        _s2 = [x for x in _r.split("\n") if x.strip().startswith("Subject 2")]
+        check("B2) 줄 중간에 붙은 Subject 2도 잡는다(log 실측 EP1 p14)", bool(_s2), _r[:70])
+        check("B2) Subject 2 = 인원 태그 + 고정 그룹 + 행동 구문",
+              bool(_s2) and _s2[0].startswith("Subject 2: 1boy, (bald featureless faceless naked nude")
+              and "interacting with by holding her hand" in _s2[0], (_s2[0] if _s2 else _r)[:110])
+        check("B2) 고정 그룹은 문장에 붙지 않고 **쉼표로 분리된 태그**다",
+              bool(_s2) and _s2[0].split(",")[1].strip().startswith("(bald"), (_s2[0] if _s2 else "")[:80])
+        check("B2) 고정 그룹이 이미 있으면 체형 토큰·강도를 그대로 둔다(멱등)",
+              anima_gen.simplify_partner_section(_p14, name_b="Big Boy") == _r
+              and "invisible man:3.0)" in _r, _r[:80])
+        _junk = ("[Subject 2: BBB]\n1boy, (the man's large tan hand:1.7), hands gripping her shoulders, "
+                 "not visible in the frame\n--- [Modules: Visuals]")
+        _rj = anima_gen.simplify_partner_section(_junk, name_b="Big Boy")
+        check("B2) 지어낸 외모(손)와 프레임 밖 잔해는 걷고 행동은 남긴다",
+              "large tan hand" not in _rj and "not visible in the frame" not in _rj
+              and "hands gripping her shoulders" in _rj, _rj[:110])
+    finally:
+        config.sex, config.sex2, config.explicit_cli, config.clothes = _sex_saved
+        anima_gen.set_extra_negative("")
+
     # ── ⑬g2 [2026-09-12] 페이지 합성 게이트 — 컷이 전부 안 모인 회차는 합치지 않는다
     _script_g = {"panels": [{"no": i, "type": "action", "pose": f"She moves {i}.", "camera": "front_view",
                              "position": "NONE", "climax": "", "caption_ko": "", "dialog": [],

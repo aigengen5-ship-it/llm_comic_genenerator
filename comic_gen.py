@@ -58,6 +58,9 @@ CAPTION_MAX_LEN = 40                            # 설명(지문) 1줄 최대 길
 SUMMARY_CAPTION_MAX_LEN = 150                   # [2026-09-09] 서두 요약·에필로그 큰 지문(컷 70%를 채운다)
 DIALOG_MAX_LEN = 24                             # 풍선 1개 최대 글자 (길면 두 번째 풍선으로 나눔)
 DIALOG_LINES = CPM.BALLOON_MAX                  # 컷당 풍선 최대 개수 — **개수의 출처는 comic_page_merge.BALLOON_MAX 하나**
+# [2026-09-13] 사용자 지시: 발화가 3개 이상인 컷은 **미리 두 컷으로 썬다.** 풍선 자리를
+#   왼쪽 위·왼쪽 중간·오른쪽 위·오른쪽 중간 4칸으로 줄였으니 한 컷에 3개를 넣으면 금방 찬다.
+DIALOG_PER_CUT = 2                               # 컷당 발화 상한(넘으면 컷 분리) — 렌더 상한(DIALOG_LINES)과 다르다
                                                 #   (2026-09-11 사용자 지시 2→3, 예전은 여기서 2로 잘라 렌더 상한과 어긋났다)
 SFX_MAX_LEN = 10                                # 의성어/의태어 최대 길이
 WIDE_ENABLE = True          # False면 wide 컷을 전부 portrait로 강등 (런너 --no-wide 스위치)
@@ -387,9 +390,11 @@ def _layout_block(page_plans, slot_range=None):
             star = {
                 "summary": (" ★회차 도입 요약: 인물 없이 배경만 + 큰 지문 1개(풍선 없음). "
                             "이 회차 뭘 하는 회차인지 상황 설명 — 본문을 옮겨 적지 말고 미리 보듯이 쓴다"),
-                "prologue": (" ★회차집 프롤로그: 인물 없이 배경만 + 큰 도입 지문 1개(풍선 없음). "
-                             "작품 전체의 문을 여는 한 문장(사건 설명 금지, 분위기/상황만)"),
-                "epilogue": (" ★에필로그: 이벤트 신을 반투명하게 + 큰 여운 지문 1개(풍선·대사 없음). "
+                "prologue": (" ★회차집 프롤로그: 인물 없이 배경만 + 큰 도입 지문(풍선 없음). "
+                             "작품 전체의 문을 여는 **2~4줄**(줄바꿈 \\n 허용, 각 줄 한 문장·사건 설명 금지, "
+                             "분위기/상황만) — 한 문장으로 압축하지 마세요"),
+                "epilogue": (" ★에필로그: 이벤트 신을 반투명하게 + 큰 여운 지문(풍선·대사 없음). "
+                             "**2~4줄**(줄바꿈 \\n 허용)로 시간의 흐름을 두고 쓴다. "
                              "**본문 마지막 장면을 그대로 옮겨 적지 않는다** — 그 '다음'(시간 경과, "
                              "일상 복귀, 서로를 의식하는 거리)을 쓴다")}.get(
                     str(s.get("role") or ""), "")
@@ -717,7 +722,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {device_block}{chatty_rule}
    **반드시 완전한 서사 문장**(주어 + 서술어, '~한다/~었다/~고 있다' 종결).
    명사 나열·관형형 토막('네온사인이 빛나는 골목' 같은) 금지 — 소리 내어 읽으면 한 문장이어야 한다.
-9. lines는 **최대 {DIALOG_LINES}개의 풍선**: kind=speech(입으로 하는 말 → 말풍선) | thought(속마음·혼잣말 → 속마음 풍선).
+9. lines는 **최대 {DIALOG_PER_CUT}개의 풍선**(3개 이상이면 **두 컷으로 나누세요** — 같은 인물의 다음 동작으로): kind=speech(입으로 하는 말 → 말풍선) | thought(속마음·혼잣말 → 속마음 풍선).
    한 풍선은 최장 {DIALOG_MAX_LEN}자 — 그보다 긴 말은 **두 개의 풍선으로 나눔**(한 풍선 한 마디).
    화자 이름은 who에 쓰고 text에는 넣지 않는다(화면에 이름이 안 찍히고 풍선 꼬리만 화자를 가리킨다).
    신음소리·파상음·잘려 나가는 말 적극 사용 (text 예: "아… 응… ♡", "좋아, 다 나오잖아.").
@@ -1262,7 +1267,7 @@ def panel_text_payload(panel) -> dict:
     p = panel or {}
     role = str(p.get("text_role") or "")
     emo_on = bool(getattr(config, "comic_emo_marks", True))
-    return {"narration": str(p.get("caption_ko") or "").strip(),
+    return {"narration": _screen_caption(p, role),
             "narr_large": bool(p.get("narr_large")) or role in ("summary", "epilogue"),
             "balloons": [{"kind": b["kind"], "text": b["text"],
                           "speaker": _speaker_of(b.get("who") or ""),
@@ -1335,8 +1340,67 @@ def _default_text_roles(panels: list, notes: list, ep_num_1based: int = 1):
         _apply_text_role(panels[-1], "epilogue", notes)
 
 
+def _screen_caption(p: dict, role: str = "") -> str:
+    """화면에 그릴 지문 — ★도입·프롤로그·에필로그만 원문의 **줄바꿈을 살린다**(여러 줄 허용)."""
+    big = bool(p.get("narr_large")) or str(p.get("text_role") or role) in ("summary", "epilogue")
+    scr = str(p.get("caption_screen") or "").strip()
+    if big and "\n" in scr:
+        return scr
+    return str(p.get("caption_ko") or "").strip()
+
+
+def _split_chatty_panels(panels: list, notes: list) -> tuple:
+    """[2026-09-13] 발화가 DIALOG_PER_CUT를 넘는 컷을 **두 컷으로 미리 썬다**(사용자 지시).
+
+    뒷 컷은 넘치는 발화만 들고 가고, 지문·의성어·클라이맥스는 앞 컷에 둔다(같은 장면이 이어진다).
+    컷 수를 템플릿 슬롯에 맞춰 다시 배분해야 하니 호출자는 레이아웃을 재계산한다.
+    """
+    out = []
+    n_split = 0
+    for p in panels or []:
+        lns = list(p.get("lines") or [])
+        if len(lns) <= DIALOG_PER_CUT:
+            out.append(p)
+            continue
+        q = dict(p)
+        p["lines"] = lns[:DIALOG_PER_CUT]
+        p["dialog"] = [f"{b['who']}: {b['text']}" if b.get("who") else b["text"] for b in p["lines"]]
+        q["lines"] = lns[DIALOG_PER_CUT:]
+        q["dialog"] = [f"{b['who']}: {b['text']}" if b.get("who") else b["text"] for b in q["lines"]]
+        q["caption_ko"], q["caption_screen"], q["sfx"], q["climax"] = "", "", "", ""
+        q["text_role"], q["narr_large"], q["bg_only"] = "", False, False
+        q["_split_from"] = p.get("no")
+        out.append(p)
+        out.append(q)
+        n_split += 1
+        notes.append(f"컷 {p['no']}: 발화 {len(lns)}개 → 두 컷으로 사전 분리(사용자 규칙: 컷당 {DIALOG_PER_CUT}개)")
+    for i, p in enumerate(out, start=1):
+        p["no"] = i
+    return out, n_split
+
+
+def _apply_slot_meta(panels: list, slots: list, notes: list):
+    """슬롯 메타(page/tier/share/wide/center/h + ★역할)를 컷에 강제한다 — 발화 분리로 컷이 늘면 다시 돈다."""
+    if not slots:
+        return
+    for i, p in enumerate(panels):
+        s = slots[min(i, len(slots) - 1)]
+        p["page"], p["tier"], p["share"] = s["page"], s["tier"], s["share"]
+        p["center"] = s["center"]
+        p["h"] = s.get("h") or 0.0
+        _apply_text_role(p, s.get("role") or "", notes)
+        if bool(p["wide"]) != bool(s["wide"]):
+            p["wide"] = bool(s["wide"])
+            notes.append(f"컷 {p['no']}: 슬롯 규격 → wide={bool(s['wide'])}")
+        if s["wide"] and p["type"] == "face":
+            p["type"] = "action"
+            notes.append(f"컷 {p['no']}: 전폭 가로 슬롯 → type action")
+        if (not s["wide"]) and s["share"] <= 0.35 and p["type"] == "action":
+            p["camera"] = "close_up" if p["camera"] not in ("close_up", "pov") else p["camera"]
+
+
 def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: int = MAX_PANELS,
-                   ep_num_1based: int = 1):
+                   ep_num_1based: int = 1, pages: int = 0, plans_out: list = None):
     """LLM 컷 목록 → 검증/수정된 컷 리스트. (panels, notes) 반환
 
     page_plans(cut.yaml) 모드: 컷 수 = 슬롯 수로 확정(부족하면 폴백 컷 패딩/초과 절단),
@@ -1356,6 +1420,11 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         if "#" in pose:                                  # LLM이 슬롯을 붙여 쓰면 버리고 ours로 재조립
             pose = pose.split("#", 1)[0].strip()
         cap = str(it.get("caption_ko") or it.get("caption") or "").strip().replace("\n", " ")
+        # [2026-09-13] ★프롤로그·에필로그는 여러 줄을 쓴다(사용자 지시). 태그·프롬프트 쪽은 기존대로
+        #   한 줄로 평탄화된 caption_ko를 쓰고, 화면에만 여러 줄이 필요한 컷이 caption_screen을 쓴다.
+        cap_screen = re.sub(r"\n{2,}", "\n", re.sub(r"[ \t]+", " ",
+                         str(it.get("caption_ko") or it.get("caption") or "")).strip()).strip()
+        cap_screen = "\n".join([x.strip() for x in cap_screen.split("\n") if x.strip()][:4])
         cap = _clamp_caption(cap, 0)                    # 자르지 않는다(★지문도 원문 그대로)
         lns = _norm_lines(it.get("lines") or it.get("dialog") or it.get("lines_ko")
                           or it.get("speech") or it.get("balloons"))
@@ -1375,6 +1444,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         pos = str(it.get("position") or "NONE").strip()
         clim = str(it.get("climax") or "").strip()
         p = {"no": i, "type": _norm_type(it.get("type")), "caption_ko": cap,
+             "caption_screen": cap_screen if "\n" in cap_screen else "",
              "lines": lns,                                                   # [2026-09-09] 풍선 ≤DIALOG_LINES
              "dialog": [f"{b['who']}: {b['text']}" if b["who"] else b["text"] for b in lns],
              "sfx": sfx, "text_role": "", "narr_large": False,
@@ -1388,7 +1458,18 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         return []
 
     if spec:
-        # 컷 수 = 템플릿 슬롯 수로 확정. 부족 패딩/초과 절단 (MAX_PANELS 대신 슬롯 수 기준)
+        # [2026-09-13] 발화 3개+ 컷을 여기서 썬다 — 아래 '컷 수 = 슬롯 수 확정'이 자르기 **전**에 해야
+        #   대사가 사라지지 않는다. 컷이 늘면 레이아웃을 다시 짜고 슬롯 메타를 다시 씌운다.
+        panels, _n_split = _split_chatty_panels(panels, notes)
+        if _n_split and page_plans is not None and int(pages or 0) >= 0:
+            _pp, _np = plan_pages_layout(ep_num_1based, len(panels), int(pages or 0))
+            if _pp and len(spec_slots(_pp)) >= len(panels):
+                page_plans, slots = _pp, spec_slots(_pp)
+                _apply_slot_meta(panels, slots, notes)
+                if plans_out is not None:
+                    plans_out.append(page_plans)
+                notes.append(f"발화 분리 → 컷 {len(panels)}개, 레이아웃 재계산(페이지 {_np})")
+    if spec:
         E = len(slots)
         if len(panels) > E:
             notes.append(f"컷 {len(panels)}개 → 템플릿 {E}컷 초과분 절단")
@@ -1444,21 +1525,7 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
 
     # 컷 텍스트/wide/시선(facing) 보정 [2026-09-07]
     if spec:
-        # 슬롯 메타 강제: wide/page/tier/share + 전폭 가로 슬롯은 action (face 클로즈업은 세로 전용)
-        for i, p in enumerate(panels):
-            s = slots[i]
-            p["page"], p["tier"], p["share"] = s["page"], s["tier"], s["share"]
-            p["center"] = s["center"]
-            p["h"] = s.get("h") or 0.0
-            _apply_text_role(p, s.get("role") or "", notes)
-            if bool(p["wide"]) != bool(s["wide"]):
-                p["wide"] = bool(s["wide"])
-                notes.append(f"컷 {p['no']}: 슬롯 규격 → wide={bool(s['wide'])}")
-            if s["wide"] and p["type"] == "face":
-                p["type"] = "action"
-                notes.append(f"컷 {p['no']}: 전폭 가로 슬롯 → type action")
-            if (not s["wide"]) and s["share"] <= 0.35 and p["type"] == "action":
-                p["camera"] = "close_up" if p["camera"] not in ("close_up", "pov") else p["camera"]
+        _apply_slot_meta(panels, slots, notes)
     if not WIDE_ENABLE:
         for p in panels:
             p["wide"] = False
@@ -2108,8 +2175,11 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
               + (f" (미응답 {quota - raw_got}컷 → 침묵 컷)" if raw_got < quota else ""))
 
     # ⑤ 전역 보정 (슬롯 메타/page·tier 부여, 어휘·복장·시선 정규화)
+    _plans_out = []
     panels, notes2 = _repair_panels(raw_all, dollar, page_plans=page_plans, max_panels=maxp,
-                                    ep_num_1based=ep_num_1based)
+                                    ep_num_1based=ep_num_1based, pages=pages, plans_out=_plans_out)
+    if _plans_out:                       # 발화 분리로 컷이 늘었다 → 페이지 계획도 새로 반영
+        page_plans = _plans_out[0]
     notes = notes + notes2
     # [2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 장면 본문의 첫 문장으로 채운다
     _fill_star_narration(panels, beats, quotas, notes)

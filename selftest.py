@@ -417,7 +417,7 @@ def main() -> int:
         Image.new("RGB", sz, (40, 120, 200) if i2 == 0 else (200, 90, 40)).save(fp)
         paths2.append(fp)
     page2 = os.path.join(tmp, "mix.png")
-    CPM.compose_page(paths2, [["상황 묘사입니다", "유즈키: 으…", "소타: 좋다."],
+    CPM.compose_page(paths2, [["상황 묘사입니다"],
                               ["이벤트 신", "유즈키: 안 돼", "소타: 잡았다"]],
                      out_path=page2, panel_face=[True, False],
                      panel_zone=["right", "bottom"], page_size=None)   # 고정은 아래 전용 테스트에서
@@ -1736,10 +1736,16 @@ def main() -> int:
     print("\n== ⑪ 화면 문법 v4: 풍선 자리 / 설명 크기 / 감정 표시 ==")
     sp_me = CPM._balloon_slot_pref({"speaker": "me"})
     sp_ot = CPM._balloon_slot_pref({"speaker": "other"})
-    check("주인공 풍선은 왼쪽 위 → 왼쪽 아래",
-          sp_me == (("tl", "bl", "ml", "center"), "center"), str(sp_me))
-    check("상대방 풍선은 오른쪽 위 → 오른쪽 아래",
-          sp_ot == (("tr", "br", "mr", "center"), "right"), str(sp_ot))
+    check("주인공 풍선은 왼쪽 열만 쓴다 (위 → 중간, 꼬리는 왼쪽)",
+          sp_me == (("tl", "ml"), "l"), str(sp_me))
+    check("상대방 풍선은 오른쪽 열만 쓴다 (위 → 중간, 꼬리는 오른쪽) — POV도 오른쪽",
+          sp_ot == (("tr", "mr"), "r"), str(sp_ot))
+    check("[2026-09-13] 자리 4칸 제한 — 어떤 화자도 아래 칸(bl/br)·가운데를 쓰지 않는다",
+          not ({"bl", "br", "center"} & set(sp_me[0])) and not ({"bl", "br", "center"} & set(sp_ot[0])),
+          str((sp_me[0], sp_ot[0])))
+    check("화자 모른 컷(레거시)은 예전 시선 규칙을 따른다",
+          CPM._balloon_slot_pref({"side": "left"})[0] == ("tr", "mr")
+          and CPM._balloon_slot_pref({"side": "right"})[0] == ("tl", "ml"))
 
     # 실제 렌더: 주인공 2개 + 상대방 2개를 한 컷에
     _cv = Image.new("RGB", (PW, PH), (70, 130, 190))
@@ -1754,14 +1760,16 @@ def main() -> int:
             _rects.append(_r)
     _me = [r for r, b in zip(_rects, ["me", "me", "other", "other"]) if b == "me"]
     _ot = [r for r, b in zip(_rects, ["me", "me", "other", "other"]) if b == "other"]
-    check("주인공 풍선 2개가 실제로 왼쪽 위/왼쪽 아래에 놓인다",
+    check("주인공 풍선 2개가 실제로 왼쪽 열 위→중간에 놓인다",
           len(_me) == 2 and all((r[0] + r[2]) / 2 < PX + PW * 0.5 for r in _me)
-          and _me[0][1] < PY + PH * 0.5 < _me[1][1],
+          and abs(_me[0][0] - _me[1][0]) < 6 and _me[1][1] > _me[0][1] + 40,
           str([(r[0], r[1]) for r in _me]))
-    check("상대방 풍선 2개가 실제로 오른쪽 위/오른쪽 아래에 놓인다",
+    check("상대방 풍선 2개가 실제로 오른쪽 열 위→중간에 놓인다",
           len(_ot) == 2 and all((r[0] + r[2]) / 2 > PX + PW * 0.5 for r in _ot)
-          and _ot[0][1] < PY + PH * 0.5 < _ot[1][1],
+          and abs(_ot[0][0] - _ot[1][0]) < 6 and _ot[1][1] > _ot[0][1] + 40,
           str([(r[0], r[1]) for r in _ot]))
+    check("아래 칸에는 풍선을 놓지 않는다(자리 4칸 제한)",
+          all(r[1] < PY + PH * 0.75 for r in _rects), str([(r[0], r[1]) for r in _rects]))
     check("풍선은 컷 밖으로 나가지 않는다",
           all(r[0] >= PX and r[1] >= PY and r[2] <= PX + PW and r[3] <= PY + PH for r in _rects),
           str(_rects))
@@ -3094,12 +3102,72 @@ def main() -> int:
         _bs = CPM.generate_balloon_set(dest=_btmp)
         _png = sorted(f for f in os.listdir(_btmp) if f.endswith(".png"))
         _bodies = [f for f in _png if f.startswith(("speech_", "thought_"))]
-        check("--get-balloons가 몸통 9종만 만든다(꼬리·물방울은 기능 폐지)",
-              len(_bodies) == len(CPM.BALLOON_ART_VARIANTS)
+        check("[2026-09-13] 자산은 몸통 9종 + 방향(꼬리·물방울 굽힘) 18종 = 27장",
+              len(_bodies) == len(CPM.BALLOON_ART_VARIANTS) * 3
+              and len([f for f in _png if f.endswith("_l.png")]) == len(CPM.BALLOON_ART_VARIANTS)
+              and len([f for f in _png if f.endswith("_r.png")]) == len(CPM.BALLOON_ART_VARIANTS)
               and not [f for f in _png if f.startswith(("tail_", "bubble"))]
               and os.path.exists(_bs["manifest"]),
               f"몸통 {len(_bodies)} / png {len(_png)}")
+        _man_b = json.load(open(_bs["manifest"], encoding="utf-8"))["assets"]
+        _bboxes = [(a["tail"], a.get("tail_bbox") or []) for a in _man_b.values() if a.get("tail")]
+        _body_bot = CPM.BALLOON_ART_H / 2 + (CPM.BALLOON_ART_H / 2 - CPM.BALLOON_ART_MARGIN
+                                             - CPM.BALLOON_TAIL_ROOM)      # 몸통 아래 테투리 y
+        check("[2026-09-14] 꼬리는 몸통 테투리 아래로 **튀어나온다**(캔버스 안에서 잘리지 않는다)",
+              len(_bboxes) == len(CPM.BALLOON_ART_VARIANTS) * 2
+              and all(bb and bb[3] > _body_bot - 2 and bb[3] <= CPM.BALLOON_ART_H
+                      and bb[1] >= _body_bot - CPM.BALLOON_TAIL_SHORT * 3
+                      and bb[2] - bb[0] <= CPM.BALLOON_TAIL_SHORT * 3.2
+                      for t, bb in _bboxes),
+              f"몸통 아래 y={_body_bot:.0f} " + str(_bboxes[:2]))
+        check("꼬리 방향이 왼쪽/오른쪽으로 갈린다",
+              all(bb[2] < CPM.BALLOON_ART_W / 2 if t == "l" else bb[0] > CPM.BALLOON_ART_W / 2
+                  for t, bb in _bboxes), str(_bboxes[:2]))
         CPM.set_balloon_style("image", _btmp)
+        _bk2 = CPM._balloon_bank()
+        check("방향 자산은 몸통과 같은 체형의 '한 벌'로 붙는다(변형 풀을 늘리지 않는다)",
+              len(_bk2) == len(CPM.BALLOON_ART_VARIANTS)
+              and all(v.get("dirs") and set(v["dirs"]) == {"l", "r"} for v in _bk2.values()),
+              str(sorted(_bk2)[:3]))
+        _sL, _sR = _bk2["speech_plain"]["dirs"]["l"]["slice"], _bk2["speech_plain"]["dirs"]["r"]["slice"]
+        check("꼬리 쪽 절선만 벌린다(오른쪽 꼬리 ↔ 왼쪽 꼬리는 미러)",
+              _sL[0] > 18 and _sL[2] == 18 and _sR[2] > 18 and _sR[0] == 18 and _sL[3] == _sR[3],
+              str((_sL, _sR)))
+        _sf380 = CPM._balloon_art_safe("speech_plain", 380, 250, "l")
+        check("꼬리를 붙여도 글자 자리는 남는다(안전영역이 상자의 절반 이상은 남아야 한다)",
+              380 - _sf380[0] - _sf380[2] >= 190 and 250 - _sf380[1] - _sf380[3] >= 88, str(_sf380))
+        check("너무 작은 상자에서는 자산 통째 축소로 견딘다(9슬라이스가 글자 자리를 없앤다)",
+              CPM._art_use_whole(_bk2["speech_plain"]["dirs"]["l"]["img"].size, 120, 60, _sL))
+        # [2026-09-13] 발화 3개+ 컷 사전 분리 / ★프롤로그·에필로그 multi-line
+        _pl = [{"no": 1, "lines": [{"kind": "speech", "who": "나", "text": "a"},
+                                   {"kind": "speech", "who": "상대", "text": "b"},
+                                   {"kind": "speech", "who": "나", "text": "c"}], "climax": "cum"},
+               {"no": 2, "lines": [{"kind": "speech", "who": "나", "text": "d"}]}]
+        _spl, _ns = CG._split_chatty_panels(_pl, [])
+        check("발화가 3개인 컷은 두 컷으로 사전 분리한다(컷당 %d개)" % CG.DIALOG_PER_CUT,
+              _ns == 1 and len(_spl) == 3 and len(_spl[0]["lines"]) == 2
+              and len(_spl[1]["lines"]) == 1 and _spl[1]["climax"] == ""
+              and _spl[1]["caption_ko"] == "", f"{_ns} 분리 → {len(_spl)}컷")
+        check("분리 후 컷 번호는 밀리지 않는다",
+              [p["no"] for p in _spl] == [1, 2, 3], str([p["no"] for p in _spl]))
+        check("2개 이하 컷은 그대로다(필요할 때만 썬다)",
+              CG._split_chatty_panels([{"no": 1, "lines": [{"kind": "speech", "text": "x"},
+                                                           {"kind": "speech", "text": "y"}]}], [])[1] == 0)
+        check("화면 지문: ★도입·에필로그만 줄바꿈을 살리고, 일반 지문은 한 줄이다",
+              CG._screen_caption({"narr_large": True, "caption_ko": "a b",
+                                  "caption_screen": "a\nb\nc"}) == "a\nb\nc"
+              and CG._screen_caption({"caption_ko": "a b", "caption_screen": "a\nb"}) == "a b",
+              CG._screen_caption({"caption_ko": "a b", "caption_screen": "a\nb"}))
+        _fnt_ml = CPM.load_font(16, None, role="narration")
+        _pr_ml = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+        check("wrap_text(keep_lines)는 원문 줄바꿈을 지키고 폭을 넘으면 계속 감는다",
+              CPM.wrap_text("첫째 줄\n둘째 줄", _fnt_ml, 4000, _pr_ml, keep_lines=True)
+              == ["첫째 줄", "둘째 줄"]
+              and len(CPM.wrap_text("가\n" + "나" * 60, _fnt_ml, 60, _pr_ml, keep_lines=True)) > 2,
+              str(CPM.wrap_text("첫째 줄\n둘째 줄", _fnt_ml, 4000, _pr_ml, keep_lines=True)))
+        check("예전 wrap_text 호출은 그대로 한 줄 취급(기본값 불변)",
+              CPM.wrap_text("첫째 줄\n둘째 줄", _fnt_ml, 4000, _pr_ml) == ["첫째 줄 둘째 줄"],
+              str(CPM.wrap_text("첫째 줄\n둘째 줄", _fnt_ml, 4000, _pr_ml)))
         check("감정으로 변형을 고른다 (anger→sharp, heart→dreamy, surprise→shout, gloom→void)",
               CPM.pick_balloon_variant("speech", "anger", 0, 0, 0) == "speech_sharp"
               and CPM.pick_balloon_variant("thought", "heart", 0, 0, 0) == "thought_dreamy"
@@ -3163,8 +3231,8 @@ def main() -> int:
         _pl = [c for c in (_cv3.getpixel((xx, yy))[0]
                            for yy in range(_bx3[1] + 30, _bx3[3] - 30, 2)
                            for xx in range(_bx3[0] + 50, _bx3[2] - 50, 2)) if c > 200]
-        check("플레이트는 반투명(α=210)으로 유지된다",
-              _pl and 210 <= max(_pl) <= 220, f"몸통 안 최대 {max(_pl) if _pl else None} (기대 217)")
+        check("[2026-09-14] 플레이트는 **pure white**(반투명 폐기)",
+              _pl and max(_pl) >= 250, f"몸통 안 최대 {max(_pl) if _pl else None} (기대 255)")
         CPM.set_balloon_style("image", os.path.join(_btmp, "없는_디렉터리"))
         _cv5, _u5, _bx5 = _shot("speech", "벡터 폴백 확인")
         check("자산이 없으면 조용히 벡터로 그린다(렌더가 죽지 않는다)",

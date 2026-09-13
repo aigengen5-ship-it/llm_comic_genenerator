@@ -1,10 +1,11 @@
 {
- "plate_alpha": 210,
+ "plate_alpha": 255,
  "assets": {
   "speech_plain": {
    "kind": "speech",
    "file": "speech_plain.png",
    "moods": "",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -18,12 +19,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "speech_plain_l.png",
+    "r": "speech_plain_r.png"
+   }
+  },
+  "speech_plain_l": {
+   "kind": "speech",
+   "file": "speech_plain_l.png",
+   "moods": "",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    114,
+    458,
+    158,
+    511
+   ]
+  },
+  "speech_plain_r": {
+   "kind": "speech",
+   "file": "speech_plain_r.png",
+   "moods": "",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    482,
+    458,
+    526,
+    511
+   ]
   },
   "speech_soft": {
    "kind": "speech",
    "file": "speech_soft.png",
    "moods": "gentle warm soft sad",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -37,12 +95,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "speech_soft_l.png",
+    "r": "speech_soft_r.png"
+   }
+  },
+  "speech_soft_l": {
+   "kind": "speech",
+   "file": "speech_soft_l.png",
+   "moods": "gentle warm soft sad",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    114,
+    455,
+    158,
+    511
+   ]
+  },
+  "speech_soft_r": {
+   "kind": "speech",
+   "file": "speech_soft_r.png",
+   "moods": "gentle warm soft sad",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    482,
+    455,
+    526,
+    511
+   ]
   },
   "speech_sharp": {
    "kind": "speech",
    "file": "speech_sharp.png",
    "moods": "anger",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -56,12 +171,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "speech_sharp_l.png",
+    "r": "speech_sharp_r.png"
+   }
+  },
+  "speech_sharp_l": {
+   "kind": "speech",
+   "file": "speech_sharp_l.png",
+   "moods": "anger",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    114,
+    457,
+    158,
+    510
+   ]
+  },
+  "speech_sharp_r": {
+   "kind": "speech",
+   "file": "speech_sharp_r.png",
+   "moods": "anger",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    482,
+    457,
+    526,
+    510
+   ]
   },
   "speech_shout": {
    "kind": "speech",
    "file": "speech_shout.png",
    "moods": "surprise sparkle",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -75,12 +247,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "speech_shout_l.png",
+    "r": "speech_shout_r.png"
+   }
+  },
+  "speech_shout_l": {
+   "kind": "speech",
+   "file": "speech_shout_l.png",
+   "moods": "surprise sparkle",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    114,
+    439,
+    158,
+    503
+   ]
+  },
+  "speech_shout_r": {
+   "kind": "speech",
+   "file": "speech_shout_r.png",
+   "moods": "surprise sparkle",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    482,
+    439,
+    526,
+    503
+   ]
   },
   "speech_flat": {
    "kind": "speech",
    "file": "speech_flat.png",
    "moods": "gloom question",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -94,12 +323,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "speech_flat_l.png",
+    "r": "speech_flat_r.png"
+   }
+  },
+  "speech_flat_l": {
+   "kind": "speech",
+   "file": "speech_flat_l.png",
+   "moods": "gloom question",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    114,
+    458,
+    158,
+    511
+   ]
+  },
+  "speech_flat_r": {
+   "kind": "speech",
+   "file": "speech_flat_r.png",
+   "moods": "gloom question",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    482,
+    458,
+    526,
+    511
+   ]
   },
   "thought_cloud": {
    "kind": "thought",
    "file": "thought_cloud.png",
    "moods": "",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -113,12 +399,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "thought_cloud_l.png",
+    "r": "thought_cloud_r.png"
+   }
+  },
+  "thought_cloud_l": {
+   "kind": "thought",
+   "file": "thought_cloud_l.png",
+   "moods": "",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    20,
+    484,
+    80,
+    542
+   ]
+  },
+  "thought_cloud_r": {
+   "kind": "thought",
+   "file": "thought_cloud_r.png",
+   "moods": "",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    560,
+    484,
+    620,
+    542
+   ]
   },
   "thought_dreamy": {
    "kind": "thought",
    "file": "thought_dreamy.png",
    "moods": "heart sparkle",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -132,12 +475,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "thought_dreamy_l.png",
+    "r": "thought_dreamy_r.png"
+   }
+  },
+  "thought_dreamy_l": {
+   "kind": "thought",
+   "file": "thought_dreamy_l.png",
+   "moods": "heart sparkle",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    20,
+    484,
+    80,
+    542
+   ]
+  },
+  "thought_dreamy_r": {
+   "kind": "thought",
+   "file": "thought_dreamy_r.png",
+   "moods": "heart sparkle",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    560,
+    484,
+    620,
+    542
+   ]
   },
   "thought_knot": {
    "kind": "thought",
    "file": "thought_knot.png",
    "moods": "sweat question anger",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -151,12 +551,69 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "thought_knot_l.png",
+    "r": "thought_knot_r.png"
+   }
+  },
+  "thought_knot_l": {
+   "kind": "thought",
+   "file": "thought_knot_l.png",
+   "moods": "sweat question anger",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    20,
+    484,
+    80,
+    542
+   ]
+  },
+  "thought_knot_r": {
+   "kind": "thought",
+   "file": "thought_knot_r.png",
+   "moods": "sweat question anger",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    560,
+    484,
+    620,
+    542
+   ]
   },
   "thought_void": {
    "kind": "thought",
    "file": "thought_void.png",
    "moods": "gloom",
+   "tail": "",
    "slice": [
     18,
     18,
@@ -170,7 +627,63 @@
     26
    ],
    "border": 7,
-   "alpha": 210
+   "alpha": 255,
+   "dirs": {
+    "l": "thought_void_l.png",
+    "r": "thought_void_r.png"
+   }
+  },
+  "thought_void_l": {
+   "kind": "thought",
+   "file": "thought_void_l.png",
+   "moods": "gloom",
+   "tail": "l",
+   "slice": [
+    96,
+    18,
+    18,
+    96
+   ],
+   "safe": [
+    104,
+    26,
+    26,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    24,
+    488,
+    76,
+    538
+   ]
+  },
+  "thought_void_r": {
+   "kind": "thought",
+   "file": "thought_void_r.png",
+   "moods": "gloom",
+   "tail": "r",
+   "slice": [
+    18,
+    18,
+    96,
+    96
+   ],
+   "safe": [
+    26,
+    26,
+    104,
+    104
+   ],
+   "border": 7,
+   "alpha": 255,
+   "tail_bbox": [
+    564,
+    488,
+    616,
+    538
+   ]
   }
  }
 }

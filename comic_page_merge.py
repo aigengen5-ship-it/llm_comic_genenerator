@@ -150,14 +150,23 @@ THOUGHT_W_RATIO = 0.15                   # 속마음(타원) 폭 = 컷 폭의 15
 #  · 자산이 없으면 지금의 벡터 그리기로 조용히 폴백한다(기본값도 vector).
 BALLOON_ART_DIR_DEFAULT = os.path.join("data", "balloons")
 BALLOON_ART_MANIFEST = "manifest.json"
-BALLOON_ART_W, BALLOON_ART_H = 640, 480       # 자리표시 자산 제작 크기
+BALLOON_ART_W, BALLOON_ART_H = 640, 560       # 자리표시 자산 제작 크기 (꼬리 자리를 아래에 둔다)
 BALLOON_ART_MARGIN = 22                        # 모양이 캔버스 밖으로 나가지게 두는 최소 여백
+BALLOON_TAIL_ROOM = 64                         # [2026-09-14] 꼬리가 박스 아래로 **튀어나올** 공간(몸통은 줄이지 않는다)
 BALLOON_ART_SLICE = 18                         # 9슬라이스 절선 = 굽혀진 테투리 밴드 폭
 BALLOON_SIZE_BOOST = 2.2                       # 몸통을 컷 폭 기준 이 배수로 키워 만든다(글자보다 작아짐 방지)
 BALLOON_MIN_H_RATIO = 0.42                     # 몸통 최소 높이 = 컷 높이 × 이 값(보스트 반영)
 BALLOON_ART_FIT = 0.88                         # 자산 몸통은 사각에 가까워 타원보다 넓게 쓴다
 BALLOON_ART_SAFE = (34, 30, 34, 30)            # 글자 안전 여백 (l,t,r,b)
-BALLOON_ART_PLATE_ALPHA = 210                  # 플레이트(내부) 불투명도 — 반투명
+BALLOON_ART_PLATE_ALPHA = 255                  # [2026-09-14] 플레이트(내부)는 **pure white** (예전 210 반투명)
+# [2026-09-13] 방향성 자산: 꼬리(대화)·물방울(생각)을 PNG에 **구워서**_runtime_에는 아무것도 안 그린다.
+#   풍선을 놓는 자리가 정해졌으니(왼쪽 열/오른쪽 열) 꼬리 방향도 정해진다 → 자산 9종 × 2방향 = 18장.
+BALLOON_TAIL_SUFFIX = ("_l", "_r")              # 파일명 접미사 = 꼬리가 나오는 쪽(_l = 왼쪽 아래)
+BALLOON_TAIL_SHORT = 30                        # 꼬리 짧은 변(부착 변) 길이 — 이 변에는 검정 선을 안 그린다
+BALLOON_TAIL_RATIO = 1.3                       # 긴 변 = 짧은 변 × 1.3 (사용자 지시 1:1.3)
+BALLOON_TAIL_BAND = 96                         # 꼬리를 품는 모서리 패치(9슬라이스 절선을 이만큼 벌린다)
+BALLOON_BAND_CAP = 0.45                        # 패치가 상자 대비 이 비율을 넘으면 자산 통째로 축소
+BALLOON_TAIL_REACH = 0.82                      # 꼬리 끝이 컷 바깥으로 향하는 정도(자산 대비)
 # (id, kind, 모양, moods) — id는 파일명이 된다(영문만)
 BALLOON_ART_VARIANTS = (
     ("speech_plain", "speech", "round",  ""),
@@ -434,16 +443,30 @@ def has_cjk_font() -> bool:
             or any(font_for_role(r) for r in BUNDLED_FONTS))
 
 
-def wrap_text(text: str, font, max_width: int, draw, max_lines: int = MAX_CAPTION_LINES):
+def wrap_text(text: str, font, max_width: int, draw, max_lines: int = MAX_CAPTION_LINES,
+              keep_lines: bool = False):
     """텍스트를 max_width에 맞춰 줄바꿈(문자 단위 — 한국어 공백 없이도 동작).
-    max_lines를 넘으면 마지막 줄을 … 로 잘른다."""
-    text = (text or "").strip().replace("\n", " ").replace("\r", "")
+    max_lines를 넘으면 마지막 줄을 … 로 잘린다.
+
+    [2026-09-13] `keep_lines=True`면 원문의 **줄바꿈을 존중**한다(★프롤로그·에필로그 지문은
+    여러 줄로 쓴다 — 사용자 지시). 일반 지문·풍선은 예전대로 개행을 공백으로扱는다.
+    """
+    text = (text or "").strip().replace("\r", "")
     if not text:
         return []
     try:
         max_lines = max(1, int(max_lines))
     except Exception:
         max_lines = MAX_CAPTION_LINES
+    if keep_lines and "\n" in text:
+        out = []
+        for seg in text.split("\n"):
+            out.extend(wrap_text(seg, font, max_width, draw, max_lines, keep_lines=False))
+        if len(out) > max_lines:
+            out = out[:max_lines]
+            out[-1] = (out[-1][:-1] if out[-1].endswith("…") else out[-1]) + "…"
+        return out
+    text = text.replace("\n", " ")
     unit = None
     lines, cur = [], ""
     for ch in text:
@@ -600,23 +623,23 @@ def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
 
 # ---------------------------------------------------------------- [2026-09-09] 풍선 자리·감정 표시
 def _balloon_slot_pref(balloon, facing: str = None):
-    """(풍선 자리 순서, 방향 키) — 사용자 지시:
+    """(풍선 자리 순서, 꼬리 방향 'l'|'r') — [2026-09-13] 사용자 지시 4칙:
 
-      주인공(me)    : 왼쪽 위 → 왼쪽 아래 → 왼쪽 가운데(3번째)
-      상대방(other) : 오른쪽 위 → 오른쪽 아래 → 오른쪽 가운데(3번째)
-      (세 자리가 다 차면 다른 쪽 자리·가운데로 피하고, 그래도 자리가 없으면 그 풍선은 그리지 않는다)
-      화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
-    방향 키(_dkey)는 꼬리를 폐지한 뒤로는 **자산 좌우 반전**에만 쓴다.
+      · 대화·생각은 **오른쪽 위·오른쪽 중간·왼쪽 위·왼쪽 중간** 4칸에만 놓는다(아래 칸은 쓰지 않는다).
+      · 주인공(me)   = 왼쪽 열(위 → 중간)      · 상대방(other) = 오른쪽 열(위 → 중간)
+      · 1개이면 위부터. POV 컷에서도 상대방은 오른쪽(화자 규칙은 그림 위치와 무관하게 고정).
+      · 꼬리는 자리에 **고정**으로 굽혀진다: 왼쪽 열 → `_l`(왼쪽 아래), 오른쪽 열 → `_r`.
+      · 화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
     """
     sp = str((balloon or {}).get("speaker") or "").strip().lower()
     if sp == "me":
-        return ("tl", "bl", "ml", "center"), "center"
+        return ("tl", "ml"), "l"
     if sp == "other":
-        return ("tr", "br", "mr", "center"), "right"
+        return ("tr", "mr"), "r"
     side = str((balloon or {}).get("side") or facing or "").strip().lower()
     if side in ("", "left"):
-        return ("tr", "br", "mr", "center"), "left"
-    return ("tl", "bl", "ml", "center"), "right"
+        return ("tr", "mr"), "r"
+    return ("tl", "ml"), "l"
 
 
 def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: int, ih: int,
@@ -1117,7 +1140,8 @@ def _draw_caption_box(d, ix: int, iy: int, iw: int, ih: int, text, *,
     for fs_try in range(fs_hi, FONT_FLOOR - 1, -1):       # 최악의 경우 폰트를 줄여 다 담는다(지금이도 충분히 크다)
         fnt = load_font(fs_try, font_path, role="narration")
         lh = _text_line_height(fs_try)
-        ls = wrap_text(text, fnt, w_cap - 20, probe, max_lines=lines_cap)
+        ls = wrap_text(text, fnt, w_cap - 20, probe, max_lines=lines_cap,
+                       keep_lines=bool(large))            # ★도입·에필로그는 여러 줄 허용
         if not ls:
             return None
         fs, lines, line_h, font = fs_try, ls, lh, fnt
@@ -1180,6 +1204,60 @@ _SHAPE_SPEC = {            # (n, k, amp) — 말풍선은 각진 기반 + 날선
 }
 
 
+def _bake_tail(layer, dl, W: int, H: int, bw: int, kind: str, side: str):
+    """[2026-09-14] 몸통 테투리에 1:1.3 직각삼각형 꼬리를 **붙여** 굽는다. 꼬리 외곽 사각을 돌려준다.
+
+    사용자 지시:
+      · 짧은 변(부착 변)에는 검정 선을 그리지 않고, 그 변을 몸통 테투리에 붙인다
+        → 테투리가 그 자리에서 끊기고 꼬리가 박스에서 **튀어나온** 느낌으로 이어진다.
+      · 나머지 두 변에만 검정 선. 안쪽에 남은 줄이 보이지 않는다.
+      · 속은 pure white.
+    부착 지점의 테투리 y는 **알파에서 잰다**(구름·별·뾰족 등 모양이 제각각이라 수식은 안 맞는다).
+    """
+    al = layer.split()[3]
+
+    def border_y(x):                       # 열 x에서 몸통 아래 테투리 바깥 끝 y
+        for y in range(H - 1, int(H * 0.35), -1):
+            if al.getpixel((x, y)) > 200:
+                return y
+        return int(H * 0.5)
+
+    if kind == "thought":                  # 생각은 작은 원 2개 (테투리 바깥, 온전히 겉에 붙는다)
+        box = [1e9, 1e9, -1e9, -1e9]
+        for ux, uy, rr in ((BALLOON_ART_MARGIN + 34, H - BALLOON_ART_MARGIN - 30, 17.0),
+                           (BALLOON_ART_MARGIN + 14, H - BALLOON_ART_MARGIN - 12, 9.0)):
+            cxx = ux if side == "l" else (W - ux)
+            dl.ellipse([cxx - rr - bw, uy - rr - bw, cxx + rr + bw, uy + rr + bw],
+                       fill=tuple(DEFAULT_FRAME) + (255,))
+            dl.ellipse([cxx - rr, uy - rr, cxx + rr, uy + rr],
+                       fill=tuple(DEFAULT_PLATE) + (255,))
+            box[0] = min(box[0], cxx - rr - bw); box[1] = min(box[1], uy - rr - bw)
+            box[2] = max(box[2], cxx + rr + bw); box[3] = max(box[3], uy + rr + bw)
+        return tuple(int(v) for v in box)
+
+    L = float(BALLOON_TAIL_SHORT)
+    xa = int(W * 0.19)
+    xb = int(xa + L)
+    ya, yb = border_y(xa), border_y(xb)
+    A = [float(xa), float(ya) - bw * 1.1]              # 부착 변의 두 끝 = 테투리 **안쪽 가장자리**
+    B = [float(xb), float(yb) - bw * 1.1]
+    span = ((A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2) ** 0.5
+    C = [A[0], A[1] + max(L, span * BALLOON_TAIL_RATIO)]   # 직각은 A, 긴 변은 A→C
+    if side == "r":
+        A, B, C = [[W - p[0], p[1]] for p in (A, B, C)]
+    dl.polygon([tuple(A), tuple(B), tuple(C)], fill=tuple(DEFAULT_PLATE) + (255,))   # 속은 흰색
+    # 검정 선은 바깥 두 변만 — 끝은 부착 변보다 살짝 아래에서 시작해 몸통 안에 점점이 남지 않는다
+    def _trim(p, q, t):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        d = max(1e-6, (dx * dx + dy * dy) ** 0.5)
+        return [p[0] + dx / d * t, p[1] + dy / d * t]
+    dl.line([_trim(A, C, bw * 1.2), tuple(C), _trim(B, C, bw * 1.2)],
+            fill=tuple(DEFAULT_FRAME) + (255,), width=bw, joint="curve")
+    xs = [p[0] for p in (A, B, C)]
+    ys = [p[1] for p in (A, B, C)]
+    return (int(min(xs) - bw), int(min(ys) - bw), int(max(xs) + bw), int(max(ys) + bw))
+
+
 def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
     """data/balloons/에 자리표시 자산 9종 + manifest.json을 만든다(코드로 그림).
 
@@ -1192,29 +1270,48 @@ def generate_balloon_set(dest: str = None, force: bool = False) -> dict:
     man = {"plate_alpha": BALLOON_ART_PLATE_ALPHA, "assets": {}}
     made = []
     for vid, kind, shape, moods in BALLOON_ART_VARIANTS:
-        path = os.path.join(d, vid + ".png")
-        man["assets"][vid] = {"kind": kind, "file": vid + ".png", "moods": moods,
-                             "slice": [BALLOON_ART_SLICE] * 4,      # 테투리 밴드 폭(9슬라이스 절선)
-                             "safe": [BALLOON_ART_SLICE + 8] * 4,    # 글자 안전 여백
-                             "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA}
-        if os.path.exists(path) and not force:
-            made.append(vid)
-            continue
-        layer = Image.new("RGBA", (BALLOON_ART_W, BALLOON_ART_H), (0, 0, 0, 0))
-        dl = ImageDraw.Draw(layer)
-        n, k, amp = _SHAPE_SPEC.get(shape, (3.0, 0, 0.0))
-        cx, cy = BALLOON_ART_W / 2.0, BALLOON_ART_H / 2.0
-        a = BALLOON_ART_W / 2.0 - BALLOON_ART_MARGIN
-        b = BALLOON_ART_H / 2.0 - BALLOON_ART_MARGIN
-        bw = 7 if shape != "thin" else 3
-        # 테투리(불투명) → 내부(반투명) 순서로 겹쳐 그린다(테투리 두께를 자산에 굽는다)
-        dl.polygon(_superellipse_pts(cx, cy, a, b, n, k, amp),
-                   fill=tuple(DEFAULT_FRAME) + (255,))
-        inn = max(0.02, bw * 2.0 / min(2 * a, 2 * b))
-        dl.polygon(_superellipse_pts(cx, cy, a * (1 - inn), b * (1 - inn), n, k, amp),
-                   fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
-        layer.save(path)
-        made.append(vid)
+        _sfx_list = ("",) + BALLOON_TAIL_SUFFIX        # 무방향 9장 + 방향 18장
+        for sfx in _sfx_list:
+            _tail = sfx.lstrip("_")                     # '' | 'l' | 'r'
+            path = os.path.join(d, vid + sfx + ".png")
+            _sl = [BALLOON_ART_SLICE] * 4
+            if _tail == "l":
+                _sl[0] = _sl[3] = max(BALLOON_ART_SLICE, BALLOON_TAIL_BAND)
+            elif _tail == "r":
+                _sl[2] = _sl[3] = max(BALLOON_ART_SLICE, BALLOON_TAIL_BAND)
+            man["assets"][vid + sfx] = {"kind": kind, "file": vid + sfx + ".png", "moods": moods,
+                                        "tail": _tail,
+                                        "slice": _sl,                       # 테투리 밴드 폭(9슬라이스 절선)
+                                        "safe": [x + 8 for x in _sl],       # 글자 안전 여백
+                                        "border": 7, "alpha": BALLOON_ART_PLATE_ALPHA}
+        vid_key = vid
+        man["assets"][vid_key]["dirs"] = {s.lstrip("_"): vid + s + ".png"
+                                          for s in BALLOON_TAIL_SUFFIX}
+        for sfx in _sfx_list:
+            _tail = sfx.lstrip("_")
+            path = os.path.join(d, vid + sfx + ".png")
+            if os.path.exists(path) and not force:
+                made.append(vid + sfx)
+                continue
+            layer = Image.new("RGBA", (BALLOON_ART_W, BALLOON_ART_H), (0, 0, 0, 0))
+            dl = ImageDraw.Draw(layer)
+            n, k, amp = _SHAPE_SPEC.get(shape, (3.0, 0, 0.0))
+            cx, cy = BALLOON_ART_W / 2.0, BALLOON_ART_H / 2.0
+            a = BALLOON_ART_W / 2.0 - BALLOON_ART_MARGIN
+            b = BALLOON_ART_H / 2.0 - BALLOON_ART_MARGIN - BALLOON_TAIL_ROOM   # 아래는 꼬리 자리
+            bw = 7 if shape != "thin" else 3
+            # 테투리(불투명) → 내부(반투명) 순서로 겹쳐 그린다(테투리 두께를 자산에 굽는다)
+            dl.polygon(_superellipse_pts(cx, cy, a, b, n, k, amp),
+                       fill=tuple(DEFAULT_FRAME) + (255,))
+            inn = max(0.02, bw * 2.0 / min(2 * a, 2 * b))
+            dl.polygon(_superellipse_pts(cx, cy, a * (1 - inn), b * (1 - inn), n, k, amp),
+                       fill=tuple(DEFAULT_PLATE) + (BALLOON_ART_PLATE_ALPHA,))
+            if _tail:
+                _tb = _bake_tail(layer, dl, BALLOON_ART_W, BALLOON_ART_H, bw,
+                                 "thought" if kind == "thought" else "speech", _tail)
+                man["assets"][vid + sfx]["tail_bbox"] = [int(v) for v in _tb]
+            layer.save(path)
+            made.append(vid + sfx)
     try:
         with open(os.path.join(d, BALLOON_ART_MANIFEST), "w", encoding="utf-8") as f:
             _json.dump(man, f, ensure_ascii=False, indent=1)
@@ -1252,7 +1349,23 @@ def _auto_safe(img, thresh=200):
         return tuple(BALLOON_ART_SAFE)
 
 
-def _balloon_art_safe(variant: str, out_w: int = 0, out_h: int = 0):
+def _art_use_whole(art_size, box_w: int, box_h: int, slice_px) -> bool:
+    """[2026-09-13] 방향 자산은 모서리 패치(꼬리 자리)가 크다. 붙일 상자가 패치에 비해
+    작으면 9슬라이스가 오히려 글자 자리를 없앤다 → 그럴 때는 **자산 통째로 축소**가 최선이다.
+    합성(`paste_balloon_art`)과 안전여백(`_balloon_art_safe`)이 같은 판단을 공유한다."""
+    try:
+        aw, ah = art_size
+        l, t, r, b = [max(1, int(x)) for x in slice_px]
+    except Exception:
+        return False
+    if box_w <= 0 or box_h <= 0:
+        return False
+    if box_w < l + r + 2 or box_h < t + b + 2:
+        return True
+    return (l + r) > BALLOON_BAND_CAP * box_w or (t + b) > BALLOON_BAND_CAP * box_h
+
+
+def _balloon_art_safe(variant: str, out_w: int = 0, out_h: int = 0, tail: str = ""):
     """자산의 글자 안전 여백 (l,t,r,b) — **9슬라이스로 붙였을 때의 실제 여백**으로 돌려준다.
 
     자산에서 잰 여백을 그대로 쓰면 틀린다: 9슬라이스는 모서리·가장자리 스트립을 그대로 두고
@@ -1260,6 +1373,8 @@ def _balloon_art_safe(variant: str, out_w: int = 0, out_h: int = 0):
     out_w/out_h를 주면 그 크기로 붙였을 때의 여백을 계산한다.
     """
     a = (_balloon_bank().get(variant or "") or {})
+    if tail in ("l", "r") and (a.get("dirs") or {}).get(tail):
+        a = a["dirs"][tail]              # 방향 자산은 절선·여백이 비대칭이다
     safe = a.get("safe") or list(BALLOON_ART_SAFE)
     slc = a.get("slice") or [BALLOON_ART_SLICE] * 4
     try:
@@ -1272,6 +1387,11 @@ def _balloon_art_safe(variant: str, out_w: int = 0, out_h: int = 0):
     if out_w and out_h and a.get("img") is not None:
         try:
             aw, ah = a["img"].size
+            if _art_use_whole((aw, ah), int(out_w), int(out_h), slc):
+                # 통째로 축소하는 경우: 여백도 그 배율 그대로다
+                fx, fy = int(out_w) / float(max(1, aw)), int(out_h) / float(max(1, ah))
+                return (max(0, int(l * fx)), max(0, int(t * fy)),
+                        max(0, int(r * fx)), max(0, int(b * fy)))
             sx = max(0.02, (int(out_w) - cl - cr) / float(max(1, aw - cl - cr)))
             sy = max(0.02, (int(out_h) - ct - cb) / float(max(1, ah - ct - cb)))
             l = int(cl + max(0, l - cl) * sx)
@@ -1310,6 +1430,44 @@ def _balloon_bank() -> dict:
                 sl = [int(x) for x in (spec.get("slice") or [BALLOON_ART_SLICE] * 4)]
                 # 안전여백은 manifest 값이 아니라 **자산의 실제 알파**에서 계산한다(모양이 제각각)
                 sf = list(_auto_safe(img))
+                tail = str(spec.get("tail") or "").strip().lower()
+                tb = spec.get("tail_bbox")
+                if tail in ("l", "r") and tb and len(tb) == 4:
+                    # 절선은 꼬리 외곽사각으로 **정확히** 벌린다(자른 좌표를 따라간다).
+                    #   벌이지 않으면 몸통을 늘릴 때 꼬리가 같이 늘어나 글자 자리가 빈다.
+                    cb0, cb1 = (bb[0], bb[1]) if bb else (0, 0)
+                    sl = [BALLOON_ART_SLICE] * 4
+                    if tail == "l":
+                        sl[0] = max(sl[0], int(tb[2] - cb0) + 2)
+                    else:
+                        sl[2] = max(sl[2], int(img.size[0] - (tb[0] - cb0)) + 2)
+                    sl[3] = max(sl[3], int(img.size[1] - (tb[1] - cb1)) + 2)
+                    # [2026-09-14] 자산을 **포토샵으로 손질**하면 manifest의 tail_bbox가 낡는다.
+                    #   아래 절선만이라도 실제 알파로 재계산해 덮어쓴다(꼬리만 튀어나온 픽셀 수).
+                    try:
+                        al = img.split()[3]
+                        w_, h_ = img.size
+                        half = max(1, w_ // 2)
+                        side_cols = range(0, half) if tail == "l" else range(half, w_)
+                        other_cols = range(half, w_) if tail == "l" else range(0, half)
+
+                        def _last_row(cols):
+                            cs = list(cols)[::3] or [0]
+                            for yy in range(h_ - 1, -1, -1):
+                                if any(al.getpixel((xx, yy)) > 200 for xx in cs if xx < w_):
+                                    return yy
+                            return 0
+                        pro = _last_row(side_cols) - _last_row(other_cols)
+                        if pro > 0:
+                            sl[3] = max(sl[3], min(h_ - 2, pro + BALLOON_ART_SLICE))
+                    except Exception:
+                        pass
+                if tail in ("l", "r") and str(vid).endswith("_" + tail):
+                    # 방향 자산은 별도 변형이 아니라 **본 체형의 방향 한 벌**로 붙인다
+                    base = str(vid)[: -(len(tail) + 1)]
+                    if base in out:
+                        out[base].setdefault("dirs", {})[tail] = {"img": img, "slice": sl, "safe": sf}
+                        continue
                 out[str(vid)] = {"img": img, "kind": str(spec.get("kind") or "").lower(),
                                  "slice": sl, "safe": sf,
                                  "alpha": int(spec.get("alpha") or BALLOON_ART_PLATE_ALPHA),
@@ -1372,27 +1530,36 @@ def _nine_slice(dst, art: "Image.Image", box, slice_px):
     dst.alpha_composite(cen, (x0 + l, y0 + t))
 
 
-def paste_balloon_art(canvas, variant: str, region, box, flip: bool = False):
+def paste_balloon_art(canvas, variant: str, region, box, flip: bool = False, tail: str = ""):
     """컷 영역 RGBA 레이어에 몸통(9슬라이스)을 합성해 한 번에 붙인다.
 
     텍스트는 이 함수가 끝난 **뒤**에 그린다(그렇지 않으면 글자까지 반투명해진다).
     성공 시 사용 변형 id, 실패(자산 없음) 시 None → 호출자가 벡터로 그린다.
-    [2026-09-10] 꼬리·생각 물방울은 정상 동작하지 않아 삭제됐다 — 몸통만 붙인다.
+    [2026-09-13] `tail`('l'/'r')을 주면 꼬리·물방울이 **구워진** 방향 자산을 쓴다.
+      방향 자산이 없는 환경(옛 자산 9장뿐)에서는 아래처럼 좌우 반전으로 견딘다.
     """
     bank = _balloon_bank()
     a = bank.get(variant or "")
     if canvas is None or not a:
         return None
-    art = a["img"]
-    if flip:
+    use = (a.get("dirs") or {}).get(tail) if tail in ("l", "r") else None
+    art = (use or a)["img"]
+    slc = (use or a)["slice"]
+    if use is None and flip:
         art = art.transpose(Image.FLIP_LEFT_RIGHT)
+        slc = [slc[2], slc[1], slc[0], slc[3]]
     ix, iy, iw, ih = [int(v) for v in region]
     x0, y0, x1, y1 = [int(v) for v in box]
     if iw < 24 or ih < 24 or x1 - x0 < 24 or y1 - y0 < 24:
         return None
     try:
         layer = Image.new("RGBA", (iw, ih), (0, 0, 0, 0))
-        _nine_slice(layer, art, (x0 - ix, y0 - iy, x1 - ix, y1 - iy), a["slice"])
+        if _art_use_whole(art.size, x1 - x0, y1 - y0, slc):
+            # 패치가 상자를 다 먹는다 — 통째로 축소해 **그 자리에** 붙인다(꼬리 비율도 같이 줄어든다)
+            layer.alpha_composite(art.resize((max(2, x1 - x0), max(2, y1 - y0)), Image.LANCZOS),
+                                  (x0 - ix, y0 - iy))
+        else:
+            _nine_slice(layer, art, (x0 - ix, y0 - iy, x1 - ix, y1 - iy), slc)
         canvas.paste(layer, (ix, iy), layer)
         return variant
     except Exception:
@@ -1418,7 +1585,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None
     role = "thought" if kind == "thought" else "dialog"
     side = str((balloon or {}).get("side") or facing or "").strip().lower() or None
-    prefer, _dkey = _balloon_slot_pref(balloon, facing)   # _dkey: 방향(꼬리 폐지 이후로는 자산 좌우 반전에만 쓴다)
+    prefer, _dkey = _balloon_slot_pref(balloon, facing)   # _dkey = 꼬리 방향('l'|'r') — 자리 4칸 제한과 짝이다
     emo = _norm_emo((balloon or {}).get("emo"))
     mg = 8
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
@@ -1493,7 +1660,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid, prefer=prefer, margin=mg)
     if not xy:
         xy = _place_in_panel(ix, iy, iw, ih, box_w, box_h, avoid=avoid, margin=mg,
-                             prefer=tuple(k for k in ("tl", "tr", "bl", "br", "center")
+                             prefer=tuple(k for k in ("tl", "ml", "tr", "mr")
                                           if k not in prefer) + prefer)
     if not xy:
         return None                       # 자리가 없으면 겹쳐 쓰지 않고 생략한다
@@ -1504,11 +1671,11 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
     if art_id:
         # 미리 골라 둔 변형을 붙인다(위에서 안전여백을 이 변형 기준으로 잰다).
         art = paste_balloon_art(canvas, art_id, (ix, iy, iw, ih), (x0, y0, x1, y1),
-                                flip=(_dkey == "right"))
+                                flip=(_dkey == "r"), tail=_dkey)
         if art:
             if bank_used is not None:
                 bank_used.append(art)
-            _sl, _st, _sr, _sb = _balloon_art_safe(art, box_w, box_h)   # 실측 크기로 다시 잰다
+            _sl, _st, _sr, _sb = _balloon_art_safe(art, box_w, box_h, _dkey)   # 실측 크기로 다시 잰다
             if kind == "speech":
                 ty0 = y0 + max(pad, _st)
             else:

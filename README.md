@@ -262,7 +262,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--font-narration` `--font-dialog` `--font-thought` `--font-sfx` | 용도별 폰트 지정 — 비우면 `data/fonts/` → OS 순서 |
 | `--no-epilogue` | ★에필로그 페이지(반투명 이벤트신 1칸 + 큰 지문)를 붙이지 않습니다 — **마지막 회차에만** 붙습니다 |
 | `--no-prologue` | ★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷)를 붙이지 않습니다 |
-| `--source-prologue FILE` · `--source-epilogue FILE` | ★프롤로그·★에필로그 지문의 **원작 근거** 파일을 직접 지정합니다 — `--special`이면 `progress/`에서 같은 해시를 자동 발견합니다 | 
+| `--source-prologue FILE` · `--source-epilogue FILE` | ★프롤로그·★에필로그 지문의 **원작 원문** 파일을 직접 지정합니다 — `--special`이면 `progress/`에서 같은 해시를 자동 발견합니다 | 
+| `--star-frame full\|compact` | ★지문: `full`(기본)=원작 prologue/epilogue **전문 그대로** 출력 · `compact`=LLM이 2~4줄로 압축 |
 | `--no-source-frame` | `progress/`의 `prologue_·epilogue_` 원문을 ★지문 근거로 쓰지 않습니다(회차 본문만 사용) |
 | `--no-summary-cuts` | ★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끕니다 |
 | `--no-emo-marks` | 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끕니다 |
@@ -547,6 +548,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 
 - 중간 컷에는 ★ 박스가 붙지 않습니다(예전엔 기승전결 페이지마다 붙어 화면이 박스로 뒤덮였습니다).
 - ★ 지문은 글자를 **1.25배** 크게 쓸 뿐 **컷 면적의 70%를 넘기지 않고**, 본문의 마지막 장면을 그대로 옮겨 적지도 않습니다(에필로그는 사건 *이후*의 여운).
+- 단 `progress/`의 `prologue_`·`epilogue_` 원문이 함께 들어오면(로컬 입력) ★프롤로그·★에필로그는 **그 원고를 그대로** 올립니다(약 1,000자도 컷 폭을 다 써서 잘림 없이 들어갑니다 — 글자가 먼저 줄어든다). 압축이 필요하면 `--star-frame compact`입니다([3-9절]).
 
 ```
 # 에필로그 템플릿(data/cut.yaml → epilogue_aftermath) — tier에 role을 적으면 그 행이 ★슬롯이 됩니다
@@ -879,15 +881,22 @@ venv/bin/python run_comic.py ... --balloon-style image
 progress/
   ep03_2218f2f3797744fe.txt                  ← 본문(기승전결 · [ACTION]/[TALK]/[INNER] · 장면 카드)
   character_sheet_ep03_2218f2f3797744fe.json  ← 회차별 캐릭터 시트(타락 진행에 따라 바뀝니다)
-  prologue_2218f2f3797744fe.txt              ← 작품의 문(★프롤로그 지문의 원작 근거)
-  epilogue_2218f2f3797744fe.txt              ← 작품의 여운(★에필로그 지문의 원작 근거)
+  prologue_2218f2f3797744fe.txt              ← 작품의 문(★프롤로그 지문에 **전문 그대로** 올라간다)
+  epilogue_2218f2f3797744fe.txt              ← 작품의 여운(★에필로그 지문에 **전문 그대로** 올라간다)
   progress_2218f2f3797744fe.json             ← 총 회차 수 등 진행 정보
 ```
 
 `prologue_*.txt` / `epilogue_*.txt`는 **회차가 아니라 작품 단위** 산출물입니다. 그래서 회차 본문에
-섞이지 않고 ★지문(도입·여운)의 **근거**로만 쓰입니다 — [3-8절]의 ★프롤로그는 첫 회차 앞,
-★에필로그는 마지막 회차 끝에 붙습니다. 끌 때는 `--no-source-frame`, 다른 파일을 쓸 때는
-`--source-prologue FILE` / `--source-epilogue FILE`입니다.
+섞이지 않습니다 — [3-8절]의 ★프롤로그(첫 회차 앞)·★에필로그(마지막 회차 끝)에 **라벨(`=== PROLOGUE ===`,
+`# 주인공 (…)`, `--- 본문 ---`)만 걷어 않고 원고를 그대로 올립니다**(2026-09-13 사용자 지시: 원고를 손으로
+다듬어 두셨으므로 압축하지 않는다). 다른 동작이 필요하시면:
+
+| 스위치 | 효과 |
+|---|---|
+| `--star-frame full` (기본) | 원문을 **그대로** 화면에 올립니다. 문단 구분은 그대로 가고, 렌더는 컷 폭을 다 써서 잘림 없이 담습니다 |
+| `--star-frame compact` | 원문을 **근거**로 두고 LLM이 2~4줄로 압축합니다(예전 동작) |
+| `--no-source-frame` | 원문을 아예 쓰지 않습니다(회차 본문으로 ★지문을 짓습니다) |
+| `--source-prologue FILE` · `--source-epilogue FILE` | 파일을 직접 지정합니다(자동 발견보다 우선) |
 
 **장면 카드** — 원작이 장소·상황·시간·복장을 직접 지정해 주는 블록입니다(2026-09-11 입력 변화). 회차 시작에 4개가 한 덩어리로 오고, **기승전결 중간에도 필요하면 들어옵니다**(장면·복장이 바뀌는 지점).
 

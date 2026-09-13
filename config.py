@@ -162,6 +162,10 @@ comic_face_model = ""           # YuNet ONNX 경로(빈값이면 data/models/ �
 comic_chatty = False              # 수다장이 모드: 모든 컷 하단에 설명(지문) — 없으면 행동·표정 묘사로 채운다
 comic_emo_marks = True              # 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) → --no-emo-marks
 comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차** 맨 앞에 도입 1컷(배경만+큰 지문)
+# [2026-09-13] ★지문과 원작 prologue_/epilogue_ 원문의 관계 (config.source_frame, local 전용 입력)
+#   "full"(기본) = 원문을 **그대로** 화면에 올린다 — 사용자가 원고를 손질했으므로 압축하지 않는다.
+#   "compact"   = 원문을 근거로 LLM이 2~4줄로 압축한다(예전 동작, --star-frame compact).
+comic_star_frame = "full"
 # [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
 # [2026-09-09] 컷 배분 변동(랜덤성) — 같은 본문でも 레이아웃/장면당 컷 수가 매번 같아 지루했다.
 #   0 = 예전과 같은 완전 재현, N>0 = 그 값마다 다른 배분 (--vary 는 시계값을 뽑고 로그에 남긴다)

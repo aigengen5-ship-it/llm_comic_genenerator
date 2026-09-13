@@ -1588,6 +1588,12 @@ def main() -> int:
           fp90[:40])
     check("--special: prologue 원문은 회차 본문 문법으로 스니프되지 않는다(회차 오해 방지)",
           not NP.sniff(fp90) and not NP.EP_FILE_RE.match(os.path.basename(fr["prologue"])))
+    # [2026-09-13] [TALK]/[INNER] → '이름: 대사'/'(속마음) …' 평문화가 하류(장치 판정)까지 살아간다
+    _dev = {ln[:12]: CI.classify_device(ln) for ln in b90.splitlines()
+            if ln.strip() and (ln.startswith("(속마음)") or ":" in ln.split(" ")[0])}
+    check("--special: 평문화된 발화 줄의 장치가 맞는다(대사/속마음이 '행동'으로 후퇴하지 않음)",
+          any(v == "대사" for v in _dev.values()) and any(v == "속마음" for v in _dev.values()),
+          str(sorted(set(_dev.values()))))
 
     jobs_fr, _ = RC._resolve_jobs(types.SimpleNamespace(
         episode=os.path.join(INP, "prologue_deadbeef.txt"), sheet="", special=True,
@@ -1644,6 +1650,35 @@ def main() -> int:
     check("--special: 원작 원문은 STAR_FRAME_CAP자로 잘라 보낸다(num_ctx가 규칙 블록을 삼킨다)",
           len(CG._source_frame("prologue")) <= CG.STAR_FRAME_CAP + 4,
           str(len(CG._source_frame("prologue"))))
+    # [2026-09-13] 기본은 **전문 그대로** 화면에 올린다(사용자가 prologue/epilogue를 손으로 다듬어 둔 상태)
+    _fr_full = {"prologue": "첫 문단이다.\n\n둘째 문단이다.\n\n셋째 문단까지.",
+                "epilogue": "에필로그 원문 전문이다. 여기까지가 화면에 그대로 올라간다."}
+    _p_sf = [{"no": 1, "text_role": "summary", "prologue": True, "caption_ko": "LLM이 짓는 압축문",
+              "lines": [{"kind": "thought", "who": "", "text": "압축된 생각"}], "narr_large": True},
+             {"no": 2, "text_role": "epilogue", "caption_ko": "LLM이 짓는 여운", "lines": []},
+             {"no": 3, "text_role": "", "caption_ko": "일반 컷 지문", "lines": []}]
+    _n_sf = []
+    config.source_frame = _fr_full
+    CG._apply_star_frame_text(_p_sf, _n_sf)
+    check("--special: ★프롤로그·★에필로그 지문 = 원작 전문(LLM 압축을 덮는다)",
+          _p_sf[0]["caption_ko"] == _fr_full["prologue"] and _p_sf[1]["caption_ko"] == _fr_full["epilogue"],
+          str([p["caption_ko"][:14] for p in _p_sf]))
+    check("--special: ★자리는 문단 구조가 남고 풍선은 비운다(지문이 무대) — 일반 컷은 그대로",
+          "\n\n" in _p_sf[0]["caption_ko"] and _p_sf[0]["lines"] == [] and _p_sf[0]["narr_large"]
+          and _p_sf[2]["caption_ko"] == "일반 컷 지문", str(_p_sf[2]["caption_ko"]))
+    config.comic_star_frame = "compact"
+    _p_sf2 = [{"no": 1, "text_role": "epilogue", "caption_ko": "LLM이 2~4줄로 압축한 글"}]
+    CG._apply_star_frame_text(_p_sf2, [])
+    check("--special: --star-frame compact이면 LLM 압축을 존중한다(예전 동작으로 복구)",
+          _p_sf2[0]["caption_ko"] == "LLM이 2~4줄로 압축한 글", _p_sf2[0]["caption_ko"])
+    config.comic_star_frame = "full"
+    _blk_full = CG._source_frame_block(["prologue"])
+    config.comic_star_frame = "compact"
+    _blk_cmp = CG._source_frame_block(["prologue"])
+    check("--special: 프롬프트 지침이 모드와 맞는다(full=그림만, compact=2~4줄 압축)",
+          "프로그램이 화면에 올린다" in _blk_full and "2~4줄로 압축" not in _blk_full
+          and "2~4줄로 압축" in _blk_cmp, _blk_full[-60:] if _blk_full else "(빈 블록)")
+    config.comic_star_frame = "full"
     config.source_frame = _sf_saved
 
     # ============================== [2026-09-09] 화면 문법 (설명 / 말풍선 / 속마음 / 의성어)
@@ -1661,6 +1696,19 @@ def main() -> int:
           all(len(x["text"]) <= CG.DIALOG_MAX_LEN for x in ln), str([len(x["text"]) for x in ln]))
     check("_norm_lines: {kind,who,text} dict 입력도 받는다",
           CG._norm_lines([{"kind": "speech", "who": "유즈키", "text": "안 돼"}])[0]["kind"] == "speech")
+    # [2026-09-13] 어댑터(novel_progress)가 남긴 표기를 그대로 받았을 때의 화면 회귀
+    check("_norm_lines: '(속마음) X'는 라벨만 걷는다(꼬리 ')' 가 화면에 남지 않는다)",
+          CG._norm_lines(["(속마음) 심장이 크게 뛰었다."])[0]["text"] == "심장이 크게 뛰었다.",
+          str(CG._norm_lines(["(속마음) 심장이 크게 뛰었다."])[0]))
+    check("_norm_lines: 띄어쓰기 있는 이름도 화자로 떼어 낸다(progress/ 이름형 4음절)",
+          CG._norm_lines(["호시노 아야: 어서 오세요."])[0]["who"] == "호시노 아야"
+          and CG._norm_lines(["무라모토 에이지: 내일도 이거 입고 와라."])[0]["who"] == "무라모토 에이지"
+          and "호시노" not in CG._norm_lines(["호시노 아야: 어서 오세요."])[0]["text"],
+          str(CG._norm_lines(["호시노 아야: 어서 오세요."])[0]))
+    check("_norm_lines: 서술 말머리는 화자로 오해하지 않는다(글자가 통째로 풍선에 남는다)",
+          CG._norm_lines(["그는 말했다: 내일 보자"])[0]["who"] == ""
+          and CG._norm_lines(["그는 말했다: 내일 보자"])[0]["text"].startswith("그는"),
+          str(CG._norm_lines(["그는 말했다: 내일 보자"])[0]))
     check("_norm_dialog(하위호환): 옛 '화자: 말' 문자열로 되돌려 준다(옛 메타·스크립트)",
           CG._norm_dialog([{"kind": "speech", "who": "유즈키", "text": "안 돼"}]) == ["유즈키: 안 돼"],
           str(CG._norm_dialog([{"kind": "speech", "who": "유즈키", "text": "안 돼"}])))
@@ -1941,6 +1989,14 @@ def main() -> int:
           and CPM.NARR_LARGE_FONT_RATIO <= 1.30, f"fs={_lp[4] if _lp else 0} ratio={CPM.NARR_LARGE_FONT_RATIO}")
     check("넓어진 폭 덕분에 같은 글씨가 더 적은 줄로 들어간다(잘림 감소)",
           _lg and len(_lg[5]) <= 3, f"lines={len(_lg[5]) if _lg else 0}")
+    # [2026-09-13] ★지문 = 원작 전문(기본) — prologue/epilogue 원고(약 1,000자)가 전폭 1컷에 다 들어가는지
+    _pr_para = ("시온자와의 하늘에는 오늘도 붉은 달이 떠 있었다. " * 10)[:250]
+    _pr_txt = "\n\n".join([_pr_para] * 4)
+    _fit = CPM._draw_caption_box(_dd3, 0, 0, 980, 1300, _pr_txt, font_size=CPM.DEFAULT_FONT_SIZE, large=True)
+    check(f"★지문 전문({len(_pr_txt)}자·4문단)도 전폭 1컷에 잘림 없이 들어간다(폰트가 먼저 줄어든다)",
+          _fit and len(_pr_txt) > 900 and not any(str(x).endswith("…") for x in _fit[5])
+          and _fit[4] >= CPM.FONT_FLOOR,
+          f"fs={_fit[4] if _fit else 0}px lines={len(_fit[5]) if _fit else 0}")
     _wide_evt = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "이벤트 컷의 긴 설명 문장입니다 " * 5,
                                       font_size=20, narrow=True)
     check("이벤트 컷 설명도 컷 폭의 절반은 쓸 수 있다(예전 46% 상한에서는 글자가 짤렸다)",
@@ -2955,6 +3011,22 @@ def main() -> int:
           and CI.classify_device("「여기 있었구나」") == "대사"
           and CI.classify_device("속으로 그를 기다렸다") == "속마음"
           and CI.classify_device("그녀는 그 자리에…") == "속마음")
+    # [2026-09-13] --special 입력에서는 어댑터가 [TALK]/[INNER]를 이미 평문화해 놓는다 — 그 표기가 1순위 단서다
+    check("--special: 어댑터 평문화 형태도 장치를 맞춘다('(속마음) …'=속마음, '이름: 대사'=대사)",
+          CI.classify_device("(속마음) 손님이 없는 시간대인데도 이 사람이 들어오면 공기가 달라진다.") == "속마음"
+          and CI.classify_device("호시노 아야: 어서 오세요. 이런 시간에 이 골목은 처음이세요.") == "대사"
+          and CI.classify_device("렌: 사진 한 장만 찍게 해 주세요.") == "대사"
+          and CI.classify_device("기: (속마음) 이름으로 불리자 심장이 크게 뛰었다.") == "속마음"
+          and CI.classify_device("[INNER] 셔터음이 오늘 초인종처럼 들린다") == "속마음",
+          " | ".join(CI.classify_device(x) for x in ["(속마음) 손님이 없는 시간대", "호시노 아야: 어서 오세요."]))
+    check("--special: 어댑터의 상태 줄은 화자가 아니다('장소:'·'…의 복장:'·'비고:'·'기:')",
+          CI.classify_device("장소: 비가 그친 골목의 작은 꽃가게. 유리 진열장에 물방울이 남아 있다.") == "행동"
+          and CI.classify_device("카미유 렌의 복장: 베이지색 린넨 원피스에 꽃집 앞치마") == "행동"
+          and CI.classify_device("비고: 손님이 없는 시간대") == "행동"
+          and CI.speaker_prefix("승: 렌이 들어온다") == "" and CI.speaker_prefix("렌: 찍어도 될까?") == "렌")
+    check("서술 말머리는 화자로 오해하지 않는다('그는 말했다:')",
+          CI.speaker_prefix("그는 말했다: 내일 보자") == ""
+          and CI.speaker_prefix("호시노 아야: 어서 오세요.") == "호시노 아야")
     _pc = CI.split_for_cuts("첫 문장이다. 둘째가 이어진다. 셋째 문장이다. 마지막이다.", 2)
     check("장면 본문을 컷 수만큼 시간 순 조각으로 나눈다(장치 판정 재료)",
           len(_pc) == 2 and _pc[0].startswith("첫") and _pc[1].startswith("셋째"), str(_pc))

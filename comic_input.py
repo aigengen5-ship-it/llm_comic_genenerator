@@ -318,17 +318,67 @@ def _item_mode() -> bool:
         return False
 
 
+# ------------------------------------------------------------------ 어댑터가 평문화한 [TALK]/[INNER] 형태
+#   novel_progress는 `[TALK]`→`이름: 대사`, `[INNER]`→`(속마음) …`로 바꾼다. 그런데 아래 규칙 사전은
+#   '속으로/말했다/인용부호'만 알아서, progress/ 입력의 조각은 화자가 분명한 문장이 '행동'으로
+#   후퇴했다(실측 2026-09-13: `(속마음) 손님이 없는…` → 행동, `호시노 아야: 어서 오세요.` → 행동).
+#   어댑터 산출물의 1순위 단서를 먼저 본다.
+_WHO_L = r"[\(\[\uff08\u300c]"
+_WHO_R = r"[\)\]\uff09\u300d]"
+# 이름 자리: 한글/영문 1~3어절(띄어쓰기 허용 — '호시노 아야', '무라모토 에이지'는 두 어절이다)
+WHO_NAME_RE = re.compile(
+    r"^\s*(?P<who>[가-힣A-Za-z][가-힣A-Za-z]*(?:\s[가-힣A-Za-z][가-힣A-Za-z]*){0,2})\s*[:：]\s*(?P<say>\S.*)$", re.S)
+DEVICE_INNER_RE = re.compile(
+    rf"(?:{_WHO_L}\s*(?:속마음|혼잣말|마음속|INNER)\s*{_WHO_R}\s*[:：]?"
+    r"|(?:속마음|혼잣말|마음속)\s*[:：]" + r"|\[\s*INNER\s*\]\s*[:：]?)", re.I)
+DEVICE_TALK_RE = re.compile(rf"(?:\[\s*TALK\s*\]\s*[:：]?|{_WHO_L}\s*TALK\s*{_WHO_R}\s*[:：]?)", re.I)
+# '화자'로 보면 안 되는 말머리 — 상태 라벨(장면 카드)과 막 라벨은 사람이 아니다
+WHO_NOT_HEADS = {"장소", "상황", "시간", "복장", "배경", "인물", "날씨", "장면", "효과음", "의성어", "비고",
+                 "기", "승", "전", "결", "ep", "ed", "note", "tip"}
+# 어댑터가 넣는 상태 줄은 소유자가 앞에 붙는다 — `카미유 렌의 복장: …`는 화자가 아니라 장면 지정이다
+WHO_NOT_TAIL = re.compile(r"(?:의\s*)?(?:복장|장소|시간|상황|배경|인물|날씨|효과음|의성어|비고)$")
+WHO_NOT_BODY = re.compile(r"(했다|한다|였다|이다|된다|있다|없다|간다|왔다|말했|본다|알려|대해|그래서|하지만|그러나)")
+
+
+def speaker_prefix(line: str) -> str:
+    """`이름: 대사` 말머리면 이름(공백 정규화), 아니면 ""
+
+    `장소: …`·`기: …` 같은 상태/막 라벨과 '그는 말했다:' 같은 서술은 화자가 아닙니다.
+    comic_gen._norm_lines가 풍선 화자를 뗄 때도 같은 판정을 씁니다(두 곳이 갈라지면 이름이 화면에 찍힌다).
+    """
+    m = WHO_NAME_RE.match(str(line or ""))
+    if not m:
+        return ""
+    who = re.sub(r"\s+", " ", m.group("who")).strip()
+    if not who or who.lower() in WHO_NOT_HEADS or WHO_NOT_TAIL.search(who) or WHO_NOT_BODY.search(who):
+        return ""
+    return who
+
+
 def classify_device(text: str) -> str:
     """본문 조각을 화면 장치(행동/대사/속마음)로 분류한다 — LLM 없이 규칙으로 한다.
 
     만화에서 한 컷은 대개 한 가지 장치로 말한다(이 repo의 컷 규칙 8번과 같은 결).
-      대사   : 인용부호 안의 말, '~라고 말했다/대답했다/외쳤다'
-      속마음 : '~라고 생각했다', '속으로', '머릿속', 말줄임표가 달린 혼잣말
+      대사   : `이름: 대사`(어댑터가 평문화한 [TALK]) · 인용부호 안의 말, '~라고 말했다/대답했다/외쳤다'
+      속마음 : `(속마음) …`(어댑터가 평문화한 [INNER]) · '~라고 생각했다', '속으로', '머릿속', 말줄임표 혼잣말
       행동   : 나머지 (지문으로 보여주기)
+
+    순서가 중요하다: --special 입력은 어댑터가 장치를 이미 명시했으므로 그 표기를 먼저 보고,
+    일반 산문(평문 계약)은 아래 규칙 사전을 탄다.
     """
     t = re.sub(r"\s+", " ", str(text or "")).strip()
     if not t:
         return "행동"
+    # ① 어댑터 평문화 형태(원작이 이미 정한 단서) — 조각의 맨 앞이 그 컷의 장치다
+    if DEVICE_INNER_RE.match(t):
+        return "속마음"
+    if DEVICE_TALK_RE.match(t):
+        return "대사"
+    if speaker_prefix(t):
+        return "대사"
+    if DEVICE_INNER_RE.search(t[:40]):        # '기: (속마음) …' 처럼 막 라벨 뒤에 붙은 표시
+        return "속마음"
+    # ② 일반 산문 규칙
     quoted = re.search(chr(34) + r".{2,}?" + chr(34), t) or re.search(r"[“”「」『』].{2,}?[”“」「』『]", t)
     think = re.search(r"(속으로|머릿속|마음속|생각했다|생각이|느껴졌다|라고 혼잣말|스스로에게)", t)
     said = re.search(r"(말했다|대답|답변|외쳤다|질렀|속삭|이야기|대화|대사를|불렀|소리)", t)

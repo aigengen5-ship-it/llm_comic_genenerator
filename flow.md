@@ -137,9 +137,14 @@
   `plot_hash` 없는 산출물(`prologue.txt`)은 폴백입니다. `--no-source-frame`이면 여기서 멈춥니다.
 - `parse_frame`은 `=== PROLOGUE ===`·`# 주인공 (…)`·`--- 본문 ---` 라벨만 걷고 문단은 살립니다. 본문은
   `config.source_frame = {"prologue": …, "epilogue": …}`으로만 흐르고 **회차 본문에는 섞이지 않습니다**(입력 계약은 두 평문).
-- 소비처는 ★슬롯 두 곳뿐입니다: `build_panel_script_prompt`가 **이 호출의 슬롯에 `role`이 prologue/epilogue일
-  때만** `[원작 … 원문]` 블록을 붙입니다(`_source_frame_block`, 종류당 `STAR_FRAME_CAP=900자`). 일반 회차
-  ★도입요약은 원문을 받지 않습니다. ★지문이 비면 `_fill_star_narration`이 본문보다 원작 원문을 먼저 씁니다.
+- 소비처는 ★슬롯 두 곳뿐입니다(`comic_star_frame`가 방식을 정한다):
+  - `full`(기본): `_apply_star_frame_text`가 ★프롤로그·★에필로그 컷의 `caption_ko`를 **원문 그대로**로
+    덮어씁니다(LLM 작문 무시) + `narr_large=True` + `lines=[]`(풍선 비움). 일반 회차 ★도입요약은 건드리지 않는다.
+  - `compact`: `build_panel_script_prompt`가 **이 호출의 슬롯에 `role`이 prologue/epilogue일 때만**
+    `[원작 … 원문]` 블록을 붙여(`_source_frame_block`, 종류당 `STAR_FRAME_CAP=900자`) LLM이 2~4줄로 압축하게 합니다.
+    ★지문이 비면 `_fill_star_narration`이 본문보다 원작 원문을 먼저 씁니다.
+  - 어떤 모드든 프롬프트에는 **900자만** 근거로 올라갑니다(지문을 프로그램이 넣으면 num_ctx 절약).
+- 렌더: ★자리는 `narr_large` → 컷 폭 100%·높이 70% 안에서 글자를 줄여 다 담습니다(`_draw_caption_box`).
 
 ### 3.1 [C] 추출 — `comic_input.extract` (807) / `_extract_once` (790)
 - 프롬프트는 `에피소드 전문 + 시트 + 규칙 블록`. 본문은 §2-1 예산만큼만 넣습니다.

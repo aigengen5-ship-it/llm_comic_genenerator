@@ -409,35 +409,63 @@ def _layout_block(page_plans, slot_range=None):
 
 
 # ------------------------------------------------------------------ [local] 원작 ★지문 근거 (--special)
-STAR_FRAME_CAP = 900        # 프롬프트 예산: 원작 원문을 넘길 글자 상한 (num_ctx가 규칙 블록을 삼킨다)
+STAR_FRAME_CAP = 900        # 프롬프트 예산: 원문을 넘길 글자 상한 (num_ctx가 규칙 블록을 삼킨다)
+
+
+def _star_frame_full() -> bool:
+    """★지문에 원작 원문을 **그대로** 올리는지 (config.comic_star_frame, 기본 full)"""
+    return str(getattr(config, "comic_star_frame", "full") or "full").strip().lower() != "compact"
+
+
+def star_frame_kind(panel) -> str:
+    """그 컷이 ★프롤로그·★에필로그 중 어느 자리인가 (아니면 "")
+
+    ★프롤로그는 화면에서는 요약과 같은 역할(text_role=summary)이지만 `prologue` 표시로 구분한다
+    (`_apply_text_role`이 그렇게 박는다).
+    """
+    if not isinstance(panel, dict):
+        return ""
+    if panel.get("prologue"):
+        return "prologue"
+    if str(panel.get("text_role") or "") == "epilogue":
+        return "epilogue"
+    return ""
 
 
 def _source_frame(kind: str) -> str:
-    """config.source_frame — 단편 생성기 GUI가 남긴 prologue_/epilogue_ 원문 평문 (없으면 "")"""
+    """config.source_frame — 단편 생성기 GUI가 남긴 prologue_/epilogue_ 원문 평문 (없으면 "")
+
+    화면에 올리는 자리는 이 함수를 **쓰지 않는다**(`_apply_star_frame_text`가 config에서 전문을 그대로 쓴다).
+    여기서 자르는 것은 LLM 프롬프트 예산 때문이다.
+    """
     f = getattr(config, "source_frame", {}) or {}
-    t = re.sub(r"[ \t]+", " ", str(f.get(str(kind or "").strip().lower()) or "")).strip()
+    t = str(f.get(str(kind or "").strip().lower()) or "").strip()
     if len(t) > STAR_FRAME_CAP:
         cut = t[:STAR_FRAME_CAP]
         nl = cut.rfind("\n")
         t = (cut[:nl] if nl > 300 else cut).rstrip() + " …"
-    return t
+    return re.sub(r"[ \t]+", " ", t).strip()
 
 
 def _source_frame_block(roles) -> str:
     """[2026-09-13] 이 호출이 채울 슬롯에 ★프롤로그·★에필로그가 있을 때만 원작 원문을 붙인다.
 
     본문과 같은 자리에 원작 원문을 넣으면 원작이 정한 장소·소품·시간의 흐름이 ★컷에 새어 들어온다.
-    단 ★지문의 규칙은 '옮겨 적지 않는다'이므로 **근거**라고 못 박는다(원문 그대로면 2~4줄이 넘는다).
+    단 ★지문을 무엇을로 쓸지는 `comic_star_frame`가 정한다 — 기본(full)은 지문을 프로그램이 넣으므로
+    LLM에게는 "그림만 그려라"고 시킨다. compact에서는 2~4줄 압축을 시킨다(예전 동작).
     """
     rs = {str(r or "") for r in (roles or [])}
+    full = _star_frame_full()
+    tail = ("→ 지문은 이 원문으로 프로그램이 화면에 올린다. 당신은 **장면(배경·소품·분위기)만** 그린다 — "
+            "원문의 장소·소품을 컷 그림의 근거로 쓰고, caption_ko를 새로 짓지 말 것(빈 문자열 "
+            "또는 원문 첫 문장)." if full else
+            "→ 원문의 장소·소품·시간의 흐름을 근거로 쓴다. 원문을 그대로 옮겨 적지 말고 "
+            "2~4줄로 압축한다(화면에 큰 글자로 올라간다).")
     out = []
-    for kind, label, head in (("prologue", "프롤로그", "★도입 지문의 근거"),
-                              ("epilogue", "에필로그", "★여운 지문의 근거")):
+    for kind, label, head in (("prologue", "프롤로그", "★도입 지문"), ("epilogue", "에필로그", "★여운 지문")):
         t = _source_frame(kind) if kind in rs else ""
         if t:
-            out.append(f"[원작 {label} 원문 — {head}]\n{t}\n"
-                       "→ 원문의 장소·소품·시간의 흐름을 근거로 쓴다. 원문을 그대로 옮겨 적지 말고 "
-                       "2~4줄로 압축한다(화면에 큰 글자로 올라간다).")
+            out.append(f"[원작 {label} 원문 — {head}{'' if full else '의 근거'}]\n{t}\n" + tail)
     return ("\n".join(out) + "\n") if out else ""
 
 
@@ -1009,9 +1037,10 @@ def _norm_dialog(v) -> list:
             for b in _norm_lines(v)]
 
 
-_WHO_PREFIX_RE = re.compile(r"^\s*([가-힣A-Za-z]{1,8})\s*[:：]\s*(.+)$", re.S)
+_WHO_PREFIX_RE = CI.WHO_NAME_RE      # [2026-09-13] 화자 판정은 comic_input과 한 자리 — 옛 `[가-힣A-Za-z]{1,8}`은
+#   띄어쓰기가 없어 '호시노 아야:'를 못 뗐다(이름이 화면에 새고 풍선 위치가 주인공 쪽으로 고정)
 _THOUGHT_MARK_RE = re.compile(
-    r"^\s*[\(\u300c\uff08]?\s*(?:속마음|혼잣말|마음속)\s*[:：]?\s*(.*?)\s*[\)\u300d\uff09]?\s*$", re.S)
+    r"^\s*[\(\u300c\uff08]?\s*(?:속마음|혼잣말|마음속)\s*[\)\u300d\uff09]?\s*[:：]?\s*(.*?)\s*[\)\u300d\uff09]?\s*$", re.S)
 
 
 # [2026-09-09] 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) — 대사에서 냄새가 나면 풍선 곁에 그린다.
@@ -1266,9 +1295,13 @@ def _norm_lines(v) -> list:
             if m and ("속마음" in s or "혼잣말" in s or "마음속" in s):
                 kind, s = "thought", (m.group(1) or s).strip()
         if not who:
-            m2 = _WHO_PREFIX_RE.match(s)
-            if m2:
-                who, s = m2.group(1).strip(), m2.group(2).strip()
+            # [2026-09-13] 어댑터가 남긴 `이름: 대사`는 띄어쓰기 있는 이름('호시노 아야')이 대부분이다.
+            #   라벨/서술 말머리('장소:', '기:', '그는 말했다:')를 화자로 오해하는 판정은
+            #   comic_input.speaker_prefix가 막는다(장치 판정과 한 자리를 쓴다).
+            _w = CI.speaker_prefix(s)
+            if _w:
+                who = _w
+                s = re.sub(r"^\s*" + re.escape(_w) + r"\s*[:：]\s*", "", s, count=1).strip()
         # [2026-09-09] 긴 대사를 '…'로 버리지 않는다 — 두 개의 풍선으로 나눠 담는다(화면이 말을 다 한다)
         if len(s) > DIALOG_MAX_LEN and len(out) < DIALOG_LINES:
             head, rest = _split_dialog(s)
@@ -2009,6 +2042,29 @@ def _fill_star_narration(panels, beats, quotas, notes):
             notes.append(f"컷 {p['no']}: ★{p['text_role']} 지문 미작성 → {src}(으)로 채움")
 
 
+def _apply_star_frame_text(panels, notes):
+    """[2026-09-13] ★프롤로그·★에필로그 지문 = 원작 prologue_/epilogue_ **전문** (기본)
+
+    사용자가 원고를 손으로 다듬어 두었으므로 압축하지 않고 그대로 올린다 — LLM이 뭘 썼든 덮어쓴다.
+    (`--star-frame compact`로 두면 LLM 압축으로 돌아간다.) 화면에서는 `_screen_caption`이 ★자리만
+    줄바꿈을 살리므로 문단 구조가 그대로 간다. 렌더는 컷 폭을 다 쓰고 글자를 줄여 다 담는다
+    (`comic_page_merge._draw_caption_box`의 large 경로 · 하한 FONT_FLOOR).
+    """
+    if not panels or not _star_frame_full():
+        return
+    fr = getattr(config, "source_frame", {}) or {}
+    for p in panels:
+        kind = star_frame_kind(p)
+        txt = str(fr.get(kind) or "").strip() if kind else ""
+        if not txt or txt == str(p.get("caption_ko") or "").strip():
+            continue
+        p["caption_ko"] = txt
+        p["narr_large"] = True
+        p["lines"] = []                       # ★자리는 지문이 무대다 — 풍선과 겹치지 않게
+        notes.append(f"컷 {p['no']}: ★{kind} 지문 → 원작 원문 {len(txt)}자를 그대로 올린다 "
+                     "(압축 끄기: --star-frame compact)")
+
+
 def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry: int = 2,
                          pages: int = None, episode_text: str = None,
                          chars_per_panel: int = None, max_panels: int = None,
@@ -2236,6 +2292,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     notes = notes + notes2
     # [2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 장면 본문의 첫 문장으로 채운다
     _fill_star_narration(panels, beats, quotas, notes)
+    _apply_star_frame_text(panels, notes)      # ★지문 = 원작 전문(기본) — LLM 작문을 덮는다
     if bool(getattr(config, "comic_chatty", False)):
         _fill_chatty_narration(panels, beats, quotas, notes)
     if n_cut < target:

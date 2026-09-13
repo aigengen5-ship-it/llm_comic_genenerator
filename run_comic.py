@@ -457,8 +457,10 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
           f"★에필로그는 마지막 회차(전 {getattr(config, 'total_episodes', 1)}회)에만 붙습니다")
         _sfm = getattr(config, "source_frame", {}) or {}
         if _sfm:
-            p(f"  원작 ★지문 근거 : " + " · ".join(f"{k} {len(v)}자" for k, v in sorted(_sfm.items()))
-              + " (progress/ prologue_·epilogue_ 원문 — ★지문은 이 원문을 근거로 압축합니다)")
+            _mode = str(getattr(config, "comic_star_frame", "full") or "full")
+            p(f"  원작 ★지문 : " + " · ".join(f"{k} {len(v)}자" for k, v in sorted(_sfm.items()))
+              + (f" → 전문을 그대로 화면에 올립니다(--star-frame compact로 압축)" if _mode != "compact"
+                 else " → 근거로만 쓰고 LLM이 2~4줄로 압축합니다"))
 
     if need_comfy:
         ok = _tcp(*COMFY_URL)
@@ -750,6 +752,9 @@ def main() -> int:
                     help="[local 전용] ★에필로그 지문의 원작 근거 파일(progress/epilogue_해시.txt)")
     ap.add_argument("--no-source-frame", action="store_true", dest="no_source_frame",
                     help="[local 전용] progress/의 prologue_·epilogue_ 원문을 ★지문 근거로 쓰지 않습니다(예전 동작)")
+    ap.add_argument("--star-frame", dest="star_frame", default="full", choices=("full", "compact"),
+                    help="[local 전용] ★프롤로그·★에필로그 지문: full(기본)=원작 prologue/epilogue 전문을 그대로 출력, "
+                         "compact=원작 원문을 근거로 LLM이 2~4줄로 압축")
     ap.add_argument("--safety", default="", choices=("", "safe", "sensitive", "nsfw", "explicit"),
                     help="수위 강제(비우면 LLM 판단). 예: --safety safe")
     ap.add_argument("--panels-per-page", type=int, default=5,
@@ -970,6 +975,9 @@ def main() -> int:
         config.comic_merge_partial = True
     if args.no_prologue:
         config.comic_prologue_cut = False
+    # [2026-09-13] ★지문과 원작 원문 — 기본은 전문 그대로 출력, compact에서만 LLM 압축
+    if str(getattr(args, "star_frame", "") or "").strip():
+        config.comic_star_frame = str(args.star_frame).strip().lower()
     if getattr(args, "no_strict_state", False):
         config.comic_strict_state = False
     # [2026-09-09] 아래 스위치들도 이 자리에서 배선한다 — 예전에 이 위치에 붙이지 않아
@@ -1169,7 +1177,9 @@ def _apply_source_frame(args, jobs) -> dict:
     if config.source_frame:
         p("  ★원작 원문 연결 : " + " · ".join(
             f"{k} {len(v)}자({os.path.basename(fr['sources'][k])})" for k, v in sorted(config.source_frame.items()))
-          + " → ★지문의 근거로 씁니다 (끄기: --no-source-frame)")
+          + (" → ★지문에 **전문 그대로** 올립니다 (압축: --star-frame compact / 끄기: --no-source-frame)"
+             if str(getattr(config, "comic_star_frame", "full")).lower() != "compact"
+             else " → ★지문 근거로만 씁니다 (LLM이 2~4줄 압축)"))
     elif bool(getattr(args, "special", False)):
         p("  ★원작 원문 : progress/에 prologue_·epilogue_ 파일이 없습니다 (회차 본문만 사용합니다)")
     return config.source_frame

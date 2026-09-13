@@ -262,6 +262,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--font-narration` `--font-dialog` `--font-thought` `--font-sfx` | 용도별 폰트 지정 — 비우면 `data/fonts/` → OS 순서 |
 | `--no-epilogue` | ★에필로그 페이지(반투명 이벤트신 1칸 + 큰 지문)를 붙이지 않습니다 — **마지막 회차에만** 붙습니다 |
 | `--no-prologue` | ★프롤로그(회차집 첫 회차 맨 앞의 도입 1컷)를 붙이지 않습니다 |
+| `--source-prologue FILE` · `--source-epilogue FILE` | ★프롤로그·★에필로그 지문의 **원작 근거** 파일을 직접 지정합니다 — `--special`이면 `progress/`에서 같은 해시를 자동 발견합니다 | 
+| `--no-source-frame` | `progress/`의 `prologue_·epilogue_` 원문을 ★지문 근거로 쓰지 않습니다(회차 본문만 사용) |
 | `--no-summary-cuts` | ★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끕니다 |
 | `--no-emo-marks` | 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끕니다 |
 | `--template ID[,ID…]` | 페이지 템플릿을 **고정**합니다 (1종 = 회차 전체 같은 구성, 여러 종 = 페이지마다 회전) |
@@ -877,8 +879,15 @@ venv/bin/python run_comic.py ... --balloon-style image
 progress/
   ep03_2218f2f3797744fe.txt                  ← 본문(기승전결 · [ACTION]/[TALK]/[INNER] · 장면 카드)
   character_sheet_ep03_2218f2f3797744fe.json  ← 회차별 캐릭터 시트(타락 진행에 따라 바뀝니다)
+  prologue_2218f2f3797744fe.txt              ← 작품의 문(★프롤로그 지문의 원작 근거)
+  epilogue_2218f2f3797744fe.txt              ← 작품의 여운(★에필로그 지문의 원작 근거)
   progress_2218f2f3797744fe.json             ← 총 회차 수 등 진행 정보
 ```
+
+`prologue_*.txt` / `epilogue_*.txt`는 **회차가 아니라 작품 단위** 산출물입니다. 그래서 회차 본문에
+섞이지 않고 ★지문(도입·여운)의 **근거**로만 쓰입니다 — [3-8절]의 ★프롤로그는 첫 회차 앞,
+★에필로그는 마지막 회차 끝에 붙습니다. 끌 때는 `--no-source-frame`, 다른 파일을 쓸 때는
+`--source-prologue FILE` / `--source-epilogue FILE`입니다.
 
 **장면 카드** — 원작이 장소·상황·시간·복장을 직접 지정해 주는 블록입니다(2026-09-11 입력 변화). 회차 시작에 4개가 한 덩어리로 오고, **기승전결 중간에도 필요하면 들어옵니다**(장면·복장이 바뀌는 지점).
 
@@ -928,6 +937,7 @@ python3 run_comic.py --special --all-eps --episode ~/progress \
 | 시트 JSON → 평문 시트(LLM 지문) | 키 이름이 회차마다 달라서(ep01은 한글 키, ep02~는 영문 키) 별칭 테이블로 함께 받습니다. 모르는 키는 `기타`로 남깁니다 |
 | 시트 JSON → config **우선**주입(이름·성별·머리/눈/피부·표정·몸매) | 10화 동안 캐릭터가 갈라지지 않습니다. `breasts_size: "huge_breasts"` 같은 문자열 태그도 `body_shape`로 구제됩니다 |
 | 시트 JSON의 **상대방 외모·나이** → `config.appearance2`/`age2` | 상대방을 그리는 기준이 [3-8g] 고정 최소 태그로 바뀌었습니다. 한글 외모 문장은 **체형 토큰 하나로만** 선별됩니다(`"뚱뚱함, 대머리, 노란빛 피부" → fat`) — 산문이 태그에 새지 않고 LLM 번역도 필요 없습니다 |
+| `prologue_해시.txt`·`epilogue_해시.txt` → ★지문 **근거** (`config.source_frame`) | 회차가 아니라 작품 단위라 회차 본문에 섞으면 안 됩니다. 첫 회차 ★프롤로그·마지막 회차 ★에필로그가 원작의 장소·소품·시간의 흐름을 근거로 2~4줄을 쓰고, ★지문이 비면 원작 문장으로 채웁니다 (`--no-source-frame`으로 끄기) |
 
 > **2026-09-11 수정**: 추출 프롬프트의 `[에피소드 N 본문]` 블록이 한때 "# 본문 미사용" 주석으로
 > 빠져 있었습니다. 프롬프트는 "시트와 본문을 읽고"라고 말하면서 본문은 없으니, `units`의 `at`이
@@ -944,6 +954,7 @@ python3 run_comic.py --special --all-eps --episode ~/progress \
 주의 세 가지:
 - 시트 JSON이 없으면 본문 꼬리의 `--- 캐릭터 시트 ---`를 쓰고, 로그에 알려 드립니다.
 - 회차 수는 `epNN_해시.txt` 기준입니다(실제 샘플에서 시트가 한 개 더 남아 있어도 본문 없는 화는 만들지 않습니다).
+- `prologue_해시.txt`를 `--episode`로 직접 물리시면 **회차 본문이 아니므로** 같은 디렉터리의 회차를 본문으로 쓰고, 그 파일은 ★지문 근거로만 씁니다(로그: `회차 본문이 아니라 prologue 원문이군요`).
 - 원작이 explicit해도 렌더는 청년향 정책입니다. `--safety safe`로 최종 프롬프트 수위를 고정하실 것을 권합니다.
 
 동봉된 테스트 입력으로도 확인하실 수 있습니다(`inputs/ep90_deadbeef.txt` + 시트 JSON 두 종).
@@ -1075,7 +1086,7 @@ data/cut.yaml         페이지 템플릿 34종(기승전결, tier shares=폭, t
 data/fonts/           [자동 다운로드] 화면 문법 폰트(OFL) — `--get-fonts`로 받습니다(.gitignore 대상)
 data_comfyui/         워크플로 json · actions.yaml · angle.txt · prompt_pov.md · prompt_multi.md
 data/balloons/        [자동 생성] 말풍선·속마음 자산 9종 + manifest — `--get-balloons`
-inputs/               샘플(ep01.txt + sheet01.txt, 그리고 `--special` 검증용 ep90/ep91_deadbeef) — selftest가 읽는 입력도 이것뿐입니다
+inputs/               샘플(ep01.txt + sheet01.txt, 그리고 `--special` 검증용 ep90/ep91_deadbeef · prologue/epilogue_deadbeef) — selftest가 읽는 입력도 이것뿐입니다
 input_test/           [로컬 전용] 개인 검증 입력 — .gitignore라 배송에는 없습니다
 order/                설계 메모(standalone 포크 흐름/추가 노트/Windows ollama)
 ```

@@ -224,7 +224,38 @@ def main() -> int:
                                      "import llm_novel_gui_func")))
 
     print("\n== ② plot.json ==")
-    pj = config.get_json_value()
+    pj = config.get_json_value(local=False)     # 배송 설정(plot.json)만 — 로컬 오버레이는 아래에서 따로 본다
+    # [2026-09-13] plot.local.json 오버레이 — 머신 고유향 LLM 엔드포인트를 공개 plot.json에 커밋하지 않기 위한 자리
+    _pk_tmp = tempfile.mkdtemp(prefix="plot_local_")
+    _pk_cwd = os.getcwd()
+    try:
+        with open(os.path.join(_pk_tmp, "plot.json"), "w", encoding="utf-8") as f:
+            json.dump({"ip_main": "localhost", "port_main": "8081", "agent": "gemma", "_note": "배송"}, f)
+        with open(os.path.join(_pk_tmp, "plot.local.json"), "w", encoding="utf-8") as f:
+            json.dump({"_note": "메모는 설정으로 안 얹음", "ip_main": "gx10-a5a3", "port_main": "18300",
+                       "agent": "qwen3.8-flash-next"}, f)
+        os.chdir(_pk_tmp)
+        _pk_m = config.get_json_value()
+        check("plot.local.json이 plot.json의 같은 키만 얹는다 (git에 안 올릴 엔드포인트를 여기서 얹는다)",
+              (_pk_m.get("ip_main"), _pk_m.get("port_main"), _pk_m.get("agent"))
+              == ("gx10-a5a3", "18300", "qwen3.8-flash-next"), str(_pk_m)[:90])
+        check("plot.local.json의 '_' 접두 키(메모)는 설정으로 얹지 않는다(plot.json 메모 값이 그대로 남는다)",
+              _pk_m.get("_note") == "배송", str(_pk_m.get("_note")))
+        check("get_json_value(local=False)는 배송 설정(plot.json)만 본다(selftest의 '배송 값' 검사 자리)",
+              config.get_json_value(local=False).get("ip_main") == "localhost",
+              str(config.get_json_value(local=False))[:60])
+        with open(os.path.join(_pk_tmp, "other.json"), "w", encoding="utf-8") as f:
+            json.dump({"port_main": "19000"}, f)
+        os.environ["COMIC_PLOT_JSON"] = os.path.join(_pk_tmp, "other.json")
+        check("env COMIC_PLOT_JSON으로 오버레이 위치를 바꿀 수 있다",
+              str(config.get_json_value().get("port_main")) == "19000", str(config.get_json_value())[:60])
+        del os.environ["COMIC_PLOT_JSON"]
+        os.remove(os.path.join(_pk_tmp, "plot.local.json"))
+        check("plot.local.json이 없으면 plot.json 그대로(공개 클론 동작 불변)",
+              config.get_json_value().get("ip_main") == "localhost")
+    finally:
+        os.chdir(_pk_cwd)
+        shutil.rmtree(_pk_tmp, ignore_errors=True)
     for k in ("ip_main", "port_main", "mainLLM", "text_ip", "text_port", "textLLM",
               "ip_agent", "port_agent", "agent_anima", "ip_anima", "port_anima",
               "comfyuirun", "anima_enb", "comfyuidir"):
@@ -1540,6 +1571,80 @@ def main() -> int:
     check("--special: 파일 한 개도 시트 JSON을 찾아 붙인다",
           jobs_one[0][0] == 1 and os.path.basename(jobs_one[0][2]) == "character_sheet_ep90_deadbeef.json",
           str(jobs_one))
+
+    # ---- [2026-09-13] progress/의 prologue_·epilogue_ 원문 (회차가 아니라 ★지문 근거)
+    fr = NP.discover_frame(INP, "deadbeef")
+    check("--special: prologue_/epilogue_ 원문은 discover_frame()이 찾는다(작품 단위 산출물)",
+          set(fr) == {"prologue", "epilogue"}
+          and all(os.path.basename(fr[k]).startswith(k) for k in fr), str(fr))
+    check("--special: 회차 디스커버리는 프롤로그·에필로그를 회차로 세지 않는다(11화가 되면 안 된다)",
+          [f["ep"] for f in NP.discover(INP, "deadbeef")] == [90, 91],
+          str([f["ep"] for f in NP.discover(INP, "deadbeef")]))
+    check("--special: 다른 작품 해시의 prologue_/epilogue_는 섞이지 않는다",
+          NP.discover_frame(INP, "cafe0001") == {}, str(NP.discover_frame(INP, "cafe0001")))
+    fp90 = NP.parse_frame(fr["prologue"])
+    check("--special: prologue 원문에서 머리('=== PROLOGUE ===' · '# 주인공 (…)')와 '--- 본문 ---'이 빠진다",
+          fp90.startswith("비 오는 날이면") and "PROLOGUE" not in fp90 and "주인공 (" not in fp90,
+          fp90[:40])
+    check("--special: prologue 원문은 회차 본문 문법으로 스니프되지 않는다(회차 오해 방지)",
+          not NP.sniff(fp90) and not NP.EP_FILE_RE.match(os.path.basename(fr["prologue"])))
+
+    jobs_fr, _ = RC._resolve_jobs(types.SimpleNamespace(
+        episode=os.path.join(INP, "prologue_deadbeef.txt"), sheet="", special=True,
+        plot_hash="", all_eps=False, ep=1), None)
+    check("--special: prologue_해시.txt를 --episode로 주면 회차로 오해하지 않고 같은 해시 회차를 본문으로 쓴다",
+          len(jobs_fr) == 1 and os.path.basename(jobs_fr[0][1]) == "ep90_deadbeef.txt", str(jobs_fr))
+    _sf_saved = dict(getattr(config, "source_frame", {}) or {})
+    sf = RC._apply_source_frame(types.SimpleNamespace(
+        episode=INP, plot_hash="deadbeef", special=True, no_source_frame=False,
+        source_prologue="", source_epilogue=""), jobs_all)
+    check("--special: progress/ 디렉터리에서 ★원작 원문이 config.source_frame으로 간다",
+          set(sf) == {"prologue", "epilogue"} and all(len(sf[k]) > 50 for k in sf), str({k: len(v) for k, v in sf.items()}))
+    check("--special: 원작 원문은 회차 본문에 섞이지 않는다(입력 계약은 두 평문 그대로)",
+          "원작" not in NP.load(found[0]["episode"], found[0]["sheet"])["episode_text"])
+    RC._apply_source_frame(types.SimpleNamespace(
+        episode=INP, plot_hash="deadbeef", special=True, no_source_frame=True,
+        source_prologue="", source_epilogue=""), jobs_all)
+    check("--special: --no-source-frame이면 예전 동작(원작 원문 미사용)",
+          (getattr(config, "source_frame", {}) or {}) == {}, str(getattr(config, "source_frame", {})))
+    RC._apply_source_frame(types.SimpleNamespace(
+        episode=os.path.join(INP, "ep01.txt"), plot_hash="", special=False, no_source_frame=False,
+        source_prologue="", source_epilogue=""), [(1, os.path.join(INP, "ep01.txt"), "")])
+    check("--special 없이(평문 계약) 도는 실행은 옆자리의 prologue_ 파일을 주워 쓰지 않는다",
+          (getattr(config, "source_frame", {}) or {}) == {}, str(getattr(config, "source_frame", {})))
+    _sf_direct = RC._apply_source_frame(types.SimpleNamespace(
+        episode=os.path.join(INP, "ep90_deadbeef.txt"), plot_hash="", special=True,
+        no_source_frame=False, source_prologue=os.path.join(INP, "ep01.txt"),
+        source_epilogue=""), jobs_all)
+    check("--special: --source-prologue로 지정한 파일이 자동 발견보다 우선한다(라벨 '# 프롤로그'도 걷는다)",
+          _sf_direct.get("prologue", "") == NP.parse_frame(os.path.join(INP, "ep01.txt"))
+          and _sf_direct.get("prologue", "").startswith("시온자와의 밤")
+          and "두 사람이 나눈 말" not in _sf_direct.get("prologue", ""),
+          _sf_direct.get("prologue", "")[:40])
+
+    config.source_frame = {"prologue": "비 오는 골목. 셔터 소리가 초인종이 되었다.",
+                           "epilogue": "그날 이후 골목의 비는 몇 번 더 내렸다."}
+    _pl_f = [{"page": 1, "situation": "기", "template_id": "prologue_opening", "template_name": "프롤로그",
+              "single_tier": True, "prologue": True,
+              "slots": [{"page": 1, "tier": 1, "share": 1.0, "center": False, "h": 0.0,
+                         "role": "prologue", "wide": False, "desc": "전폭 1컷"}]}]
+    _pr_f = CG.build_panel_script_prompt(1, 2, "시트", "시트", "", [], [], page_plans=_pl_f,
+                                         episode_text="본문이다.", panels_expected=1)
+    check("--special: ★프롤로그 슬롯이 있는 호출에만 원작 원문이 프롬프트에 붙는다(토큰 아끼기)",
+          "[원작 프롤로그 원문" in _pr_f and "[원작 에필로그 원문" not in _pr_f, str(len(_pr_f)))
+    _pn_f, _nt_f = [{"no": 1, "text_role": "epilogue", "caption_ko": ""}], []
+    CG._fill_star_narration(_pn_f, ["회차 본문 첫 문장이다."], [1], _nt_f)
+    check("--special: ★지문이 비면 본문보다 원작 에필로그 원문을 먼저 쓴다",
+          _pn_f[0]["caption_ko"].startswith("그날 이후") and any("원작 epilogue" in n for n in _nt_f),
+          str(_nt_f))
+    _pn_g, _nt_g = [{"no": 1, "text_role": "summary", "caption_ko": ""}], []
+    CG._fill_star_narration(_pn_g, ["회차 본문 첫 문장이다."], [1], _nt_g)
+    check("--special: 회차 ★도입요약(프롤로그 아님)은 여전히 본문 근거(원작 원문 유입 방지)",
+          _pn_g[0]["caption_ko"].startswith("회차 본문") and not any("원작" in n for n in _nt_g), str(_nt_g))
+    check("--special: 원작 원문은 STAR_FRAME_CAP자로 잘라 보낸다(num_ctx가 규칙 블록을 삼킨다)",
+          len(CG._source_frame("prologue")) <= CG.STAR_FRAME_CAP + 4,
+          str(len(CG._source_frame("prologue"))))
+    config.source_frame = _sf_saved
 
     # ============================== [2026-09-09] 화면 문법 (설명 / 말풍선 / 속마음 / 의성어)
     print("\n== ⑩ 화면 문법: 설명 박스 + 풍선(≤3) + 의성어 + ★서두요약·에필로그 ==")

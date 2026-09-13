@@ -32,11 +32,17 @@
   4) 시트 JSON → config 우선값 : 이름/성별/머리/눈/피부/표정/몸매 태그는 **원작이 정답**이라
      LLM 추정보다 우선한다. 10화 동안 캐릭터가 갈라지지 않는 실익이 있다.
      단 `clothes`(한글 산문)는 넣지 않는다 — Anima는 영문 태그만 알아, 번역은 LLM 몫으로 남긴다.
+  5) ★프롤로그·★에필로그 원문 : 원작은 작품 끝에 `prologue_<hash>.txt` / `epilogue_<hash>.txt`
+     도 남깁니다(llm_novel_gui_func.save_prologue_epilogue_to_progress). 회차가 아니라 **작품
+     단위** 산출물이라 discover()가 아니라 discover_frame()에서 따로 처리합니다. 회차 본문과
+     섞이면 안 되므로 평문화만 해 `config.source_frame`에 두고, 코드는 ★슬롯 지문의 **근거**로만
+     씁니다(comic_gen._source_frame_block). 끄려면 run_comic.py --no-source-frame.
 
 여기서 만들지 못하는 것(=LLM에 남기는 일): guides 요약, $행동 키워드, 수위, 한글 복장·장소→영문 태그.
 장면 카드의 한글 지문을 영문 태그로 옮기는 일은 추출/컷 스크립트 LLM이 한다(`config.ep_scene_cards`).
 
 실행: run_comic.py --special --episode <ep파일 또는 progress/ 디렉터리> [--sheet 시트.json]
+     (디렉터리면 prologue_/epilogue_ 원문도 같은 해시에서 자동으로 함께 줍니다)
 """
 import glob
 import json
@@ -48,6 +54,13 @@ import config
 # ------------------------------------------------------------------ 파일명/본문 문법
 EP_FILE_RE = re.compile(r"^ep(\d+)_([0-9a-f]{6,})\.txt$", re.I)
 SHEET_FILE_RE = re.compile(r"^character_sheet_ep(\d+)_([0-9a-f]{6,})\.json$", re.I)
+# 작품 단위 산출물: progress/prologue_<hash>.txt · epilogue_<hash>.txt (plot_hash가 비면 접미어 없이 prologue.txt)
+#   llm_novel_gui_func.save_prologue_epilogue_to_progress가 쓴다 — epNN_*.txt와 회차로 섞으면 안 된다.
+FRAME_FILE_RE = re.compile(r"^(?P<k>prologue|epilogue)(?:_(?P<h>[0-9a-f]{6,}))?\.txt$", re.I)
+FRAME_HEAD_RE = re.compile(r"^\s*={2,}\s*(?:PROLOGUE|EPILOGUE)\s*={2,}\s*$", re.I)   # '=== PROLOGUE ==='
+FRAME_LABEL_RE = re.compile(r"^#{0,6}\s*(?:\d+\s*\.\s*)?(?:PROLOGUE|EPILOGUE|프롤로그|에필로그)\b", re.I)
+FRAME_HEAD_BLOCK_RE = re.compile(r"^#{1,6}\s*(?:주인공|상대방|파트너|서브)\b")           # '# 주인공 (이름)  직업: …'
+FRAME_BODY_MARK = "--- 본문 ---"
 
 BODY_MARK = "--- 에피소드 내용 ---"
 TAIL_SHEET_MARK = "--- 주인공 캐릭터 시트 ---"
@@ -187,6 +200,82 @@ def discover(progress_dir: str, plot_hash: str = "") -> list:
         best = max(sorted(hashes), key=lambda k: hashes[k])
         out = {k: v for k, v in out.items() if v["plot_hash"] == best}
     return [out[k] for k in sorted(out)]
+
+
+def discover_frame(progress_dir: str, plot_hash: str = "") -> dict:
+    """progress/ → {"prologue": 경로, "epilogue": 경로} — 회차가 아니라 **작품 단위** 원문
+
+    ep*_*.txt와 달리 회차 번호가 없어 discover()에 섞지 않습니다(그러면 에필로그가 회차 11로
+    새거나 프롤로그가 glob에서 빠져서 조용히 유실됩니다). 같은 디렉터리에 여러 작품이 섞여
+    있으면 --plot-hash(또는 회차에서 확정된 해시)로 좁히고, 그 해시가 없으면 접미어 없는
+    prologue.txt / epilogue.txt를 폴백으로 씁니다. 본문이 빈 파일은 돌려주지 않습니다.
+    """
+    out = {}
+    if not progress_dir or not os.path.isdir(progress_dir):
+        return out
+    cands = {"prologue": [], "epilogue": []}
+    for p in sorted(glob.glob(os.path.join(progress_dir, "*.txt"))):
+        m = FRAME_FILE_RE.match(os.path.basename(p))
+        if not m:
+            continue
+        cands[m.group("k").lower()].append((str(m.group("h") or "").lower(), p))
+    for kind, lst in cands.items():
+        hit = [p for h, p in lst if h == plot_hash.lower()] if plot_hash else [p for h, p in lst if h]
+        if not hit:
+            hit = [p for h, p in lst if not h]                    # plot_hash가 없는 산출물 폴백
+        if hit and parse_frame(hit[0]):
+            out[kind] = hit[0]
+    return out
+
+
+def parse_frame(path: str) -> str:
+    """prologue/epilogue 파일 → 본문 평문 (머리 '=== PROLOGUE ===' · '# 주인공 (…)' · '--- 본문 ---' 제거)
+
+    라벨 줄만 버리고 문단 구분(빈 줄)은 살립니다. 평문 원고를 직접 주셔도 그대로 나옵니다.
+    """
+    raw = _read(path)
+    if not raw:
+        return ""
+    paras, cur = [], []
+    for ln in raw.split("\n"):
+        s = ln.strip()
+        if s.startswith("---") and s.endswith("---"):        # '--- 본문 ---' / '--- 캐릭터 시트 ---'
+            if s == FRAME_BODY_MARK:
+                continue
+            break                                               # 꼬리 블록은 프롤로그/에필로그 지문이 아니다
+        if not s:
+            if cur:
+                paras.append(" ".join(cur))
+                cur = []
+            continue
+        if (FRAME_HEAD_RE.match(s) or FRAME_LABEL_RE.match(s) or FRAME_HEAD_BLOCK_RE.match(s)
+                or DIVIDER_RE.match(s) or EP_HEAD_RE.match(s)):
+            continue
+        cur.append(s)
+    if cur:
+        paras.append(" ".join(cur))
+    return "\n\n".join(paras).strip()
+
+
+def load_frame(progress_dir: str = "", plot_hash: str = "", prologue_file: str = "",
+               epilogue_file: str = "") -> dict:
+    """원작 ★지문 근거 → {"prologue","epilogue","sources","notes"} (본문이 없는 쪽은 빈 문자열)
+
+    우선순위: --source-prologue/--source-epilogue로 지정된 파일 > progress/ 디렉터리 자동 발견.
+    코어는 이 문자열들을 모릅니다 — config.source_frame으로만 흘러갑니다.
+    """
+    found = discover_frame(progress_dir, plot_hash)
+    out = {"prologue": "", "epilogue": "", "sources": {}, "notes": []}
+    for kind, given in (("prologue", prologue_file), ("epilogue", epilogue_file)):
+        path = str(given or "") or found.get(kind, "")
+        if not path:
+            continue
+        txt = parse_frame(path)
+        if not txt:
+            out["notes"].append(f"{kind} 원문 {os.path.basename(path)} 본문이 비어 있습니다 — 안 씁니다")
+            continue
+        out[kind], out["sources"][kind] = txt, path
+    return out
 
 
 def sniff(text: str) -> bool:

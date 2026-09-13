@@ -126,8 +126,20 @@
 3. `[TALK]`→`이름: 대사`(화자 추정: ① 발화 안의 호명 → ② 직전 서술의 주어(`렌이 …`) → ③ 교대 순서 — 1음절 이름은 조사 검출만 허용), `[INNER]`→`(속마음) …`.
 4. **막 앵커**는 어댑터가 본문 사본으로 확정(`기:` 라벨 + 그 아래 첫 줄) — 카드를 먼저 넣어도 앵커가 어긋나지 않습니다(`split_by_segments`는 접두사 매칭).
 5. 시트 JSON → 평문 시트 + config **우선**주입(이름·성별·머리/눈/피부·표정·몸매). `clothes`는 한글 산문이라 우선주입하지 않습니다(영문 태그화는 LLM 몫).
+6. **원작 ★지문 원문**(local, 2026-09-13): `prologue_해시.txt`·`epilogue_해시.txt`는 회차가 아니라 작품 단위라 `discover()`가 아니라 `discover_frame()`에서 따로 처리합니다(아래 3.0a).
 
 `--special` 장면 카드의 2차 경로: 회차 시작 카드 → `CI.extract(scene_cards=)` → 추출 프롬프트 `[장면 카드(원작 지정)]`, 회차 전체 → `apply_to_config(scene_cards=)` → `config.ep_scene_cards[회차]`.
+
+### 3.0a [B'] 원작 ★지문 원문 — `novel_progress.discover_frame` → `config.source_frame` (local)
+
+- `run_comic._apply_source_frame`가 회차 목록을 만든 **직후** 한 번 돕니다. 소스 우선순위:
+  `--source-prologue/--source-epilogue` > `--episode`가 곧 그 파일인 경우 > `--episode` 디렉터리에서 `discover_frame(dir, 회차 파일명에서 확정된 해시)`.
+  `plot_hash` 없는 산출물(`prologue.txt`)은 폴백입니다. `--no-source-frame`이면 여기서 멈춥니다.
+- `parse_frame`은 `=== PROLOGUE ===`·`# 주인공 (…)`·`--- 본문 ---` 라벨만 걷고 문단은 살립니다. 본문은
+  `config.source_frame = {"prologue": …, "epilogue": …}`으로만 흐르고 **회차 본문에는 섞이지 않습니다**(입력 계약은 두 평문).
+- 소비처는 ★슬롯 두 곳뿐입니다: `build_panel_script_prompt`가 **이 호출의 슬롯에 `role`이 prologue/epilogue일
+  때만** `[원작 … 원문]` 블록을 붙입니다(`_source_frame_block`, 종류당 `STAR_FRAME_CAP=900자`). 일반 회차
+  ★도입요약은 원문을 받지 않습니다. ★지문이 비면 `_fill_star_narration`이 본문보다 원작 원문을 먼저 씁니다.
 
 ### 3.1 [C] 추출 — `comic_input.extract` (807) / `_extract_once` (790)
 - 프롬프트는 `에피소드 전문 + 시트 + 규칙 블록`. 본문은 §2-1 예산만큼만 넣습니다.
@@ -145,7 +157,7 @@
 3. **페이지 수 × 레이아웃 재추첨**(`comic_layout_rolls=10`, `plan_pages(…, salt)`): 목표 컷 수에 가장 가까운 구성을 고르고, **모자란 쪽은 2.2배 벌점**(장면 압축이 컷 여유보다 나쁘다는 판단).
 4. 템플릿 34종(`data/cut.yaml`)에서 **회차 안 재사용 추첨**(같은 회차에서 같은 템플릿 중복 금지) + **첫 페이지는 "첫 행만 전폭"인 믹스 템플릿 우대** + 전폭 비중 상한 `comic_wide_share_max=0.5`.
 5. **템플릿 고정** (`--template`, `config.comic_templates_pin`): 1종이면 모든 페이지가 그 구성, 여러 종이면 페이지마다 순서 회전. 고정이면 ①·④의 필터(기승전결 선택지·재사용 금지·전폭 상한)와 재추첨(`rolls`)을 모두 내려놓는다. 컷 수 = 페이지 × 슬롯 수. ★ 전용 페이지는 그대로.
-6. ★ 규칙: 프롤로그는 회차집 **첫 회차 앞 1컷**, 회차당 도입 요약 **1컷**, 에필로그는 **마지막 회차 끝 1페이지**. 10화작 = 1 + 10 + 1 = **12개**.
+6. ★ 규칙: 프롤로그는 회차집 **첫 회차 앞 1컷**, 회차당 도입 요약 **1컷**, 에필로그는 **마지막 회차 끝 1페이지**. 10화작 = 1 + 10 + 1 = **12개**. `--special`로 원작 `prologue_`/`epilogue_` 원문이 들어 있으면 그 중 ★프롤로그·★에필로그만 원문을 근거로 씁니다(3.0a).
 
 재현성: 시드는 `cut:회차:페이지:변동:salt`. `comic_variation=0`(기본)이면 같은 입력 → 같은 배분. `--vary`는 값을 뽑아 화면에 찍고, 그 값으로 `--variation N` 재실행하면 고정됩니다.
 
@@ -234,6 +246,7 @@
 | `--chatty` | 모든 컷 하단에 설명(없으면 행동·표정 묘사) | off |
 | `--no-face-crop` / `--get-face-model` | 얼굴 크롭 끄기 / YuNet 모델 수신 | 크롭 켬 |
 | `--no-prologue` `--no-summary-cuts` `--no-epilogue` | ★ 3종 개별 OFF | 전부 켬 |
+| `--source-prologue/--source-epilogue F` `--no-source-frame`(local) | ★지문의 원작 원문 지정 / `progress/`의 `prologue_`·`epilogue_` 미사용 | 자동 발견 켬 |
 | `--no-emo-marks` | 감정 표시만 OFF | 켬 |
 | `--name 렌 --name2 …` | 화면 이름 고정(시트 태그와 분리) | 추출이 정한 이름 |
 | `--allow-explicit`(local) | 클라이맥스 어휘·노출 상한 해제 | off (청년향) |

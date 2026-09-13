@@ -22,6 +22,9 @@
   python3 run_comic.py --special --all-eps --episode ~/progress --plot-hash 2218f2f3797744fe \\
                        --book 1 --safety safe --start-llm
   어댑터: novel_progress.py (본문 평문화 + 기승전결 앵커 확보 + 시트 JSON → config 우선주입)
+  [2026-09-13] 같은 디렉터리의 prologue_해시.txt / epilogue_해시.txt도 자동 인식합니다 — 회차가
+    아니라 작품 단위 산출물이라 본문에 섞지 않고 ★지문(도입·여운)의 **원작 근거**로만 씁니다.
+    끄기 --no-source-frame / 직접 지정 --source-prologue FILE --source-epilogue FILE
 
 [2026-09-09] 화풍(LoRA) 강도는 명령줄로 조정합니다 (ANIMA_LORA_CONFIG를 편집하지 않고):
   # LoRA 두 장을 직접 지명하고 강도까지 잡는다 (강도를 안 주면 ANIMA_LORA_CONFIG 값)
@@ -421,6 +424,10 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
     problems = []
     p("\n== 프리플라이트 ==")
     pj = config.get_json_value()
+    _plok = config.plot_local_file()
+    p(f"  LLM 설정      : {config.PLOT_FILE}"
+      + (f" + 로컬 오버레이 {_plok} (gitignore)" if os.path.isfile(_plok)
+         else " (plot.local.json 없음 — 배송 설정 그대로)"))
     miss = [k for k in ("name", "sex", "hair_color", "hair_style", "eye_color", "skin_color",
                         "face_style", "clothes", "body_shape", "job")
             if not str(getattr(config, k, "") or "").strip()]
@@ -448,6 +455,10 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
           f"감정 표시 {'ON' if getattr(config, 'comic_emo_marks', True) else 'off'} · "
           f"★프롤로그 {'ON(첫 회차에만)' if getattr(config, 'comic_prologue_cut', True) else 'off'} · "
           f"★에필로그는 마지막 회차(전 {getattr(config, 'total_episodes', 1)}회)에만 붙습니다")
+        _sfm = getattr(config, "source_frame", {}) or {}
+        if _sfm:
+            p(f"  원작 ★지문 근거 : " + " · ".join(f"{k} {len(v)}자" for k, v in sorted(_sfm.items()))
+              + " (progress/ prologue_·epilogue_ 원문 — ★지문은 이 원문을 근거로 압축합니다)")
 
     if need_comfy:
         ok = _tcp(*COMFY_URL)
@@ -645,6 +656,10 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
                 str(pnl.get("text_role") or ""), "")
             if role.startswith(" ★서두요약") and pnl.get("prologue"):
                 role = " ★프롤로그(배경만)"
+            _sfk = ("prologue" if pnl.get("prologue") else
+                    ("epilogue" if str(pnl.get("text_role") or "") == "epilogue" else ""))
+            if _sfk and (getattr(config, "source_frame", {}) or {}).get(_sfk):
+                role += "(원작 근거)"
             tp = CG.panel_text_payload(pnl)
             mode = ("설명+대사(이벤트)" if tp["narration"] and tp["balloons"] else
                     "설명만" if tp["narration"] else "대사/속마음만" if tp["balloons"] else "텍스트 없음")
@@ -727,6 +742,14 @@ def main() -> int:
                     help="--special로 디렉터리를 탈 때 작품 해시 필터(예: 2218f2f3797744fe)")
     ap.add_argument("--all-eps", action="store_true",
                     help="--special 디렉터리 디스커버리로 발견된 전 회차를 같은 --book에 연속 생성")
+    # [2026-09-13] 원작 ★지문 근거 — progress/의 prologue_·epilogue_ 산출물 (회차가 아니라 작품 단위)
+    ap.add_argument("--source-prologue", dest="source_prologue", default="", metavar="FILE",
+                    help="[local 전용] ★프롤로그 지문의 원작 근거 파일(progress/prologue_해시.txt). "
+                         "비우면 --episode 디렉터리에서 같은 해시를 자동 발견")
+    ap.add_argument("--source-epilogue", dest="source_epilogue", default="", metavar="FILE",
+                    help="[local 전용] ★에필로그 지문의 원작 근거 파일(progress/epilogue_해시.txt)")
+    ap.add_argument("--no-source-frame", action="store_true", dest="no_source_frame",
+                    help="[local 전용] progress/의 prologue_·epilogue_ 원문을 ★지문 근거로 쓰지 않습니다(예전 동작)")
     ap.add_argument("--safety", default="", choices=("", "safe", "sensitive", "nsfw", "explicit"),
                     help="수위 강제(비우면 LLM 판단). 예: --safety safe")
     ap.add_argument("--panels-per-page", type=int, default=5,
@@ -1066,6 +1089,7 @@ def main() -> int:
     # init_anima_tags의 'no_episode' 방지까지 이것으로 함께 해결된다.
     p(f"\n입력 {len(jobs)}건(회차 {', '.join(str(e) for e, _, _ in jobs)}) · 총 회차 {total_eps}"
       + (" · --special(local progress/ 포맷)" if args.special else ""))
+    _apply_source_frame(args, jobs)          # [local] ★지문 근거 (progress/ prologue_·epilogue_)
 
     rc_all = 0
     done, skipped = [], []            # 전 회차 요약용 (완성/스킵)
@@ -1105,6 +1129,52 @@ def main() -> int:
     return rc_all
 
 
+def _apply_source_frame(args, jobs) -> dict:
+    """[2026-09-13] [local 전용] progress/의 prologue_·epilogue_ 원문을 ★지문 근거로 심는다
+
+    단편 생성기 GUI는 회차(epNN_해시.txt) 외에 **작품 단위** 프롤로그·에필로그 원문도 남깁니다.
+    코어의 입력 계약(두 평문)은 그대로 두고 싶어서 config.source_frame으로만 흘려보내고,
+    comic_gen이 ★슬롯(첫 회차 앞 도입 · 마지막 회차 끝 여운)에서 **근거**로만 읽습니다.
+    회차 본문에 섞어 넣으면 에필로그가 회차로 오해되니 이 자리에서 따로 받습니다.
+    """
+    import novel_progress as NP
+    if getattr(args, "no_source_frame", False):
+        config.source_frame = {}
+        p("  ★원작 프롤로그·에필로그 원문 : off (--no-source-frame)")
+        return {}
+    ep = str(getattr(args, "episode", "") or "")
+    # 자동 발견은 --special(진행기 GUI 산출물)에서만 합니다. 평문 계약 모드에서 같은 자리의
+    # prologue.txt를 주워 ★지문이 느닷없이 바뀌는 것을 막습니다(지정 플래그는 언제나 유효).
+    d = ""
+    if bool(getattr(args, "special", False)):
+        d = ep if ep and os.path.isdir(ep) else (os.path.dirname(os.path.abspath(ep)) if ep else "")
+    ph = str(getattr(args, "plot_hash", "") or "")
+    if not ph and jobs:                       # 회차 파일명에서 이미 확정된 해시를 따라간다
+        m = NP.EP_FILE_RE.match(os.path.basename(jobs[0][1] or ""))
+        ph = m.group(2) if m else ""
+    given = {}
+    for kind, flag in (("prologue", getattr(args, "source_prologue", "")),
+                       ("epilogue", getattr(args, "source_epilogue", ""))):
+        if flag:
+            given[kind] = str(flag)
+        elif ep and not os.path.isdir(ep):
+            fm = NP.FRAME_FILE_RE.match(os.path.basename(ep))   # --episode가 곧 프롤로그/에필로그 파일인 경우
+            if fm and fm.group("k").lower() == kind:
+                given[kind] = ep
+    fr = NP.load_frame(progress_dir=d, plot_hash=ph, prologue_file=given.get("prologue", ""),
+                       epilogue_file=given.get("epilogue", ""))
+    for n in fr.get("notes") or []:
+        p(f"  ⚠ 원작 원문: {n}")
+    config.source_frame = {k: v for k, v in ((k, fr.get(k, "")) for k in ("prologue", "epilogue")) if v}
+    if config.source_frame:
+        p("  ★원작 원문 연결 : " + " · ".join(
+            f"{k} {len(v)}자({os.path.basename(fr['sources'][k])})" for k, v in sorted(config.source_frame.items()))
+          + " → ★지문의 근거로 씁니다 (끄기: --no-source-frame)")
+    elif bool(getattr(args, "special", False)):
+        p("  ★원작 원문 : progress/에 prologue_·epilogue_ 파일이 없습니다 (회차 본문만 사용합니다)")
+    return config.source_frame
+
+
 def _resolve_jobs(args, ap):
     """회차 작업 목록 → ([(ep_num, 에피소드 파일, 시트 파일), …], 발견된 총 회차 수)
 
@@ -1121,6 +1191,23 @@ def _resolve_jobs(args, ap):
         return [(f["ep"], f["episode"], f["sheet"]) for f in pick], len(found)
 
     sheet = args.sheet
+    # [2026-09-13] --episode에 회차 본문이 아니라 prologue_/epilogue_ 원문을 물려주신 경우 —
+    #   예전엔 기승전결 앵커 없는 '회차 1개'로 오해해 돌렸다(조용히 뒤틀린다). 같은 해시의 회차를
+    #   본문으로 쓰고, 그 파일은 ★지문 근거로 돌려보냅니다(_apply_source_frame가 같은 파일을 찾는다).
+    if args.special and not os.path.isdir(args.episode):
+        import novel_progress as NP
+        _bf = os.path.basename(args.episode or "")
+        fm = NP.FRAME_FILE_RE.match(_bf)
+        if fm and not NP.EP_FILE_RE.match(_bf):
+            d = os.path.dirname(os.path.abspath(args.episode)) or "."
+            cand = NP.discover(d, fm.group("h") or args.plot_hash)
+            hit = [c for c in cand if c["ep"] == max(1, int(args.ep or 1))] or cand[:1]
+            if not hit:
+                ap.error(f"{_bf}은(는) 회차 본문이 아니라 {fm.group('k')} 원문입니다 — "
+                         f"같은 디렉터리에서 epNN_해시.txt를 찾지 못했습니다 ({args.episode})")
+            p(f"  {_bf} → 회차 본문이 아니라 {fm.group('k')} 원문이군요. "
+              f"본문은 {os.path.basename(hit[0]['episode'])}을(를) 씁니다")
+            return [(hit[0]["ep"], hit[0]["episode"], args.sheet or hit[0]["sheet"])], len(cand)
     if args.special and not sheet:
         import novel_progress as NP
         m = NP.EP_FILE_RE.match(os.path.basename(args.episode))

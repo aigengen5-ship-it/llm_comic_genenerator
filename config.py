@@ -11,9 +11,44 @@ import json
 import os
 
 # Setup - plot.json 매번 새로 읽기 (cache 금지)
-def get_json_value():
-    with open('plot.json') as f:
-        return json.load(f)
+#   [2026-09-13] `plot.local.json`(.gitignore 대상)이 있으면 그 키만 plot.json **위에 얹습니다**.
+#   머신 고유향 LLM 엔드포인트(ip_agent/port_agent/agent…)를 공개 plot.json에 커밋하지 않기 위한
+#   얇은 오버레이입니다. 파일 위치를 바꾸실 때는 env `COMIC_PLOT_JSON`. 없는 파일은 그냥 없습니다.
+PLOT_FILE = "plot.json"
+PLOT_LOCAL_FILE = "plot.local.json"
+
+
+def plot_local_file() -> str:
+    """로컬 오버레이 파일 경로(env `COMIC_PLOT_JSON` > 기본 plot.local.json)"""
+    return (os.environ.get("COMIC_PLOT_JSON", "") or "").strip() or PLOT_LOCAL_FILE
+
+
+def _read_plot_json(path: str, required: bool = False) -> dict:
+    """plot 계열 json 한 개 → dict (없는 로컬 파일은 {}, 배송 파일(plot.json)은 예외 그대로)"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f) or {}
+    except FileNotFoundError:
+        if required:
+            raise
+        return {}
+    except Exception as e:
+        print(f"[plot.json] {path} 읽기 실패({type(e).__name__}: {e}) — 이 파일은 무시하고 진행합니다")
+        return {}
+
+
+def get_json_value(local: bool = True):
+    """plot.json(+ plot.local.json 오버레이) — 파이프라인이 보는 유일한 설정 자리
+
+    local=False : 배송 설정(plot.json)만 봅니다(selftest의 '배송 값 검사'가 이 쪽을 씁니다).
+    """
+    out = _read_plot_json(PLOT_FILE, required=True)
+    if local:
+        loc = _read_plot_json(plot_local_file())
+        if isinstance(loc, dict) and loc:
+            # '_' 접두 키는 메모(_note)로 쓴다 → 설정으로 얹지 않는다
+            out.update({k: v for k, v in loc.items() if not str(k).startswith("_")})
+    return out
 
 # (json_value 모듈 변수는 사용처 없음 — get_json_value()를 매번 호출한다)
 
@@ -70,6 +105,10 @@ episode_sub_sheets = []             # EP별 서브 캐릭터 시트
 ep_corruption_guides_map = {}       # EP 번호 → {"protagonist":[기,승,전,결], "partner":[...], "sub":[...]}
 special_writing_req = {}            # EP 번호 → ["터치", ...] ('$' 행동 키워드)
 plot_hash = ""                      # progress/ 파일명용 (독립 환경에서는 대부분 없음 → fallback)
+# [local 전용] 원작 ★프롤로그·★에필로그 원문 평문 {"prologue": …, "epilogue": …}.
+#   novel_progress.load_frame()이 progress/prologue_<hash>.txt·epilogue_<hash>.txt를 읽어 채우고,
+#   comic_gen이 ★슬롯 지문의 **근거**로만 씁니다(그대로 옮기지 않는다). 비면 예전 동작.
+source_frame = {}
 
 # ------------------------------------------------------------------ ANIMA 태그 (init_anima_tags가 LLM으로 생성)
 face_tag = ["" for _ in range(total_episodes)]

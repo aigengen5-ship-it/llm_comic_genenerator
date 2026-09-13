@@ -407,6 +407,40 @@ def _layout_block(page_plans, slot_range=None):
     lines.append("컷은 이 순서 그대로. 슬롯마다 page/tier 필드를 JSON에 넣을 필요는 없다(순서로 매칭).")
     return "\n".join(lines)
 
+
+# ------------------------------------------------------------------ [local] 원작 ★지문 근거 (--special)
+STAR_FRAME_CAP = 900        # 프롬프트 예산: 원작 원문을 넘길 글자 상한 (num_ctx가 규칙 블록을 삼킨다)
+
+
+def _source_frame(kind: str) -> str:
+    """config.source_frame — 단편 생성기 GUI가 남긴 prologue_/epilogue_ 원문 평문 (없으면 "")"""
+    f = getattr(config, "source_frame", {}) or {}
+    t = re.sub(r"[ \t]+", " ", str(f.get(str(kind or "").strip().lower()) or "")).strip()
+    if len(t) > STAR_FRAME_CAP:
+        cut = t[:STAR_FRAME_CAP]
+        nl = cut.rfind("\n")
+        t = (cut[:nl] if nl > 300 else cut).rstrip() + " …"
+    return t
+
+
+def _source_frame_block(roles) -> str:
+    """[2026-09-13] 이 호출이 채울 슬롯에 ★프롤로그·★에필로그가 있을 때만 원작 원문을 붙인다.
+
+    본문과 같은 자리에 원작 원문을 넣으면 원작이 정한 장소·소품·시간의 흐름이 ★컷에 새어 들어온다.
+    단 ★지문의 규칙은 '옮겨 적지 않는다'이므로 **근거**라고 못 박는다(원문 그대로면 2~4줄이 넘는다).
+    """
+    rs = {str(r or "") for r in (roles or [])}
+    out = []
+    for kind, label, head in (("prologue", "프롤로그", "★도입 지문의 근거"),
+                              ("epilogue", "에필로그", "★여운 지문의 근거")):
+        t = _source_frame(kind) if kind in rs else ""
+        if t:
+            out.append(f"[원작 {label} 원문 — {head}]\n{t}\n"
+                       "→ 원문의 장소·소품·시간의 흐름을 근거로 쓴다. 원문을 그대로 옮겨 적지 말고 "
+                       "2~4줄로 압축한다(화면에 큰 글자로 올라간다).")
+    return ("\n".join(out) + "\n") if out else ""
+
+
 CAMERA_VOCAB = {"front_view", "side_view", "back_view", "close_up", "pov"}
 POSITION_VOCAB = {"He is standing.", "He is sitting.", "He is walking.", "He is lying down.",
                   "He is lying on top of her.", "He is behind her.", "NONE"}
@@ -603,6 +637,17 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
     name2 = str(getattr(config, "name2", "") or "상대").strip() or "상대"
     slots = spec_slots(page_plans)
     count = int(panels_expected or 0) or (len(slots) if slots else 0)
+    # [2026-09-13] ★프롤로그·★에필로그 슬롯이 이 호출에 섞여 있을 때만 원작 원문을 넘긴다(토큰 아끼기).
+    #   컷 레이아웃(cut.yaml) 없이 도는 레거시 경로는 슬롯에 역할이 없다 — 그때는 회차 위치로 판단한다
+    #   (_default_text_roles가 첫 컷/끝 컷에 ★을 붙이기 때문이다).
+    _g0, _g1 = (slot_range if slot_range else (0, len(slots)))
+    _roles_here = [s.get("role") for n, s in enumerate(slots) if _g0 <= n < _g1]
+    if not slots:
+        if int(ep_num_1based) <= 1 and bool(getattr(config, "comic_prologue_cut", True)):
+            _roles_here.append("prologue")
+        if int(ep_num_1based) >= max(1, int(total_eps or 1)) and bool(getattr(config, "comic_epilogue", True)):
+            _roles_here.append("epilogue")
+    frame_block = _source_frame_block(_roles_here)
     body = str(episode_text or "").strip()
     body_block = ("\n[에피소드 본문 — 이 장면을 컷으로 옮긴다]\n" + body + "\n") if (body and not beat_label) \
         else (f"\n[에피소드 본문 — {beat_label}]\n" + body + "\n" if body else "")
@@ -658,7 +703,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {proto}
 [상대방 시트]
 {partner}
-{sub_block}{body_block}{prev_block}
+{sub_block}{body_block}{frame_block}{prev_block}
 [이 회차 가이드 (기승전결 순서 그대로)]
 {guides}
 [반드시 1회 이상 등장할 행동 키워드($)]
@@ -1934,6 +1979,7 @@ def _fill_star_narration(panels, beats, quotas, notes):
     """[2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 컷이 속한 **장면 본문의 첫 문장**으로 채운다.
 
     LLM이 ★ 슬롯 규칙을 어기는 실측 사례(EP1 컷9)가 있었다 — 화면이 아무 글자 없는 컷이 된다.
+    [2026-09-13] --special로 원작 프롤로그·에필로그 원문이 들어 있으면 그 문장을 먼저 쓴다.
     """
     if not panels or not beats:
         return
@@ -1950,10 +1996,17 @@ def _fill_star_narration(panels, beats, quotas, notes):
                 break
             acc += n
         fb = _first_sentence(beats[bi] if bi < len(beats) else "")
+        src = "본문 첫 문장"
+        # [2026-09-13] 원작 prologue_/epilogue_ 원문이 먼저다 — ★자리는 원작이 정한 여운/도입이 정답.
+        _kind = ("prologue" if p.get("prologue") else
+                 ("epilogue" if str(p.get("text_role") or "") == "epilogue" else ""))
+        _sf = _first_sentence(_source_frame(_kind)) if _kind else ""
+        if _sf:
+            fb, src = _sf, f"원작 {_kind} 원문"
         if fb:
             p["caption_ko"] = fb
             p["narr_large"] = True
-            notes.append(f"컷 {p['no']}: ★{p['text_role']} 지문 미작성 → 본문 첫 문장으로 채움")
+            notes.append(f"컷 {p['no']}: ★{p['text_role']} 지문 미작성 → {src}(으)로 채움")
 
 
 def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry: int = 2,

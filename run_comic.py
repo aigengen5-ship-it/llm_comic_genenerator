@@ -502,7 +502,7 @@ def preflight(need_llm: bool, need_comfy: bool, need_pages: bool = True) -> list
 
 
 def make_thumbs(paths, divisor=4):
-    """결과 확인용 1/divisor 크기 jpg (모델 없이 눈으로 보려면 이 파일부터)"""
+    """[--thumbs로 켰을 때만] 결과 확인용 1/divisor 크기 jpg — 기본은 만들지 않는다(2026-09-14 사용자 지시)"""
     out = []
     for f in paths:
         try:
@@ -712,7 +712,7 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         p("  --no-strict-state로 경고만 켜고 진행하거나, 장면을 조금 더 잘게 나눠 주세요.")
         return 2
     pages = meta.get("pages", [])
-    if not args.no_thumb:
+    if getattr(args, "thumbs", False):              # [2026-09-14] 썸네일은 옵트인 — 기본은 미생성
         make_thumbs(pages)
     p("\n===== 결과 =====")
     p(f"  회차      : EP{meta.get('ep')}  컷 {len(meta.get('files', []))}장 / 페이지 {len(pages)}장")
@@ -862,7 +862,8 @@ def main() -> int:
                     help="OS 자동 감지(os.name) 오버라이드 — 기본 auto")
     ap.add_argument("--llm-plan", action="store_true",
                     help="OS 분기 결과(바이너리/경로/기동 명령/env)만 출력하고 종료")
-    ap.add_argument("--no-thumb", action="store_true", help="썸네일 미생성")
+    ap.add_argument("--thumbs", action="store_true",
+                    help="페이지별 _thumb.jpg(1/4 축약본)를따로 만듭니다 — 기본은 만들지 않습니다")
     # [2026-09-09] 화풍/LoRA 스위치 — config.real_cli / sole_cli / lora*_cli에 주입된다
     # 우선순위: real > sole > CLI LoRA > plot.json(anima_style/anima_lora) (anima_gen.resolve_anima_lora)
     ap.add_argument("--real", action="store_true",

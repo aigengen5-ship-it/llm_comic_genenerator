@@ -151,9 +151,10 @@ comic_font_dialog = ""            # 대사(말풍선)
 comic_font_thought = ""           # 속마음(풍선)
 comic_font_sfx = ""               # 의성어/의태어
 comic_summary_cuts = True         # ★회차 도입 요약: **각 회차의 첫 컷**만 배경만 + 큰 지문 (기승전결 페이지마다 아님)
-# [2026-09-10] 말풍선·속마음 그림 방식 — "vector"(코드로 그림, 기본) / "image"(data/balloons 자산)
-#   image라도 자산이 없으면 자동으로 vector로 돌아간다. 자산은 --get-balloons로 만든다.
-comic_balloon_style = "vector"
+# [2026-09-10] 말풍선·속마음 그림 방식 — "vector"(코드로 그림) / "image"(data/balloons 자산)
+# [2026-09-14] 기본을 image로 바꾼다(사용자 지시) — 화살표 꼬리·생각 물방울이 PNG에 굽혀져 있다.
+#   asset이 없거나 깨지면 comic_page_merge가 자동으로 vector로 폴백한다. 되돌리기: --balloon-style vector
+comic_balloon_style = "image"
 comic_balloon_dir = "data/balloons"
 comic_epilogue = True               # ★에필로그: **마지막 회차 끝**에만 반투명 이벤트신 1칸 + 큰 여운 지문
 # [2026-09-09] 컷 크롭을 얼굴 중심으로(세로 여부가 큰 컷에서 얼굴이 잘려 나가던 증상)

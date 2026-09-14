@@ -473,13 +473,35 @@ def _source_frame_block(roles) -> str:
 SPECIAL_ESTABLISH_TAGS = ("LOCATION", "SITUATION", "TIME", "NOTE")
 SPECIAL_SHOT_RULE = {
     "establish": ("**배경 확립 컷** — 장소·상황·시간을 한 장의 그림으로. 인물 없이 배경만, "
-                  'type=action, camera=front_view, wide=true, lines=[]'),
+                  'type=action, camera=front_view, wide=true, lines=[], '
+                  "caption_ko는 세 헤더를 **한 문장으로 요약**(‘장소’·‘시간’·‘상황’·‘비고’라는 말 없이)"),
     "standing": ("**전신 스탠딩 컷** — 이 복장을 보여 주는 한 장. 머리부터 발끝까지 전신이 화면에 담긴다, "
-                 "type=action, camera=front_view"),
+                 'type=action, camera=front_view, caption_ko는 빈 문자열(복장은 자막으로 말하지 않는다)'),
     "wide": ("**큰 장면 컷** — 이 행동이 화면의 중심. type=action, wide=true, lines=[]"),
     "portrait": ("**인물 클로즈업(portrait)** — 얼굴·상반신. type=face, camera=close_up(또는 pov), "
                  "배경은 흐릿하게"),
 }
+SPECIAL_STATE_LABEL_RE = re.compile(r"(?:^|[\s·,])(?:장소|상황|시간|비고)\s*[:：]\s*")
+
+
+def _state_one_line(written, src) -> str:
+    """[LOCATION·SITUATION·TIME] 확립 컷 지문 — **한 줄 요약**, '장소/시간/상황'이라는 말은 뺀다.
+
+    LLM이 요약을 안 썼거나 라벨을 그대로 옮겨 적었다면 코드에서 고른다 — 그래도 한 줄이다.
+    """
+    t = re.sub(r"\s*\n\s*", " ", str(written or "")).strip()
+    t = SPECIAL_STATE_LABEL_RE.sub(" ", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" .·-–").strip()
+    if len(t) >= 16:
+        return t
+    bits = []
+    for ln in str(src or "").splitlines():                       # 원문(헤더)에서 첫 문장씩 이어 붙인다
+        s = SPECIAL_STATE_LABEL_RE.sub("", str(ln).strip())
+        s = re.split(r"(?<=[.!?])\s+", s.strip())[0].strip(" .") if s.strip() else ""
+        if s:
+            bits.append(s)
+    out = " · ".join(bits)
+    return (out[:88].rstrip() + " …") if len(out) > 90 else out
 
 
 def _special_specs(ep_num_1based) -> list:
@@ -624,31 +646,37 @@ def _apply_special_plan(raw_list, plan, notes) -> list:
             it["type"] = "action"
             it["lines"] = []
             it["wide"] = True
-            if kind in ("establish", "wide"):
-                it["caption_ko"] = str(sp.get("text") or "")
             if kind == "establish":
+                # 세 헤더를 **한 줄로 요약** — 라벨어는 쓰고, 사람은 없이 배경만 그린다
+                it["caption_ko"] = _state_one_line(it.get("caption_ko"), sp.get("text"))
+                it["caption_screen"] = ""
                 it["camera"] = "front_view"
-                it["_bg_only"] = True                     # 사람 없는 장소 그림 (repair 이후 panels에 반영)
+                it["bg_only"] = True
+            elif kind == "wide":
+                it["caption_ko"] = str(sp.get("text") or "")
+            elif kind == "standing":
+                it["caption_ko"] = ""                # [CLOTHES]는 자막 없이 그림으로만 보여 준다
+                it["caption_screen"] = ""
         notes.append(f"컷 {j + 1}: [{str(sp.get('kind') or '')}] 원작 헤더를 그대로 배분")
     return raw_list
 
 
 def _apply_special_bg(panels, plan, notes):
-    """repair 이후 — [LOCATION] 확립 컷을 '배경만(bg_only)'로 바꾼다 (사람 없이 장소 한 장)"""
+    """repair 이후 안전망 — [LOCATION] 확립 컷에 bg_only가 빠진 것만 다시 박는다 (지문은 한 줄 요약 그대로 둔다)"""
     want = [str((e.get("spec") or {}).get("text") or "") for e in plan
             if (e.get("spec") or {}).get("kind") == "establish"]
     if not want:
         return
     seen = set()
     for p in panels or []:
-        if not isinstance(p, dict) or str(p.get("text_role") or ""):
+        if not isinstance(p, dict) or str(p.get("text_role") or "") or p.get("bg_only"):
             continue
-        cap = str(p.get("caption_ko") or "").strip()
+        cap = str(p.get("caption_ko") or "")
         for i, w in enumerate(want):
-            if i in seen or not w or cap != w.strip():
+            head = _state_one_line("", w)[:20]
+            if i in seen or not head or not cap.startswith(head[:12]):
                 continue
             p["bg_only"] = True
-            p["lines"] = []
             seen.add(i)
             notes.append(f"컷 {p.get('no')}: [LOCATION] 확립 컷 → 배경만(bg_only)")
             break
@@ -1712,7 +1740,8 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
              "lines": lns,                                                   # [2026-09-09] 풍선 ≤DIALOG_LINES
              "dialog": [f"{b['who']}: {b['text']}" if b["who"] else b["text"] for b in lns],
              "sfx": sfx, "text_role": "", "narr_large": False,
-             "bg_only": False, "fade": 0.0,                                  # ★요약/에필로그 슬롯용
+             "bg_only": _norm_bool(it.get("bg_only") or it.get("_bg_only")), "fade": 0.0,
+             #   ↑ ★요약/에필로그 슬롯용 + [2026-09-14] special [LOCATION] 확립 컷(사람 없는 배경)
              "wide": wide, "pose": pose, "camera": cam, "position": pos, "climax": clim,
              "facing": str(it.get("facing") or "").strip().lower(), "clothes": cl,
              "multi": _norm_bool(it.get("multi") or it.get("two_person"))}

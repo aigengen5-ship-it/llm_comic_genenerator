@@ -141,8 +141,9 @@ NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스�
 # [2026-09-10] 사용자 지시: 풍선 폭을 **절반으로**(20%→10%) — 세로가 더 길어지고 얼굴을 덜 가린다.
 #   (최소 폭 하한도 96→48px로 함께 내려, 하한이 비율을 삼키지 않게 한다)
 # [2026-09-11] 사용자 지시: 10%는 세로를 지나치게 늘린다 → **15%로 완화**(풍선을 3개로 늘린 같은 조정)
-BALLOON_W_RATIO = 0.15                   # 말풍선(직사각형) 폭 = 컷 폭의 15%
-THOUGHT_W_RATIO = 0.15                   # 속마음(타원) 폭 = 컷 폭의 15%
+BALLOON_W_RATIO = 0.30                   # 말풍선(직사각형) 폭 = 컷 폭의 30%
+THOUGHT_W_RATIO = 0.30                   # 속마음(타원) 폭 = 컷 폭의 30%
+#   [2026-09-14] 사용자 지시로 가로 확대(15%→30%) — portrait 컷에서 글자가 너무 좁게 접혔다.
 
 # [2026-09-10] 말풍선·속마음 **이미지 은행** — 형태를 미리 그린 RGBA 자산으로 붙인다.
 #  · 크기 변형이 아니라 **모양·분위기 변형**을 은행으로 둔다(크기는 9슬라이스가 처리한다).
@@ -202,7 +203,9 @@ def balloon_style() -> str:
 def _balloon_shapes_dir():
     return os.path.abspath(_balloon_art_dir)
 
-THOUGHT_W_RELIEF = 0.14                  # 단, 세로가 아래 비율을 넘으면 폭을 이 정도까지 넓힌다(좁은 폭은 세로를 부른다)
+THOUGHT_W_RELIEF = 0.45                  # 단, 세로가 아래 비율을 넘으면 폭을 이 정도까지 넓힌다(좁은 폭은 세로를 부른다)
+#   [2026-09-14] 구제 폭은 기본 폭(30%)보다 **커야** 실제로 동작한다(예전 0.14 < 기본 0.15라 죽은 코드였다)
+
 THOUGHT_H_CAP = 0.36                     # 속마음 세로가 컷 높이의 이 비율을 넘지 않게 한다
 FONT_FLOOR = 11                          # 화면 글자의 최소 크기 — 이 아래로 안 줄인다
 ELLIPSE_FIT = 1.45                       # (폴백) 타원 ⇄ 사각 글자 블록의 대각 배율(√2≈1.414 + 안전)
@@ -461,6 +464,9 @@ def wrap_text(text: str, font, max_width: int, draw, max_lines: int = MAX_CAPTIO
     if keep_lines and "\n" in text:
         out = []
         for seg in text.split("\n"):
+            if not seg.strip():
+                out.append("")                      # 빈 줄 = 문단 사이 **줄 띄움** (렌더는 line_h만큼 쉰다)
+                continue
             out.extend(wrap_text(seg, font, max_width, draw, max_lines, keep_lines=False))
         if len(out) > max_lines:
             out = out[:max_lines]

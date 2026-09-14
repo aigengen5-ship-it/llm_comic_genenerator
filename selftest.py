@@ -1737,17 +1737,35 @@ def main() -> int:
     CG._apply_special_plan(_raw, _plan, _n_h)
     _pt = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "portrait"][0]
     _est = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "establish"][0]
+    _st = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "standing"][0]
     _wd = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "wide"][0]
-    check("--special: 응답에 그대로 박는다 — portrait=face/close_up+풍선1·지문 비움, action=원문 지문",
+    check("--special: portrait=face/close_up+풍선1·지문 비움, 큰 장면=원문 지문, standing은 자막 없음",
           _pt["type"] == "face" and _pt["camera"] == "close_up" and len(_pt["lines"]) == 1
           and _pt["lines"][0]["kind"] == "thought" and _pt["caption_ko"] == ""
           and _wd["caption_ko"].startswith("야요이가 서류") and _wd["lines"] == [] and _wd["wide"] is True
-          and _est.get("_bg_only") is True, str([_pt["type"], _pt["caption_ko"][:8]]))
+          and _st["caption_ko"] == "" and _st["wide"] is True, str([_pt["type"], _st["caption_ko"]]))
+    check("--special: [LOCATION] 확립 컷 지문은 **한 줄 요약**('장소/시간/상황' 없이) + 배경만",
+          "\n" not in _est["caption_ko"]
+          and not any(k in _est["caption_ko"] for k in ("장소", "시간", "상황", "비고"))
+          and "사무실" in _est["caption_ko"], _est["caption_ko"][:46])
+    _one = CG._state_one_line("장소: 골목 화방. 상황: 퇴근 무렵. 시간: 비 오는 저녁.", "원문이다.")
+    check("--special: LLM이 라벨을 옮겨 적어도 단어를 걷고 한 줄로 고친다",
+          "장소" not in _one and "상황:" not in _one and "\n" not in _one and "골목 화방" in _one, _one)
     _pnls = [{"no": i + 1, "caption_ko": p.get("caption_ko") or "", "lines": [], "bg_only": False}
              for i, p in enumerate(_raw)]
     CG._apply_special_bg(_pnls, _plan, _n_h)
     check("--special: [LOCATION] 확립 컷은 사람 없는 배경 한 장(bg_only)으로 바꾼다",
           _pnls[0]["bg_only"] is True and not _pnls[2]["bg_only"], str([p["bg_only"] for p in _pnls]))
+    _cgh = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+    check("화면: repair는 raw의 bg_only를 이어받는다(확립 컷이 렌더에서도 배경만으로 남는다)",
+          '"bg_only": _norm_bool(it.get("bg_only") or it.get("_bg_only"))' in _cgh,
+          "repair가 bg_only를 새로 계산한다")
+    check("화면: 기본은 이미지 풍선(꼬리·물방울이 굽혀진 자산)이고 vector는 선택이다",
+          'comic_balloon_style = "image"' in open(os.path.join(ROOT, "config.py"), encoding="utf-8").read()
+          and CPM._balloon_style in ("image", "vector"), str(CPM._balloon_style))
+    check("러너: 썸네일은 옵트인(--thumbs) — 기본은 _thumb.jpg를 만들지 않는다",
+          '"--thumbs"' in rc_src and '"--no-thumb"' not in rc_src
+          and 'if getattr(args, "thumbs", False):' in rc_src, "썸네일 스위치")
     config.comic_header_map = False
     _hm_off = CG._special_specs(77)
     config.comic_header_map = _sv_hm
@@ -2071,6 +2089,14 @@ def main() -> int:
           _fit and len(_pr_txt) > 900 and not any(str(x).endswith("…") for x in _fit[5])
           and _fit[4] >= CPM.FONT_FLOOR,
           f"fs={_fit[4] if _fit else 0}px lines={len(_fit[5]) if _fit else 0}")
+    # [2026-09-14] 사용자 지시: ★지문은 캐리지 리턴(줄 띄움)을 반영한다 — 빈 줄이 사라지면 안 된다
+    _gp_txt = "시온자와의 하늘에 붉은 달.\n\n문제는 집안이었다.\n\n그녀의 시선 끝."
+    _gp = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, _gp_txt, large=True, font_size=20)
+    check("★지문은 원문의 빈 줄(문단 띄움)을 한 줄 띄움으로 보존한다", _gp and "" in _gp[5], str(_gp[5] if _gp else 0))
+    _gp_n = CPM.wrap_text(_gp_txt, CPM.load_font(20, None, role="narration"), 300, _dd3,
+                          max_lines=99, keep_lines=False)
+    check("일반 지문·풍선은 예전대로 개행을 공백으로 합친다(★자리만 줄을 지킨다)",
+          all(_gp_n) and len(_gp_n) >= 1, str(_gp_n[:2]))
     _wide_evt = CPM._draw_caption_box(_dd3, 0, 0, 700, 500, "이벤트 컷의 긴 설명 문장입니다 " * 5,
                                       font_size=20, narrow=True)
     check("이벤트 컷 설명도 컷 폭의 절반은 쓸 수 있다(예전 46% 상한에서는 글자가 짤렸다)",
@@ -2100,7 +2126,7 @@ def main() -> int:
     _wrap20 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * CPM.BALLOON_W_RATIO) - 24, _probe, max_lines=9)
     _wrap66 = CPM.wrap_text(_btxt, _pf, int(_bp[0] * 0.66) - 24, _probe, max_lines=9)
     check("대사는 " + str(int(CPM.BALLOON_W_RATIO * 100)) + "% 폭에 맞춰 여럿 줄로 접힌다(예전 66% 폭에서는 한두 줄이었다)",
-          len(_wrap20) >= 3 and len(_wrap20) > len(_wrap66),
+          len(_wrap20) >= 2 and len(_wrap20) > len(_wrap66),
           f"{int(CPM.BALLOON_W_RATIO * 100)}%폭 {len(_wrap20)}줄 / 예전 66%폭 {len(_wrap66)}줄")
     check("좁은 폭에서 글자 크기를 줄여도 풍선이 컷 안에 들어간다",
           _bal_boxes["speech"] and _bal_boxes["speech"][3] <= _bp[1] and _bal_boxes["speech"][2] <= _bp[0],

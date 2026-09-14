@@ -163,8 +163,11 @@
 4. 프롬프트: `_special_hint_block`이 `[이 회차의 컷 매핑]`으로 컷 종류·원문·풍선 화자를 적어 넘긴다
    (복장은 **바뀔 때만** 한 줄 — 컷마다 같은 문장을 반복하지 않는다). `device_hints`는 이 경로에서 비어 있다.
 5. 확정: `_apply_special_plan`(repair **전**, raw에) — portrait은 `type=face`+`camera=close_up`+풍선 1개
-   (원문 그대로)·지문 비움, wide/establish는 지문 = 원문·`lines=[]`·`wide=True` → `_repair_panels`가 어휘·복장·
-   슬롯 메타를 평소대로 정규화한다 → `_apply_special_bg`(repair **후**)가 establish 컷을 `bg_only`(사람 없는 장소)로.
+   (원문 그대로)·지문 비움. establish는 지문을 **한 줄로 요약**(`_state_one_line` — LLM이 라벨을 옮겨 적으면
+   '장소/상황/시간/비고' 단어를 걷고 한 줄로 말아 쓰고, LLM이 요약을 비우면 원문 첫 문장들을 ' · '로 잇는다) + `bg_only=True`.
+   standing([CLOTHES])은 **지문 없음**(`caption_ko=""` — 복장은 그림과 clothes 태그로만). wide는 지문 = 원문.
+   `bg_only`는 `_repair_panels`의 패널 생성이 raw에서 이어받는다(`_norm_bool(it.get("bg_only") …)`) →
+   `_apply_special_bg`(repair 후)는 빠진 것만 채우는 안전망.
 6. 실측 ep01: header_items 54 → 컷 51(portrait 25 · wide 22 · establish 3 · standing 1), LLM 호출 9회.
    컷 수가 장면 수를 따르므로 페이지 수·렌더 비용이 늘어난다(`comic_max_pages`가 상한).
 

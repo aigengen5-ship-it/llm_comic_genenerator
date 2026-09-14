@@ -166,6 +166,10 @@ comic_prologue_cut = True           # ★프롤로그: 회차집의 **첫 회차
 #   "full"(기본) = 원문을 **그대로** 화면에 올린다 — 사용자가 원고를 손질했으므로 압축하지 않는다.
 #   "compact"   = 원문을 근거로 LLM이 2~4줄로 압축한다(예전 동작, --star-frame compact).
 comic_star_frame = "full"
+# [2026-09-13] --special 헤더 → 컷 1:1 매핑 (config.ep_header_items, local progress 입력일 때만 채워진다)
+#   LOCATION+SITUATION+TIME = 그림 한 장 / CLOTHES = 전신 스탠딩 한 장(다음 CLOTHES까지 승계)
+#   ACTION = 큰 장면 하나 / INNER·TALK = 인물 클로즈업(portrait)을 **무조건** 하나씩
+comic_header_map = True
 # [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
 # [2026-09-09] 컷 배분 변동(랜덤성) — 같은 본문でも 레이아웃/장면당 컷 수가 매번 같아 지루했다.
 #   0 = 예전과 같은 완전 재현, N>0 = 그 값마다 다른 배분 (--vary 는 시계값을 뽑고 로그에 남긴다)

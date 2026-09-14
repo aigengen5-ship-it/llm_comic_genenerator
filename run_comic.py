@@ -540,6 +540,9 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
              " (이 회차를 건너뛰고 다음 회차는 계속합니다)")
         return 5
     _cards = list(inp.get("cards") or [])       # --special 장면 카드([LOCATION]…) — 원작 지정값
+    # [2026-09-13] --special 헤더 → 컷 1:1 배분의 재료 (comic_gen._special_specs)
+    config.ep_header_items = {**(getattr(config, "ep_header_items", {}) or {}),
+                              ep_num: list(inp.get("header_items") or [])}
     data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
                       need_segments=not inp["segments"], scene_cards=_cards)   # 막 앵커를 파서가 확보했으면 LLM에게 시키지 않는다
     if not data and args.start_llm:
@@ -752,6 +755,10 @@ def main() -> int:
                     help="[local 전용] ★에필로그 지문의 원작 근거 파일(progress/epilogue_해시.txt)")
     ap.add_argument("--no-source-frame", action="store_true", dest="no_source_frame",
                     help="[local 전용] progress/의 prologue_·epilogue_ 원문을 ★지문 근거로 쓰지 않습니다(예전 동작)")
+    ap.add_argument("--no-header-map", action="store_true", dest="no_header_map",
+                    help="[local 전용] progress/ 헤더의 컷 1:1 배분([LOCATION+SITUATION+TIME]=그림 한 장, "
+                         "[CLOTHES]=전신 스탠딩, [ACTION]=큰 장면, [INNER]/[TALK]=portrait 하나씩)을 끄고 "
+                         "예전처럼 컷 예산·장면 분할을 탑니다")
     ap.add_argument("--star-frame", dest="star_frame", default="full", choices=("full", "compact"),
                     help="[local 전용] ★프롤로그·★에필로그 지문: full(기본)=원작 prologue/epilogue 전문을 그대로 출력, "
                          "compact=원작 원문을 근거로 LLM이 2~4줄로 압축")
@@ -978,6 +985,8 @@ def main() -> int:
     # [2026-09-13] ★지문과 원작 원문 — 기본은 전문 그대로 출력, compact에서만 LLM 압축
     if str(getattr(args, "star_frame", "") or "").strip():
         config.comic_star_frame = str(args.star_frame).strip().lower()
+    if getattr(args, "no_header_map", False):          # [local] 헤더 → 컷 1:1 배분 끄기
+        config.comic_header_map = False
     if getattr(args, "no_strict_state", False):
         config.comic_strict_state = False
     # [2026-09-09] 아래 스위치들도 이 자리에서 배선한다 — 예전에 이 위치에 붙이지 않아

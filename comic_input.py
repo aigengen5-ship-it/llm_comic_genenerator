@@ -1642,8 +1642,8 @@ def load_inputs(episode_path: str, sheet_path: str = "", special=None) -> dict:
              "(권장: run_comic.py --special)")
     if not use:
         return {"episode_text": strip_markdown(ep_raw), "sheet_text": strip_markdown(sh_raw),
-                "segments": [], "cards": [], "empty_body": False, "overrides": {}, "ep_num": 0,
-                "format": "plain", "notes": []}
+                "segments": [], "cards": [], "header_items": [], "empty_body": False,
+                "overrides": {}, "ep_num": 0, "format": "plain", "notes": []}
     import novel_progress as NP                        # 어댑터는 선택적 — 코어 import 그래프에 넣지 않는다
     info = NP.load(episode_path, sheet_path)
     body = strip_markdown(info.get("episode_text") or "")
@@ -1659,7 +1659,8 @@ def load_inputs(episode_path: str, sheet_path: str = "", special=None) -> dict:
          f" / 시트 우선주입 {sorted(((info.get('overrides') or {}).get('protagonist') or {}).keys())}")
     return {"episode_text": body, "sheet_text": sheet,
             "segments": list(info.get("segments") or []),
-            "cards": _cards, "empty_body": bool(info.get("empty_body")),
+            "cards": _cards, "header_items": list(info.get("header_items") or []),
+            "empty_body": bool(info.get("empty_body")),
             "overrides": info.get("overrides") or {}, "ep_num": int(info.get("ep_num") or 0),
             "format": info.get("format") or "novel_progress", "notes": info.get("notes") or []}
 

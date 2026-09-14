@@ -580,6 +580,72 @@ def render(parsed: dict) -> tuple:
     return body, segments[:4] if len(segments) >= 2 else []
 
 
+# [2026-09-13] 헤더 → 컷 1:1 매핑(--special)의 재료: 산출물을 **헤더 순서 그대로** 평면화한다
+CARD_ITEM_TAGS = {"장소": "LOCATION", "상황": "SITUATION", "시간": "TIME",
+                  "복장": "CLOTHES", "비고": "NOTE"}
+CARD_ITEM_ORDER = ("장소", "상황", "시간", "복장", "비고")
+
+
+def header_items(src) -> list:
+    """회차 산출물 → 헤더 순서 그대로의 평면 목록 (special 컷 배분의 재료)
+
+      [{"tag":"LOCATION|SITUATION|TIME|CLOTHES|NOTE|ACTION|INNER|TALK|TEXT",
+        "text":"헤더 원문(라벨 제거)", "line":"본문에 들어간 그 줄(화자·(속마음) 포함)", "act":"기|승|전|결|"}]
+
+    `render`와 **같은 순서로 같은 화자 상태기계**를 돌므로 `line`은 본문 줄과 문자 단위로 같다.
+    장면 카드는 그 자리에(항목 앞) 놓인다 — 컷 배분도 그 순서를 따른다.
+    """
+    parsed = parse_episode(src) if isinstance(src, str) else (src or {})
+    sp = _Speakers(parsed.get("names") or {})
+    out = []
+
+    def _card(c: dict):
+        for k in CARD_ITEM_ORDER:
+            if not c.get(k):
+                continue
+            tag, v = CARD_ITEM_TAGS[k], str(c[k]).strip()
+            if tag == "CLOTHES":
+                owner = c.get("복장 주인") or sp.disp["protagonist"]
+                line = f"{owner}의 복장: {v}"
+            elif tag == "NOTE":
+                line = f"비고: {v}"
+            else:
+                line = f"{k}: {v}"
+            out.append({"tag": tag, "text": v, "line": line, "act": str(c.get("act") or "")})
+
+    pre, per_act = [], {}
+    for c in parsed.get("cards") or []:
+        (per_act.setdefault(str(c.get("act") or ""), []).append(c)
+         if c.get("act") else pre.append(c))
+    for c in pre:
+        _card(c)
+    for act in ACTS:
+        items = (parsed.get("acts") or {}).get(act) or []
+        by_idx = {}
+        for c in per_act.get(act) or []:
+            try:
+                at = int(c.get("idx", 0) or 0)
+            except Exception:
+                at = 0
+            by_idx.setdefault(max(0, min(at, len(items))), []).append(c)
+        for j, (tag, txt) in enumerate(items):
+            for c in by_idx.get(j, []):                       # 항목 앞에 낀 카드 = 이 지점의 장면 전환
+                _card(c)
+            if tag == "TALK":
+                line = f"{sp.disp[sp.who(txt)]}: {txt}"
+            elif tag == "INNER":
+                sp.observe(txt)
+                line = f"(속마음) {txt}"
+            else:
+                sp.observe(txt)
+                line = txt
+            out.append({"tag": tag if tag in ("ACTION", "INNER", "TALK") else "TEXT",
+                        "text": txt, "line": line, "act": act})
+        for c in by_idx.get(len(items), []):                  # 막 끝에 온 카드
+            _card(c)
+    return out
+
+
 # ------------------------------------------------------------------ 시트 JSON
 def _norm_key(k) -> str:
     """시트 키 정규화: 공백 제거 + '상대방 ' 접두 제거 — 두 종의 명명(ep01/ep02+)을 한 갈래로 받는다"""
@@ -793,5 +859,5 @@ def load(episode_path: str, sheet_path: str = "") -> dict:
         notes.append("머리 블록에서 이름을 찾지 못했습니다 — 시트 JSON의 이름을 씁니다")
     return {"episode_text": body, "sheet_text": sheet_text, "segments": segments,
             "overrides": overrides, "ep_num": parsed.get("ep", 1), "meta": parsed.get("meta", {}),
-            "cards": cards, "empty_body": empty_body,
+            "cards": cards, "header_items": header_items(parsed), "empty_body": empty_body,
             "format": "novel_progress", "notes": notes}

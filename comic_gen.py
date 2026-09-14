@@ -469,6 +469,191 @@ def _source_frame_block(roles) -> str:
     return ("\n".join(out) + "\n") if out else ""
 
 
+# ------------------------------------------------- [local] special: 헤더 → 컷 1:1 매핑
+SPECIAL_ESTABLISH_TAGS = ("LOCATION", "SITUATION", "TIME", "NOTE")
+SPECIAL_SHOT_RULE = {
+    "establish": ("**배경 확립 컷** — 장소·상황·시간을 한 장의 그림으로. 인물 없이 배경만, "
+                  'type=action, camera=front_view, wide=true, lines=[]'),
+    "standing": ("**전신 스탠딩 컷** — 이 복장을 보여 주는 한 장. 머리부터 발끝까지 전신이 화면에 담긴다, "
+                 "type=action, camera=front_view"),
+    "wide": ("**큰 장면 컷** — 이 행동이 화면의 중심. type=action, wide=true, lines=[]"),
+    "portrait": ("**인물 클로즈업(portrait)** — 얼굴·상반신. type=face, camera=close_up(또는 pov), "
+                 "배경은 흐릿하게"),
+}
+
+
+def _special_specs(ep_num_1based) -> list:
+    """config.ep_header_items → 컷 사양 목록 (원작 헤더를 1:1로 컷에 배분한다)
+
+      LOCATION·SITUATION·TIME(한 카드) = 그림 한 장 / CLOTHES = 전신 스탠딩 한 장 + 다음 CLOTHES까지 승계
+      ACTION = 큰 장면 하나 / INNER·TALK = 인물 클로즈업(portrait)을 **무조건** 하나씩
+    """
+    if not bool(getattr(config, "comic_header_map", True)):
+        return []
+    m = getattr(config, "ep_header_items", {}) or {}
+    items = m.get(ep_num_1based) or m.get(str(ep_num_1based)) or []
+    if not items:
+        return []
+    out, costume, i = [], "", 0
+    while i < len(items):
+        it = items[i] if isinstance(items[i], dict) else {}
+        tag = str(it.get("tag") or "").strip().upper()
+        if tag in SPECIAL_ESTABLISH_TAGS:
+            grp = []
+            while i < len(items) and str((items[i] or {}).get("tag") or "").strip().upper() \
+                    in SPECIAL_ESTABLISH_TAGS:
+                grp.append(items[i])
+                i += 1
+            txt = "\n".join(f"{k}: {g['text']}" for g, k in
+                            zip(grp, ("장소", "상황", "시간", "비고")) if str(g.get("text") or "").strip())
+            out.append({"kind": "establish", "text": txt, "line": txt, "act": grp[0].get("act", ""),
+                        "costume": costume})
+            continue
+        if tag == "CLOTHES":
+            costume = str(it.get("text") or "").strip() or costume     # 다음 CLOTHES가 나올 때까지가 정답
+            out.append({"kind": "standing", "text": costume, "line": str(it.get("line") or ""),
+                        "act": it.get("act", ""), "costume": costume, "new_costume": True})
+            i += 1
+            continue
+        if tag in ("INNER", "TALK"):
+            line = str(it.get("line") or "")
+            who = ""
+            if tag == "TALK":
+                who = CI.speaker_prefix(line)
+            out.append({"kind": "portrait", "device": "속마음" if tag == "INNER" else "대사",
+                        "text": str(it.get("text") or "").strip(), "line": line, "who": who,
+                        "act": it.get("act", ""), "costume": costume})
+            i += 1
+            continue
+        out.append({"kind": "wide", "text": str(it.get("text") or "").strip(),
+                    "line": str(it.get("line") or ""),
+                    "act": it.get("act", ""), "costume": costume})
+        i += 1
+    return [s for s in out if str(s.get("text") or "").strip() or s["kind"] == "portrait"]
+
+
+def _special_plan(slots, specs) -> list:
+    """레이아웃 슬롯 순서와 컷 사양을 한 칸씩 맞춘다 — ★슬롯은 그 규칙이 있으니 사양에 섞지 않는다.
+
+    반환: 슬롯 하나의 항목 {"spec":dict|None, "role":str}. 쿼타는 이 목록의 길이와 같아야
+    (★칸까지) slot_range 어긋남이 없다.
+    """
+    plan, k = [], 0
+    for s in slots or []:
+        role = str((s or {}).get("role") or "")
+        if role:
+            plan.append({"spec": None, "role": role})
+            continue
+        if k < len(specs):
+            plan.append({"spec": specs[k], "role": ""})
+            k += 1
+        else:
+            plan.append({"spec": None, "role": ""})       # 슬롯이 남는다 — LLM이 비운 칸으로 둔다
+    for s in specs[k:]:
+        plan.append({"spec": s, "role": ""})              # 슬롯이 부족하다 — 남은 사양은 칸을 늘려 받는다
+    return plan
+
+
+def _special_beats(plan, limit: int) -> tuple:
+    """슬롯 순서 계획 → (beat 본문 목록, beat당 쿼타). ★칸은 본문을 비우고 넘긴다."""
+    beats, quotas, cur = [], [], []
+    for e in plan:
+        if len(cur) >= max(1, int(limit or 1)):
+            beats.append("\n".join(x for x in cur).strip())
+            quotas.append(len(cur))
+            cur = []
+        sp = e.get("spec") or {}
+        cur.append(str(sp.get("line") or "") if sp else "")
+    if cur:
+        beats.append("\n".join(x for x in cur).strip())
+        quotas.append(len(cur))
+    return beats, quotas
+
+
+def _special_hint_block(plan, s0: int) -> str:
+    """이 호출의 컷마다 '어떤 헤더에서 온 어떤 종류의 컷인지' 원문과 함께 알려준다"""
+    rows = []
+    worn = None                                    # 직전에 알려 준 복장 — 같은 복장을 컷마다 반복하지 않는다
+    for j, e in enumerate(plan):
+        sp, role = e.get("spec") or {}, str(e.get("role") or "")
+        no = s0 + j + 1
+        if role:
+            continue
+        if not sp:
+            rows.append(f"  - 컷 {no} = (비어 있음) — 이 회차 본문에 없는 컷이다. 비운다")
+            continue
+        kind = str(sp.get("kind") or "")
+        head = SPECIAL_SHOT_RULE.get(kind, SPECIAL_SHOT_RULE["wide"])
+        cos = str(sp.get("costume") or "")
+        if kind == "portrait":
+            txt = str(sp.get("text") or "")
+            who = str(sp.get("who") or "") or "(화자 미정)"
+            rows.append(f"  - 컷 {no} = [{'INNER' if sp.get('device') == '속마음' else 'TALK'}] {head} — "
+                        f"{'속마음 풍선' if sp.get('device') == '속마음' else f'말풍선(화자: {who})'}에 "
+                        f"**원문 그대로** 넣는다: \"{txt}\"" + (' 지문은 비운다(caption_ko: "")' if not
+                                                              bool(getattr(config, 'comic_chatty', False)) else ""))
+        else:
+            rows.append(f"  - 컷 {no} = {head} — 원문: \"{str(sp.get('text') or '').replace(chr(10), ' / ')}\"")
+        if cos and cos != worn:            # 복장은 바뀔 때만 말한다 — 같은 복장을 컷마다 반복하지 않는다
+            rows.append(f"      컷 {no}부터의 복장(원작 지정 · 다음 [CLOTHES]까지 계속, clothes 태그로 옮긴다):"
+                        f" \"{cos}\"")
+            worn = cos
+    return ("\n[이 회차의 컷 매핑 — 원작 헤더를 프로그램이 1:1로 배분했습니다. 순서·종류·원문을 지키세요]\n"
+            + "\n".join(rows) + "\n") if rows else ""
+
+
+def _apply_special_plan(raw_list, plan, notes) -> list:
+    """LLM 응답에 **그대로** 박는다 — 지문·풍선·종류는 원작 헤더가 정답이다 (LLM은 그림만 잘으면 된다)"""
+    for j, e in enumerate(plan):
+        sp = e.get("spec") or {}
+        if not sp or j >= len(raw_list) or not isinstance(raw_list[j], dict):
+            continue
+        it = raw_list[j]
+        kind = str(sp.get("kind") or "")
+        chatty = bool(getattr(config, "comic_chatty", False))
+        if kind == "portrait":
+            it["type"] = "face"
+            if str(it.get("camera") or "") not in ("close_up", "pov"):
+                it["camera"] = "close_up"
+            it["lines"] = [{"kind": "thought" if sp.get("device") == "속마음" else "speech",
+                            "who": str(sp.get("who") or ""), "text": str(sp.get("text") or ""),
+                            "emo": str(it.get("emotion") or "") or ""}]
+            if not chatty:
+                it["caption_ko"] = ""
+        else:
+            it["type"] = "action"
+            it["lines"] = []
+            it["wide"] = True
+            if kind in ("establish", "wide"):
+                it["caption_ko"] = str(sp.get("text") or "")
+            if kind == "establish":
+                it["camera"] = "front_view"
+                it["_bg_only"] = True                     # 사람 없는 장소 그림 (repair 이후 panels에 반영)
+        notes.append(f"컷 {j + 1}: [{str(sp.get('kind') or '')}] 원작 헤더를 그대로 배분")
+    return raw_list
+
+
+def _apply_special_bg(panels, plan, notes):
+    """repair 이후 — [LOCATION] 확립 컷을 '배경만(bg_only)'로 바꾼다 (사람 없이 장소 한 장)"""
+    want = [str((e.get("spec") or {}).get("text") or "") for e in plan
+            if (e.get("spec") or {}).get("kind") == "establish"]
+    if not want:
+        return
+    seen = set()
+    for p in panels or []:
+        if not isinstance(p, dict) or str(p.get("text_role") or ""):
+            continue
+        cap = str(p.get("caption_ko") or "").strip()
+        for i, w in enumerate(want):
+            if i in seen or not w or cap != w.strip():
+                continue
+            p["bg_only"] = True
+            p["lines"] = []
+            seen.add(i)
+            notes.append(f"컷 {p.get('no')}: [LOCATION] 확립 컷 → 배경만(bg_only)")
+            break
+
+
 CAMERA_VOCAB = {"front_view", "side_view", "back_view", "close_up", "pov"}
 POSITION_VOCAB = {"He is standing.", "He is sitting.", "He is walking.", "He is lying down.",
                   "He is lying on top of her.", "He is behind her.", "NONE"}
@@ -635,7 +820,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
                               sub: str, guide_lines, dollar_actions, page_plans=None,
                               episode_text: str = "", panels_expected: int = 0,
                               prev_tail=None, beat_label: str = "", slot_range=None,
-                              device_hints=None) -> str:
+                              device_hints=None, special_block: str = "") -> str:
     """컷 스크립트 생성용 LLM 프롬프트.
 
     [2026-09-08] 세 가지가 새로 들어간다 —
@@ -658,6 +843,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
         if _dl:
             device_block = ("\n[이 컷들의 화면 장치 — 본문에서 프로그램이 판정했습니다. 이 순서와 장치를 따르세요]\n"
                             + "\n".join(_dl) + "\n")
+    device_block = device_block + str(special_block or "")      # [local] special 헤더 → 컷 1:1 매핑 지시
     guides = "\n".join(f"  - {g}" for g in guide_lines) if guide_lines else "  (가이드 없음)"
     acts = ", ".join(dollar_actions) if dollar_actions else "(없음)"
     sub_block = f"\n[서브 캐릭터 시트]\n{sub}\n" if (getattr(config, 'chr_num3', 0) == 1 and sub) else ""
@@ -2106,6 +2292,28 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     slots = spec_slots(page_plans)
     n_cut = len(slots) if slots else target
 
+    # [2026-09-13] --special: 원작 헤더가 곧 컷 목록이다 — 예산·장면 분할을 타지 않고 1:1로 배분한다
+    #   LOCATION+SITUATION+TIME = 그림 한 장 / CLOTHES = 전신 스탠딩(다음 CLOTHES까지 승계)
+    #   ACTION = 큰 장면 / INNER·TALK = portrait 클로즈업 하나씩
+    _sspecs = _special_specs(ep_num_1based)
+    _splan, _nstar = None, 0
+    if _sspecs:
+        target = max(MIN_PANELS, len(_sspecs))
+        for _try in (1, 2):
+            page_plans, n_pages = (plan_pages_layout(ep_num_1based, target, pages)
+                                   if pages >= 0 else (None, 0))
+            slots = spec_slots(page_plans)
+            n_cut = len(slots) if slots else target
+            _nstar = sum(1 for s in (slots or []) if str((s or {}).get("role") or ""))
+            if _nstar and n_cut < len(_sspecs) + _nstar and _try == 1:
+                target = len(_sspecs) + _nstar            # ★칸은 별도 자리로 보태 다시 짠다
+                continue
+            break
+        _splan = _special_plan(slots or [{"role": ""}] * target, _sspecs)
+        beats, quotas = _special_beats(_splan, CI.PANELS_PER_BEAT_MAX)
+        _clog(f"EP{ep_num_1based} special 헤더 매핑: 원작 항목 {len(_sspecs)}개 → 컷 {len(_splan)}"
+              f"(★칸 {_nstar} 포함) / LLM 호출 {len(beats)}회 {quotas}")
+
     # ③ 본문 → 장면(창). 장면 1개 = LLM 1호출 = 최대 PANELS_PER_BEAT_MAX컷
     # [2026-09-08] 자수가 적은 회차는 글자수 균등 분할이 기승전결을 가로질렀다 — LLM이 본문에서
     # 그대로 베껴 온 막 앵커(기/승/전/결 각 첫 문장)가 있으면 **막을 장면 골격**으로 삼고
@@ -2117,7 +2325,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
     units = []                       # 사건/항목 유닛(LLM이 나눈 목록) — 장치 판정에도 쓴다
     unit_w = None                                    # 사건(액션) 기준 배분이 켜지면 유닛별 컷 수가 들어온다
     n_beats = max(1, -(-n_cut // CI.PANELS_PER_BEAT_MAX))
-    if 2 <= len(acts) <= 8:
+    if _splan is None and 2 <= len(acts) <= 8:
         if n_cut < 2 * len(acts):                  # 막당 2컷을 담을 컷 수부터 확보 (레이아웃 재계획)
             target = max(target, 2 * len(acts))
             page_plans, n_pages = (plan_pages_layout(ep_num_1based, target, pages)
@@ -2163,7 +2371,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
                 beats[i:i + 1], beat_acts[i:i + 1] = parts, [beat_acts[i], beat_acts[i]]
         elif unit_w is None:
             beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
-    else:
+    elif _splan is None:
         # [2026-09-09] 막 분할이 1개(시그먼트 앵커 실패·원고가 단막)라도 항목 유닛은 쓴다.
         #   실측: 본문 727자 · 화면 항목 20개를 "막이 1개"라는 이유로 글자 수 6컷에 가뒀다.
         #   항목 저울은 막 분할과 독립적이어야 한다(사용자: "컷 20개를 6개로 확 줄인 이유가 뭐지?").
@@ -2184,10 +2392,12 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         if unit_w is None:
             beats = (CI.split_beats(body, n_beats=n_beats, max_chars=bchars) or [""]) if body else [""]
     _var = int(getattr(config, "comic_variation", 0) or 0)
-    quotas = CI.allocate(n_cut, (unit_w if unit_w else [max(1, len(b)) for b in beats]),
-                         minimum=(2 if (beat_acts is not None and unit_w is None and n_cut >= 2 * len(beats))
-                                  else (1 if n_cut >= len(beats) else 0)),
-                         variation=_var)
+    if _splan is None:                                  # special 매핑은 칸 수가 곧 쿼타다(배분 없음)
+        quotas = CI.allocate(n_cut, (unit_w if unit_w else [max(1, len(b)) for b in beats]),
+                             minimum=(2 if (beat_acts is not None and unit_w is None
+                                            and n_cut >= 2 * len(beats))
+                                      else (1 if n_cut >= len(beats) else 0)),
+                             variation=_var)
     if unit_w:
         _clog(f"EP{ep_num_1based} 본문 항목 {len(unit_w)}개(강한 항목 {sum(1 for w in unit_w if w > 1)}개 = 컷 2) "
               f"→ 만들 컷 {sum(unit_w)} / 페이지 슬롯 {n_cut} — 배분 저울은 '글자 수'가 아니라 '일어난 사건'")
@@ -2224,7 +2434,7 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         #   장치(행동/대사/속마음)를 **코드가** 정한다. LLM에 맡기면 한 컷에 셋을 다 섞어
         #   사건을 지워버렸다(그래서 스토리가 짤렸다). 추출 단계가 kind를 줬으면 그것을 쓴다.
         _hints = None
-        if bool(getattr(config, "comic_item_cuts", True)):
+        if _splan is None and bool(getattr(config, "comic_item_cuts", True)):
             _kinds = [(str(u.get("at") or "")[:24], str(u.get("kind") or "")) for u in units
                       if str(u.get("kind") or "") in ("행동", "대사", "속마음")]
 
@@ -2246,7 +2456,8 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
             episode_text=beat, panels_expected=quota, prev_tail=_beat_context(tail),
             beat_label=(((_SITUATIONS[_ai] if 0 <= _ai < len(_SITUATIONS) else str(_ai + 1)) + f"장면 {bi}/{len(beats)}"
                          if _ai >= 0 else (f"장면 {bi}/{len(beats)}" if len(beats) > 1 else ""))),
-            slot_range=((s0, s0 + quota) if slots else None), device_hints=_hints)
+            slot_range=((s0, s0 + quota) if slots else None), device_hints=_hints,
+            special_block=(_special_hint_block(_splan[s0:s0 + quota], s0) if _splan is not None else ""))
         got = []
         for attempt in range(1, max(1, retry) + 1):
             try:
@@ -2283,6 +2494,10 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         _clog(f"EP{ep_num_1based} 장면{bi}/{len(beats)} ({len(beat)}자) → 컷 {raw_got}/{quota}"
               + (f" (미응답 {quota - raw_got}컷 → 침묵 컷)" if raw_got < quota else ""))
 
+    # [2026-09-13] special 매핑 — 지문·풍선·컷 종류는 원작 헤더가 정답이므로 코드 박는다 (LLM은 그림만)
+    if _splan is not None:
+        _apply_special_plan(raw_all, _splan, notes)
+
     # ⑤ 전역 보정 (슬롯 메타/page·tier 부여, 어휘·복장·시선 정규화)
     _plans_out = []
     panels, notes2 = _repair_panels(raw_all, dollar, page_plans=page_plans, max_panels=maxp,
@@ -2291,6 +2506,8 @@ def request_panel_script(ep_num_1based: int, total_eps: int, client=None, retry:
         page_plans = _plans_out[0]
     notes = notes + notes2
     # [2026-09-09] ★요약/에필로그 컷의 지문이 비면 그 장면 본문의 첫 문장으로 채운다
+    if _splan is not None:
+        _apply_special_bg(panels, _splan, notes)         # [LOCATION] 확립 컷 = 사람 없는 배경 한 장
     _fill_star_narration(panels, beats, quotas, notes)
     _apply_star_frame_text(panels, notes)      # ★지문 = 원작 전문(기본) — LLM 작문을 덮는다
     if bool(getattr(config, "comic_chatty", False)):

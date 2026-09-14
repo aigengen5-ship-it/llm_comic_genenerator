@@ -146,6 +146,28 @@
   - 어떤 모드든 프롬프트에는 **900자만** 근거로 올라갑니다(지문을 프로그램이 넣으면 num_ctx 절약).
 - 렌더: ★자리는 `narr_large` → 컷 폭 100%·높이 70% 안에서 글자를 줄여 다 담습니다(`_draw_caption_box`).
 
+**3.0a-bis) 헤더 → 컷 1:1 매핑** (`config.comic_header_map`, 기본 켬 · 끄기 `run_comic --no-header-map`)
+
+`--special` 입력은 헤더가 정확하므로 컷 수를 본문 길이로 역산하지 않고 헤더를 그대로 컷에 배분한다.
+
+1. `novel_progress.header_items(path)` — 장면을 **헤더 순서 그대로** 평면화
+   (`{tag,text,line,act}` · `line`은 `render`가 만든 본문 줄과 문자 단위로 같다 · 화자 상태기계도 같이 돈다)
+   → `NP.load`의 `header_items` → `CI.load_inputs`의 `inp["header_items"]` → `config.ep_header_items[ep]`.
+2. `comic_gen._special_specs(ep)` — 카드의 LOCATION·SITUATION·TIME(·비고)를 **한 장의 그림**(establish)으로
+   합치고, CLOTHES는 별도 **전신 스탠딩**으로 빼고, 그 복장을 **다음 CLOTHES가 나올 때까지** 뒤 사양에
+   `costume`으로 얹는다. ACTION/자유서술 = wide, INNER/TALK = portrait(화자는 `CI.speaker_prefix`로 회수).
+3. `request_panel_script` ①직후: `_special_specs`가 있으면 예산(`CI.target_panels`)·막 분할·항목 저울을
+   **타지 않는다.** target = 사양 수(★칸 수만큼 보태 다시 계획) → `_special_plan`이 레이아웃 슬롯과 사양을
+   한 칸씩 맞춘다(★칸은 사양에 섞지 않고 칸만 소비 → `sum(quotas) == 슬롯 수`로 slot_range 어긋남 방지)
+   → `_special_beats`가 호출당 `PANELS_PER_BEAT_MAX`(6)칸씩 묶는다. `CI.allocate`는 이 경로에서 태워지지 않는다.
+4. 프롬프트: `_special_hint_block`이 `[이 회차의 컷 매핑]`으로 컷 종류·원문·풍선 화자를 적어 넘긴다
+   (복장은 **바뀔 때만** 한 줄 — 컷마다 같은 문장을 반복하지 않는다). `device_hints`는 이 경로에서 비어 있다.
+5. 확정: `_apply_special_plan`(repair **전**, raw에) — portrait은 `type=face`+`camera=close_up`+풍선 1개
+   (원문 그대로)·지문 비움, wide/establish는 지문 = 원문·`lines=[]`·`wide=True` → `_repair_panels`가 어휘·복장·
+   슬롯 메타를 평소대로 정규화한다 → `_apply_special_bg`(repair **후**)가 establish 컷을 `bg_only`(사람 없는 장소)로.
+6. 실측 ep01: header_items 54 → 컷 51(portrait 25 · wide 22 · establish 3 · standing 1), LLM 호출 9회.
+   컷 수가 장면 수를 따르므로 페이지 수·렌더 비용이 늘어난다(`comic_max_pages`가 상한).
+
 ### 3.1 [C] 추출 — `comic_input.extract` (807) / `_extract_once` (790)
 - 프롬프트는 `에피소드 전문 + 시트 + 규칙 블록`. 본문은 §2-1 예산만큼만 넣습니다.
 - 요구 항목: `guides`(기승전결 4문장), `segments`(각 막 첫 문장 복사 — 길면 앞 40자), `units`.

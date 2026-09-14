@@ -1681,6 +1681,80 @@ def main() -> int:
     config.comic_star_frame = "full"
     config.source_frame = _sf_saved
 
+    # [2026-09-13] --special: 헤더 → 컷 1:1 매핑 (그림 한 장 / 전신 스탠딩 / 큰 장면 / portrait 하나씩)
+    _hm_dir = tempfile.mkdtemp(prefix="st_hmap_")
+    _hm_ep = os.path.join(_hm_dir, "ep01_cafe1234.txt")
+    with open(_hm_ep, "w", encoding="utf-8") as _fh:
+        _fh.write("=== Episode 1 ===\n\n# 주인공 (키세 야요이)\n직업: 경찰관\n\n--- 에피소드 내용 ---\n\n"
+                  "[LOCATION]: 경찰서 개인 사무실, 책상 위 서류.\n[SITUATION]: 빚 문제 직전.\n"
+                  "[TIME]: 황혼.\n[CLOTHES]: 흰 블라우스와 네이비 스커트.\n#####\n기:\n"
+                  "[ACTION]: 야요이가 서류를 정리하며 한숨을 쉰다.\n"
+                  "[INNER]: 이 제복이 쇠사슬처럼 느껴져.\n[TALK]: 이번 달 월급으로는 부족하겠네.\n"
+                  "#####\n승:\n[LOCATION]: 에이지의 사무실.\n[CLOTHES]: 검은 원피스.\n#####\n"
+                  "[ACTION]: 에이지가 턱을 들어올린다.\n[TALK]: 왔나.\n")
+    _hm = NP.header_items(_hm_ep)
+    check("--special: header_items가 헤더를 순서 그대로 평면화한다(본문 줄과 같은 형태)",
+          [x["tag"] for x in _hm] == ["LOCATION", "SITUATION", "TIME", "CLOTHES", "ACTION", "INNER",
+                                      "TALK", "LOCATION", "CLOTHES", "ACTION", "TALK"]
+          and _hm[5]["line"].startswith("(속마음)") and ": " in _hm[6]["line"],
+          str([x["tag"] for x in _hm]))
+    _sv_items, _sv_hm = dict(getattr(config, "ep_header_items", {}) or {}), config.comic_header_map
+    _li_h = CI.load_inputs(_hm_ep, "", special=True)
+    check("--special: load_inputs가 header_items를 태운다(평문 계약은 빈 목록)",
+          len(_li_h.get("header_items") or []) == 11
+          and CI.load_inputs(os.path.join(INP, "ep01.txt"), "", special=False).get("header_items") == [],
+          str(len(_li_h.get("header_items") or [])))
+    config.ep_header_items = {77: _hm}
+    _sp = CG._special_specs(77)
+    _kinds = [s["kind"] for s in _sp]
+    check("--special: [LOCATION]+[SITUATION]+[TIME]는 그림 한 장(establish)으로 합친다",
+          _kinds[:2] == ["establish", "standing"]
+          and all(k in _sp[0]["text"] for k in ("장소:", "상황:", "시간:")), str(_kinds))
+    check("--special: [ACTION]=큰 장면, [INNER]·[TALK]=portrait을 무조건 하나씩 (11헤더 → 9컷)",
+          _kinds == ["establish", "standing", "wide", "portrait", "portrait",
+                     "establish", "standing", "wide", "portrait"], str(_kinds))
+    check("--special: [CLOTHES] 복장은 다음 [CLOTHES]가 나올 때까지 계속 할당된다",
+          _sp[2]["costume"].startswith("흰 블라우스") and _sp[4]["costume"].startswith("흰 블라우스")
+          and _sp[7]["costume"].startswith("검은 원피스"), _sp[7]["costume"][:12])
+    check("--special: portrait 컷은 풍선 원문과 화자를 그대로 갖는다",
+          _sp[3]["device"] == "속마음" and _sp[4]["device"] == "대사"
+          and _sp[3]["text"] == "이 제복이 쇠사슬처럼 느껴져." and _sp[4]["who"] == "키세 야요이",
+          str([_sp[4]["who"], _sp[4]["text"][:12]]))
+    _slots = [{"role": ""}] + [{"role": "prologue"}] + [{"role": ""}] * 8
+    _plan = CG._special_plan(_slots, _sp)
+    _beats_h, _q = CG._special_beats(_plan, 3)
+    check("--special: ★슬롯은 사양에 섞지 않고 칸만 소비한다 — 쿼타 합 = 슬롯 수(어긋남 방지)",
+          sum(_q) == len(_plan) == len(_slots) and sum(1 for e in _plan if e["spec"]) == len(_sp),
+          f"q={_q} plan={len(_plan)} slots={len(_slots)} specs={len(_sp)}")
+    _blk_h = CG._special_hint_block(_plan, 0)
+    check("--special: 매핑 블록이 컷 종류·원문·복장 승계를 프롬프트에 적는다(복장은 바뀔 때만)",
+          "배경 확립 컷" in _blk_h and "전신 스탠딩 컷" in _blk_h and "인물 클로즈업" in _blk_h
+          and "쇠사슬" in _blk_h and _blk_h.count("다음 [CLOTHES]까지") == 2,
+          str(_blk_h.count("복장")))
+    _raw = [{"type": "action", "camera": "front_view", "caption_ko": "LLM이 지은 글",
+             "lines": [], "wide": False} for _ in _plan]
+    _n_h = []
+    CG._apply_special_plan(_raw, _plan, _n_h)
+    _pt = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "portrait"][0]
+    _est = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "establish"][0]
+    _wd = [p for p, e in zip(_raw, _plan) if (e.get("spec") or {}).get("kind") == "wide"][0]
+    check("--special: 응답에 그대로 박는다 — portrait=face/close_up+풍선1·지문 비움, action=원문 지문",
+          _pt["type"] == "face" and _pt["camera"] == "close_up" and len(_pt["lines"]) == 1
+          and _pt["lines"][0]["kind"] == "thought" and _pt["caption_ko"] == ""
+          and _wd["caption_ko"].startswith("야요이가 서류") and _wd["lines"] == [] and _wd["wide"] is True
+          and _est.get("_bg_only") is True, str([_pt["type"], _pt["caption_ko"][:8]]))
+    _pnls = [{"no": i + 1, "caption_ko": p.get("caption_ko") or "", "lines": [], "bg_only": False}
+             for i, p in enumerate(_raw)]
+    CG._apply_special_bg(_pnls, _plan, _n_h)
+    check("--special: [LOCATION] 확립 컷은 사람 없는 배경 한 장(bg_only)으로 바꾼다",
+          _pnls[0]["bg_only"] is True and not _pnls[2]["bg_only"], str([p["bg_only"] for p in _pnls]))
+    config.comic_header_map = False
+    _hm_off = CG._special_specs(77)
+    config.comic_header_map = _sv_hm
+    config.ep_header_items = _sv_items
+    check("--special: --no-header-map이면 예전 배분(컷 예산·장면 분할)으로 돌아간다",
+          _hm_off == [], str(len(_hm_off)))
+
     # ============================== [2026-09-09] 화면 문법 (설명 / 말풍선 / 속마음 / 의성어)
     print("\n== ⑩ 화면 문법: 설명 박스 + 풍선(≤3) + 의성어 + ★서두요약·에필로그 ==")
     ln = CG._norm_lines(["소타: 무거운 건 저에게 맡기세요.", "(이 사람, 아까부터 알고 있었다.)",

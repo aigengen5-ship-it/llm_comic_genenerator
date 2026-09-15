@@ -512,8 +512,11 @@ def main() -> int:
     # [2026-09-08] `subject on left` / `negative space` 는 잘못된 어구로 폐기 — 되살아나면 실패로 지킨다.
     check("wide 프롬프트에 오른쪽 시선 태그(배치 어구 폐기 유지)",
           "facing to the right" in pw and "subject on left" not in pw and "negative space" not in pw)
+    _p_alone = dict(panel_t, no=8, pose="She is alone at the counter, counting coins.",
+                    position="NONE")
     check("portrait(front)에는 오른쪽 시선 없음 + 정면 태그", "facing to the right" not in pt
-          and "looking at viewer" in pt)
+          and ("looking at viewer" in pt or "facing viewer" in pt)
+          and "looking at viewer" in CG.build_panel_prompt(0, _p_alone, "nsfw", gloss={}))
     pr = CG.build_panel_prompt(0, panel_r, "explicit", gloss={})
     check("portrait(right)는 오른쪽 시선 + 보기 태그",
           "facing to the right" in pr and "looking at viewer" not in pr)
@@ -699,9 +702,11 @@ def main() -> int:
     config.clothes_late, config.face_style_late = _keep_clo2, ""
 
     # [2026-09-07] 1인 화면: 헤더는 무조건 solo (side_view는 구도일 뿐 '2명'이 아니다)
-    ps = CG.build_panel_prompt(0, dict(panel_t, no=11), "nsfw", gloss={})
+    ps = CG.build_panel_prompt(0, dict(panel_t, no=11,
+                                       pose="She is alone on the sofa, reading.",
+                                       position="NONE"), "nsfw", gloss={})
     pp = CG.build_panel_prompt(0, dict(p_pov_det, no=12), "nsfw", gloss={})
-    check("비POV: 헤더 solo + 2girl/two girls/상대 언급 없음",
+    check("비POV 1인 화면: 헤더 solo + 2girl/two girls/상대 언급 없음",
           "solo" in ps and "2girl" not in ps and "two girls" not in ps
           and "looking at each other" not in ps, ps[:160])
     check("POV: 헤더 solo(상대는 OBSERVER로만)",
@@ -719,9 +724,17 @@ def main() -> int:
         check(f"컷 프롬프트에 #캐릭터 태그 강제 주입 — {tag_name}",
               "Usagi Tsukino from Sailor Moon" in ptxt
               and ptxt.count("Usagi Tsukino from Sailor Moon") == 1, ptxt[:120])
-    check("상대방 #태그는 POV 컷만(비POV는 [BBB] 오염 방지)",
+    # [2026-09-15] panel_t("She is riding him.")는 두 사람 컷이라 상대방 태그가 맞는 답이다.
+    #   오염을 막아야 할 대상은 **혼자 있는 컷**이다.
+    panel_solo = dict(panel_w, no=9, wide=False, facing="front",
+                      pose="She is alone at the counter, counting coins.", position="NONE")
+    check("상대방 #태그는 상대방이 프레임에 있는 컷만(혼자 있는 컷은 [BBB] 오염 방지)",
           "Tuxedo Mask" in CG.build_panel_prompt(0, p_pov_det, "nsfw", gloss={})
-          and "Tuxedo Mask" not in CG.build_panel_prompt(0, panel_t, "nsfw", gloss={}), "")
+          and "Tuxedo Mask" not in CG.build_panel_prompt(0, panel_solo, "nsfw", gloss={}), "")
+    check("[2026-09-15] 지문에 상대방이 있으면 multi를 메운다(상대방 고정 그룹이 프롬프트에 들어가게)",
+          "Tuxedo Mask" in CG.build_panel_prompt(0, panel_t, "nsfw", gloss={})
+          and "1girl, 1boy" in CG.build_panel_prompt(0, panel_t, "nsfw", gloss={}),
+          CG.build_panel_prompt(0, panel_t, "nsfw", gloss={})[:90])
     llm_body = "1girl, usagi_tsukino from sailor_moon, smile"   # LLM이 대소문자/_ 바꿔 써도 중복 금지
     kept, added = anima_gen.ensure_char_tags(llm_body, include_partner=False)
     check("ensure_char_tags: 이미 있으면(대소문자·_ 무시) 중복을 만들지 않는다",
@@ -733,9 +746,17 @@ def main() -> int:
     # [2026-09-12] 상대방이 최소 태그로 바뀌면 시트의 상대방 정체 태그는 외모·복장을 불러와 고정 그룹과 싸운다
     config.comic_partner_invisible = True
     _pinv = CG.build_panel_prompt(0, p_pov_det, "nsfw", gloss={})
+    _bpinv = " ".join(l for l in anima_gen._build_tag_block(
+        0, "he holds her", "pov", "tall", "He is standing.", "", False,
+        cut_state={"p_clothes": "black suit"}).split("\n") if l.startswith("[BBB"))
     check("상대방 최소 태그 중에는 시트의 #상대방 태그#를 넣지 않는다(주인공 태그는 그대로)",
           "Tuxedo Mask" not in _pinv and "Usagi Tsukino from Sailor Moon" in _pinv
-          and "invisible" in _pinv, _pinv[:160])
+          and ("featureless" in _bpinv or "invisible" in _bpinv),
+          f"Tuxedo={'Tuxedo Mask' in _pinv} usagi={'Usagi Tsukino' in _pinv} "
+          f"grp={'featureless' in _bpinv or 'invisible' in _bpinv} / " + _pinv[:90])
+    check("[2026-09-15] 헤더 한 줄: 인원 태그(1girl, solo)와 카메라 앵글을 한 줄에 붙인다",
+          _pinv.split("\n")[0].startswith("1girl, solo")
+          and "1girl, solo.\n" not in _pinv, _pinv[:120])
     config.comic_partner_invisible = _pi0
     config.char_tags, config.partner_char_tags = [], []
     # [2026-09-07] portrait = 정확한 정면 풀페이스 초상화 (사용자 지시)
@@ -1005,9 +1026,21 @@ def main() -> int:
     rep, rep_notes = CG._repair_panels(raw_p)
     check("facing 정규화(오른쪽→right / 미지정→front)",
           rep[0]["facing"] == "right" and rep[1]["facing"] == "front", str([p["facing"] for p in rep]))
-    check("facing 구도 강제(right:action→side_view / face는 close_up 유지)",
-          rep[0]["camera"] == "side_view" and rep[1]["camera"] == "close_up",
+    check("[2026-09-15] 정면 구도 정책: facing=right이 카메라를 옆모습으로 올리지 않는다"
+          " (face는 close_up 유지)",
+          rep[0]["camera"] == "front_view" and rep[1]["camera"] == "close_up",
           str([p["camera"] for p in rep]))
+    _so_rep, _ = CG._repair_panels([{"no": i, "type": "action", "pose": "She moves.",
+                                     "camera": "side_view", "position": "NONE", "climax": "",
+                                     "caption_ko": "", "dialog": [], "wide": False,
+                                     "facing": "right"} for i in range(1, 11)])
+    check("[2026-09-15] 정면 구도 90% 강제 — 옆모습은 예산(1컷)만 남는다",
+          sum(1 for x in _so_rep if x["camera"] == "side_view") <= 1
+          and sum(1 for x in _so_rep if x.get("_straight_on")) >= 9,
+          str([x["camera"] for x in _so_rep]))
+    check("[2026-09-15] 컷 위치에 깊이를 적어 둔다(노출 램프의 근거)",
+          all("_depth" in x for x in _so_rep) and _so_rep[0]["_depth"] < _so_rep[-1]["_depth"],
+          str([x.get("_depth") for x in _so_rep][:3]))
     # [2026-09-07] 본문 원문은 **태그 생성** LLM에 들어가지 않는다(가이드만). 컷 스크립트는 반대다 —
     # 컷 단계는 본문 원문을 반드시 본다(그래야 회차 전체가 컷으로 내려간다). 아래 ⑦에서 그쪽을 감사한다.
     check("본문 원문 LLM 미주입: anima_gen에 [에피소드 N 본문] 프롬프트 없음",
@@ -1981,8 +2014,11 @@ def main() -> int:
     print("\n== ⑪ 화면 문법 v4: 풍선 자리 / 설명 크기 / 감정 표시 ==")
     sp_me = CPM._balloon_slot_pref({"speaker": "me"})
     sp_ot = CPM._balloon_slot_pref({"speaker": "other"})
-    check("주인공 풍선은 왼쪽 열만 쓴다 (위 → 중간, 꼬리는 왼쪽)",
-          sp_me == (("tl", "ml"), "l"), str(sp_me))
+    check("[2026-09-15] 주인공 풍선은 왼쪽 열 · 꼬리는 반대로(오른쪽 아래로) 굽혀진다",
+          sp_me == (("tl", "ml"), "r"), str(sp_me))
+    check("[2026-09-15] 풍선·속마음 면적 상한은 컷 대비 25%(사용자 지시)",
+          CPM.BALLOON_MAX_AREA_RATIO == 0.25 and CPM.BALLOON_W_RATIO == 0.25
+          and CPM.THOUGHT_W_RATIO == 0.25, f"{CPM.BALLOON_MAX_AREA_RATIO}")
     check("상대방 풍선은 오른쪽 열만 쓴다 (위 → 중간, 꼬리는 오른쪽) — POV도 오른쪽",
           sp_ot == (("tr", "mr"), "r"), str(sp_ot))
     check("[2026-09-13] 자리 4칸 제한 — 어떤 화자도 아래 칸(bl/br)·가운데를 쓰지 않는다",
@@ -2594,14 +2630,23 @@ def main() -> int:
           "[AAA ACCESSORIES] heart choker" in _bk_state and "[AAA MARKS] tear trail" in _bk_state
           and "[PROPS] wads of cash" in _bk_state and "[POSTURE] on the ground" in _bk_state,
           " ".join(l for l in _bk_state.split("\n") if "MARKS" in l or "PROPS" in l)[:110])
+    _rs_bak = config.review_safety
+    config.review_safety = ["nsfw"] * 12          # 이 검사회는 '노출을 허용한 회차'가 전제다
     _bk_start = anima_gen._build_tag_block(0, "she sells", "front_view", "wide", "", "", False,
                                            cut_state=_sp[0]["_state"])
-    check("회차 시작 복장 컷은 후반 의상이 없고 노출 태그는 살아 있다",
+    check("회차 시작 복장 컷은 후반 의상이 없다(시작 복장은 살아 있다)",
           "gold miniskirt" not in _bk_start and "school uniform" in _bk_start,
           " ".join(l for l in _bk_start.split("\n") if "CLOTHES" in l or "EXPOSURE" in l)[:120])
-    check("옷을 갈아입지 않은 컷은 [AAA EXPOSURE]를 잃지 않는다(예전 버그: clothes를 쓴 컷은 전부 빠짐)",
-          "navel" in _bk_start or "cleavage" in _bk_start or "cameltoe" in _bk_start,
+    check("[2026-09-15] 회차의 첫 컷(도입부)은 노출 어구를 쓰지 않는다 — 사용자 지시",
+          not any(w in _bk_start for w in ("navel", "cleavage")),
           " ".join(l for l in _bk_start.split("\n") if "EXPOSURE" in l)[:110])
+    _bk_mid = anima_gen._build_tag_block(0, "she sells", "front_view", "wide", "", "", False,
+                                         cut_state={"clothes": config.clothes, "_first_cut": False},
+                                         cut_depth=0.9)
+    check("옷을 갈아입지 않은 컷은 [AAA EXPOSURE]를 잃지 않는다(예전 버그: clothes를 쓴 컷은 전부 빠짐)",
+          "navel" in _bk_mid or "cleavage" in _bk_mid,
+          " ".join(l for l in _bk_mid.split("\n") if "EXPOSURE" in l)[:110])
+    config.review_safety = _rs_bak
     check("옷을 갈아입은 컷부터는 회차 노출 태그가 빠진다(새 옷에 예전 노출 어구가 옮지 않는다)",
           "gold miniskirt" in _bk_state,
           " ".join(l for l in _bk_state.split("\n") if "CLOTHES" in l)[:100])
@@ -2675,17 +2720,27 @@ def main() -> int:
           and anima_gen._partner_body_token(0) in anima_gen.PARTNER_SIMPLE_BODY_TOKENS
           and "skinny" not in anima_gen._partner_simple_tag(0), anima_gen._partner_body_token(0))
     _grp = anima_gen._partner_simple_tag(0)
-    check("고정 그룹 (bald featureless faceless naked nude <체형> invisible man:3.0)",
-          _grp == f"(bald featureless faceless naked nude fat invisible man:3.0)", _grp)
+    check("[2026-09-15] 고정 그룹은 회색 실루엣 + featureless + 크기 어구 1개(기본)",
+          _grp == "(gray silhouette:5.0) and (featureless:5.0) heavy-set man", _grp)
+    config.comic_partner_silhouette = False
+    check("--partner-invisible로 되돌리면 예전 얼굴 없는 사람 그룹",
+          anima_gen._partner_simple_tag(0) == "(bald featureless faceless naked nude fat invisible man:3.0)",
+          anima_gen._partner_simple_tag(0))
+    config.comic_partner_silhouette = True
     _bbb_inv = _bbb(anima_gen._build_tag_block(0, "she talks", "front_view", "multi", "", "", False,
                                                cut_state=_pn[0]["_state"]))
     check("상세 태그 라인은 사라지고 고정 그룹 + RULE + 포즈만 남는다",
           _grp in _bbb_inv and "[BBB RULE]" in _bbb_inv and "standing behind a counter" in _bbb_inv
           and not any(f"[BBB {_t}]" in _bbb_inv for _t in ("HAIR", "FACE", "MAKEUP", "BODY",
-                                                           "CLOTHES", "EXPOSURE", "EXPRESSION")),
+                                                           "EXPOSURE", "EXPRESSION")),
           _bbb_inv[:220])
+    check("[2026-09-15] 원작이 상대방에게 입힌 옷([CLOTHES2] 카드)은 실루엣에서도 지킨다",
+          "[BBB CLOTHES]" in _bbb_inv, _bbb_inv[:300])
     config.sex2 = "여자"
-    check("여성 상대방은 invisible woman", anima_gen._partner_simple_tag(0).endswith("invisible woman:3.0)"),
+    check("[2026-09-15] 여성 상대방도 회색 실루엣 — 특징은 크기 어구 하나뿐",
+          "featureless" in anima_gen._partner_simple_tag(0)
+          and anima_gen._partner_simple_tag(0).split()[-1] == "woman"
+          and not any(w in anima_gen._partner_simple_tag(0) for w in ("hair", "eyes", "skin")),
           anima_gen._partner_simple_tag(0))
     _obs_in = ("The visible parts of the Kazuki Ren in the frame are:\n"
                "(the man's large tan hand:1.7), (his bare hands pressing her shoulder:1.6), "
@@ -3896,10 +3951,105 @@ def main() -> int:
     check("추적 파일에 로컬 사전 어휘가 없다((A) 공개/로컬 분리 유지 — 로컬 용어 scan %d개)" % len(_leak_terms),
           not _leak_hits, str(_leak_hits))
 
+    # -------------------------------------------------------------------
+    # [2026-09-15] 사용자 지시 6종 — 정면 구도 · 번호 복장 카드 · 노출 램프 · 실루엣 · 풍선
+    # -------------------------------------------------------------------
+    print("\n== ⑯ [2026-09-15] 이번 지시 회귀 검사 ==")
+    import novel_progress as _NP15
+    _cd15 = [_NP15._parse_card_line(l) for l in
+             ("[CLOTHES]: 흰 와이셔츠.\n[CLOTHES2]: 블랙 수트와 은색 안경.\n"
+              "[CLOTHES3]: 빨간 미니 원피스의 여성들.").splitlines()]
+    check("[2026-09-15] [CLOTHES2]/[CLOTHES3]을 카드(복장2·복장3)로 읽는다 — 지문으로 새지 않는다",
+          any(c.get("복장2") for c in _cd15) and any(c.get("복장3") for c in _cd15)
+          and not any(c.get("복장") for c in _cd15 if False), str(_cd15))
+    check("[2026-09-15] 번호가 없으면 기존대로 '복장'(주인공)이다",
+          _cd15[0].get("복장") == "흰 와이셔츠.", str(_cd15[0]))
+    _it15 = [{"tag": "CLOTHES", "text": "교복", "line": "나미의 복장: 교복", "act": "기", "who": "protagonist"},
+             {"tag": "CLOTHES2", "text": "블랙 수트", "line": "렌의 복장: 블랙 수트", "act": "승",
+              "who": "partner"},
+             {"tag": "ACTION", "text": "그가 말한다", "line": "그가 말한다", "act": "승", "who": ""}]
+    _hsv = dict(getattr(config, "ep_header_items", {}) or {})
+    config.ep_header_items = dict(_hsv)
+    config.ep_header_items[99] = _it15
+    _sp15 = CG._special_specs(99)
+    check("[2026-09-15] [CLOTHES2]는 컷을 늘리지 않는다(슬롯 보존) — 이후 컷의 p_costume으로 승계",
+          len(_sp15) == 2 and _sp15[0]["kind"] == "standing"
+          and _sp15[1].get("p_costume") == "블랙 수트" and _sp15[1].get("p_who") == "partner",
+          str([(x.get("kind"), x.get("p_costume")) for x in _sp15]))
+    config.ep_header_items = _hsv
+    check("[2026-09-15] 번호 복장 카드는 자막이 되지 않는다(지문에서 라벨 제거)",
+          CG._strip_card_label("[CLOTHES2]: 슬림 핏의 블랙 수트") == "슬림 핏의 블랙 수트"
+          and CG._strip_card_label("평범한 지문") == "평범한 지문",
+          CG._strip_card_label("[CLOTHES2]: 슬림 핏"))
+
+    _eb = (config.exposure_tag, getattr(config, "exposure_late_tag", None),
+           config.p_exposure_tag, config.review_safety, config.marks_tag)
+    config.exposure_tag = ["school uniform"] * 12
+    config.exposure_late_tag = ["topless"] * 12
+    config.p_exposure_tag = ["cleavage"] * 12
+    config.review_safety = ["nsfw"] * 12
+    config.marks_tag = [""] * 12
+    check("[2026-09-15] 도입 컷은 후반 복장(topless)을 받지 않는다 — 1화 첫머리는 옷을 입고 있다",
+          "topless" not in anima_gen._cut_exposure(0, cut_depth=0.05, first_cut=True)
+          and "school uniform" in anima_gen._cut_exposure(0, cut_depth=0.05, first_cut=True),
+          anima_gen._cut_exposure(0, cut_depth=0.05, first_cut=True))
+    check("[2026-09-15] 램프(회차 절반) 이후 컷만 후반 복장을 받는다",
+          "topless" in anima_gen._cut_exposure(0, cut_depth=0.9),
+          anima_gen._cut_exposure(0, cut_depth=0.9))
+    check("[2026-09-15] 클라이맥스 컷은 위치와 무관하게 후반 복장",
+          "topless" in anima_gen._cut_exposure(0, cut_depth=0.1, climax=True))
+    config.review_safety = ["safe"] * 12
+    check("[2026-09-15] 수위 판별 근거 = review_safety — safe 회차는 노출 태그를 쓰지 않는다",
+          "cleavage" not in anima_gen._cut_exposure(0, cut_depth=0.9)
+          and "topless" not in anima_gen._cut_exposure(0, cut_depth=0.9),
+          anima_gen._cut_exposure(0, cut_depth=0.9))
+    (config.exposure_tag, config.exposure_late_tag, config.p_exposure_tag,
+     config.review_safety, config.marks_tag) = _eb
+
+    _pb = getattr(config, "comic_partner_silhouette", None)
+    config.comic_partner_silhouette = True
+    _sil = anima_gen._partner_simple_tag(0)
+    check("[2026-09-15] 실루엣 모드: 회색 실루엣 + featureless + 크기 어구 하나",
+          "silhouette" in _sil and "featureless" in _sil
+          and not any(w in _sil for w in ("hair", "eyes", "skin", "shirt")), _sil)
+    config.comic_partner_silhouette = _pb
+
+    _hb = anima_gen._build_simple_prompt_header("female", "nsfw", False, "NONE", "She stands.")
+    _hs = CG.strip_duplicate_counters(_hb).replace("[ANGLE]", "from_side\n")
+    check("[2026-09-15] 헤더 첫 줄에 '1girl, solo'와 앵글이 같이 있다(중복 카운터는 앵글 뒤에서 제거)",
+          _hs.split("\n")[0].startswith("1girl, solo") and _hs.count("1girl") == 1, _hs[:120])
+
+    _p_two = {"no": 25, "type": "action", "facing": "right", "camera": "front_view",
+              "position": "right", "lines": [],
+              "pose": "She leans forward, pressing her lips deeply against him.",
+              "p_clothes": "black tailored suit"}
+    _p_one = {"no": 26, "type": "action", "facing": "front", "camera": "front_view",
+              "position": "NONE", "lines": [],
+              "pose": "She is alone in the elevator, checking her reflection."}
+    # 컷 1은 ★서두요약(배경만) 슬롯이 된다 — 두 사람 컷을 두 번째에 둔다.
+    _fixd, _nt = CG._repair_panels([{"no": 1, "type": "action", "camera": "wide", "facing": "front",
+                                     "position": "NONE", "pose": "The office at night.", "lines": []},
+                                    dict(_p_one, no=2), dict(_p_two, no=3)])
+    CG.fold_cut_state(_fixd, 0)
+    _pr_one = CG.build_panel_prompt(0, _fixd[1], "nsfw", gloss={})
+    _pr_two = CG.build_panel_prompt(0, _fixd[2], "nsfw", gloss={})
+    check("[2026-09-15] 지문에 상대방이 있으면 multi를 메운다(상대방 고정 그룹이 프롬프트에 들어가게)",
+          bool(_fixd[2].get("multi")) and "gray silhouette" in _pr_two
+          and "1girl, 1boy" in _pr_two and not _fixd[1].get("multi")
+          and "gray silhouette" not in _pr_one and "1girl, solo" in _pr_one,
+          _pr_two[:110] + " || " + _pr_one[:70])
+    check("[2026-09-15] 정면으로 되돌린 컷은 시선을 독자로 돌린다(원작이 facing을 되찾는다)",
+          "looking at viewer" in _pr_one, _pr_one[:120])
+
+    check("[2026-09-15] 풍선 자리: 왼쪽 열(주인공)은 꼬리를 반대로(오른쪽 아래)",
+          CPM._balloon_slot_pref({"speaker": "me"}) == (("tl", "ml"), "r"),
+          str(CPM._balloon_slot_pref({"speaker": "me"})))
+
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:
         print(" -", f)
     return 1 if FAIL else 0
+
 
 
 if __name__ == "__main__":

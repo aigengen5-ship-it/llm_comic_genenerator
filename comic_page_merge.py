@@ -141,8 +141,12 @@ NARR_BALLOON_H_RATIO = 0.55              #   대사가 있으면 설명 박스�
 # [2026-09-10] 사용자 지시: 풍선 폭을 **절반으로**(20%→10%) — 세로가 더 길어지고 얼굴을 덜 가린다.
 #   (최소 폭 하한도 96→48px로 함께 내려, 하한이 비율을 삼키지 않게 한다)
 # [2026-09-11] 사용자 지시: 10%는 세로를 지나치게 늘린다 → **15%로 완화**(풍선을 3개로 늘린 같은 조정)
-BALLOON_W_RATIO = 0.30                   # 말풍선(직사각형) 폭 = 컷 폭의 30%
-THOUGHT_W_RATIO = 0.30                   # 속마음(타원) 폭 = 컷 폭의 30%
+BALLOON_W_RATIO = 0.25                   # 말풍선(직사각형) 폭 = 컷 폭의 25% [2026-09-15] 30→25
+THOUGHT_W_RATIO = 0.25                   # 속마음(타원) 폭 = 컷 폭의 25% [2026-09-15] 30→25
+# [2026-09-15] 사용자 지시: "대화창/속마음 창이 너무 크다 — 컷(!) 대비 25%".
+#   폭만 줄여도 세로가 늘면 면적이 다시 커진다(실측: 몸통 보스트 2.2 × 최소 높이 42% → 컷의 절반).
+#   그래서 **몸통 면적 ≤ 컷 면적 × 이 값**을 하나의 권위로 둔다(글자 수보다 이 상한이 먼저 이긴다).
+BALLOON_MAX_AREA_RATIO = 0.25
 #   [2026-09-14] 사용자 지시로 가로 확대(15%→30%) — portrait 컷에서 글자가 너무 좁게 접혔다.
 
 # [2026-09-10] 말풍선·속마음 **이미지 은행** — 형태를 미리 그린 RGBA 자산으로 붙인다.
@@ -155,8 +159,8 @@ BALLOON_ART_W, BALLOON_ART_H = 640, 560       # 자리표시 자산 제작 크�
 BALLOON_ART_MARGIN = 22                        # 모양이 캔버스 밖으로 나가지게 두는 최소 여백
 BALLOON_TAIL_ROOM = 64                         # [2026-09-14] 꼬리가 박스 아래로 **튀어나올** 공간(몸통은 줄이지 않는다)
 BALLOON_ART_SLICE = 18                         # 9슬라이스 절선 = 굽혀진 테투리 밴드 폭
-BALLOON_SIZE_BOOST = 2.2                       # 몸통을 컷 폭 기준 이 배수로 키워 만든다(글자보다 작아짐 방지)
-BALLOON_MIN_H_RATIO = 0.42                     # 몸통 최소 높이 = 컷 높이 × 이 값(보스트 반영)
+BALLOON_SIZE_BOOST = 1.4                       # 몸통을 컷 폭 기준 이 배수로 키워 만든다(글자보다 작아짐 방지)
+BALLOON_MIN_H_RATIO = 0.26                     # 몸통 최소 높이 = 컷 높이 × 이 값(보스트 반영)
 BALLOON_ART_FIT = 0.88                         # 자산 몸통은 사각에 가까워 타원보다 넓게 쓴다
 BALLOON_ART_SAFE = (34, 30, 34, 30)            # 글자 안전 여백 (l,t,r,b)
 BALLOON_ART_PLATE_ALPHA = 255                  # [2026-09-14] 플레이트(내부)는 **pure white** (예전 210 반투명)
@@ -634,18 +638,22 @@ def _balloon_slot_pref(balloon, facing: str = None):
       · 대화·생각은 **오른쪽 위·오른쪽 중간·왼쪽 위·왼쪽 중간** 4칸에만 놓는다(아래 칸은 쓰지 않는다).
       · 주인공(me)   = 왼쪽 열(위 → 중간)      · 상대방(other) = 오른쪽 열(위 → 중간)
       · 1개이면 위부터. POV 컷에서도 상대방은 오른쪽(화자 규칙은 그림 위치와 무관하게 고정).
-      · 꼬리는 자리에 **고정**으로 굽혀진다: 왼쪽 열 → `_l`(왼쪽 아래), 오른쪽 열 → `_r`.
+      · 꼬리는 자리에 **고정**으로 굽혀진다. [2026-09-15] 사용자 지시로 왼쪽 열은 **반대로**
+        돌렸다 — 풍선이 컷 왼쪽에 있으면 인물이 그 오른쪽/아래에 서 있으므로 꼬리가
+        오른쪽 아래(`_r`)를 향해야 화자를 가리킨다(예전 `_l`은 화자 반대편을 가리켰다).
+        오른쪽 열은 실측으로 방향이 맞으므로 그대로 `_r`을 쓴다.
       · 화자 모름(레거시) : 예전 시선(facing) 규칙을 그대로 따른다.
     """
-    sp = str((balloon or {}).get("speaker") or "").strip().lower()
+    sp = str((balloon or {}).get("speaker") or (balloon or {}).get("who") or "").strip().lower()
+    sp = {"me": "me", "other": "other", "protagonist": "me", "partner": "other"}.get(sp, sp)
     if sp == "me":
-        return ("tl", "ml"), "l"
+        return ("tl", "ml"), "r"        # [2026-09-15] 왼쪽 열은 꼬리를 반대로(오른쪽 아래로)
     if sp == "other":
         return ("tr", "mr"), "r"
     side = str((balloon or {}).get("side") or facing or "").strip().lower()
     if side in ("", "left"):
         return ("tr", "mr"), "r"
-    return ("tl", "ml"), "l"
+    return ("tl", "ml"), "r"            # [2026-09-15] 왼쪽 열은 꼬리를 반대로
 
 
 def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: int, ih: int,
@@ -1654,9 +1662,16 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             bh = int(th + 2 * pad_v)
             if art_id:
                 bh = max(bh, int(ih * BALLOON_MIN_H_RATIO))
+        # [2026-09-15] 컷 대비 25% 상한 — 박스가 넘치면 글자 크기를 한 단계 더 줄인다.
+        _over = bw * bh > BALLOON_MAX_AREA_RATIO * iw * ih
+        if _over:
+            _sc = (BALLOON_MAX_AREA_RATIO * iw * ih / float(max(1, bw * bh))) ** 0.5
+            bw, bh = int(bw * _sc), int(bh * _sc)
         if bw <= iw - 16 and bh <= ih - 16:
             lines, font, fs, line_h, box_w, box_h = ls, fnt, fs_try, lh, bw, bh
-            break
+            if not _over or fs_try <= FONT_FLOOR + 2:
+                break
+            continue
         lines, font, fs, line_h = ls, fnt, fs_try, lh
         box_w, box_h = bw, bh
         if fs_try <= FONT_FLOOR + 2:               # 끝까지 좁아도 안 들어가면 최소 글자로 강행

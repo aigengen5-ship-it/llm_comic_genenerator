@@ -661,7 +661,13 @@ def scene_card_block(cards, for_start: bool = True) -> str:
     for c in (cards or []):
         if not isinstance(c, dict) or (c.get("act") and for_start):
             continue
-        ln = " / ".join(f"{k}: {c[k]}" for k in ("장소", "상황", "시간", "복장") if c.get(k))
+        ks = [k for k in ("장소", "상황", "시간", "복장") if c.get(k)]
+        # 복장 번호까지 보냅니다 — [CLOTHES2]는 상대방, [CLOTHES3]은 그 외 인물의 옷차림입니다.
+        ks += sorted([k for k in c if re.fullmatch(r"복장[2-9]", str(k)) and c.get(k)],
+                     key=lambda s: int(str(s)[2:]))
+        if c.get("비고"):
+            ks.append("비고")
+        ln = " / ".join(f"{k}: {c[k]}" for k in ks if c.get(k))
         if c.get("복장 주인") and c.get("복장"):
             ln = ln.replace(f"복장: {c['복장']}", f"{c['복장 주인']}의 복장: {c['복장']}")
         if ln and ln not in got:
@@ -1521,7 +1527,7 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     #  config.face_tag[ep] 등을 직접 인덱싱한다 — EP2 첫 실행에서 IndexError로 터진 원인이 여기.)
     _need = idx + 1
     _ep_arrays = ("episode_content", "face_tag", "makeup_tag", "marks_tag", "body_tag",
-                  "bodystyle_tag", "exposure_tag", "p_exposure_tag", "pubic_hair_tag",
+                  "bodystyle_tag", "exposure_tag", "exposure_late_tag", "p_exposure_tag", "pubic_hair_tag",
                   "background_tag", "partner_exposure_tag", "partner_expression_tag",
                   "expression_arr", "review_safety")
     for _attr in _ep_arrays:

@@ -842,6 +842,17 @@ def main() -> int:
     ap.add_argument("--partner-full", action="store_false", dest="partner_full", default=True,
                     help="상대방을 최소 태그 (bald featureless faceless naked nude <체형> invisible man:3.0)로 "
                          "그리지 않고 시트의 상세 태그(머리·눈·피부·복장)로 그립니다")
+    # [2026-09-15] 두 사람이 한 화면일 때 상대방을 검은 실루엣으로 (주인공에 시선을 모은다)
+    ap.add_argument("--partner-invisible", action="store_true", dest="partner_invisible_old",
+                    help="상대방을 회색 실루엣이 아니라 예전 얼굴 없는 사람 그룹 "
+                         "(bald featureless faceless naked nude <체형> invisible man:3.0)로 그립니다")
+    # [2026-09-15] 정면 구도 · 노출 램프 — 만화는 독자를 똑바로 본다 / 도입부는 옷을 입고 있다
+    ap.add_argument("--straight-on", type=float, default=None, dest="straight_on", metavar="0.0~1.0",
+                    help="컷의 몇 비율 이상을 '독자를 똑바로 바라보는' 구도로 강제합니다(기본 0.9). "
+                         "1.0이면 옆모습/뒷모습을 전부 front_view로 되돌립니다")
+    ap.add_argument("--exposure-ramp", type=float, default=None, dest="exposure_ramp", metavar="0.0~1.0",
+                    help="회차를 이만큼 지난 컷부터 후반 노출(exposure_late)을 붙입니다(기본 0.5). "
+                         "도입부는 회차가 시작하는 복장만 입습니다 --safety safe면 노출 태그를 쓰지 않습니다")
     # [2026-09-12] 페이지 합성 게이트 — 기본은 '컷이 전부 렌더된 회차만' 합성한다
     ap.add_argument("--detailer", action="store_true", dest="detailer",
                     help="워크플로우가 매 컷 붙이던 화풍 디테일러 LoRA(122의 3·4번 슬롯)를 켭니다 "
@@ -977,6 +988,14 @@ def main() -> int:
         config.comic_emo_marks = False
     if not args.partner_full:                   # [2026-09-12] 상대방 상세 태그로 되돌리기
         config.comic_partner_invisible = False
+    # [2026-09-15] 상대방 실루엣 · 정면 구도 · 노출 램프
+    if args.partner_invisible_old:
+        config.comic_partner_silhouette = False
+        config.comic_partner_silhouette_off = True
+    if args.straight_on is not None:
+        config.comic_straight_on = min(1.0, max(0.0, float(args.straight_on)))
+    if args.exposure_ramp is not None:
+        config.comic_exposure_ramp = min(1.0, max(0.0, float(args.exposure_ramp)))
     if getattr(args, "detailer", False):               # [2026-09-12] 화풍 디테일러 되살리기
         config.comic_detailer_on = True
     if getattr(args, "merge_partial", False):   # [2026-09-12] 빠진 컷이 있어도 합성하기
@@ -1031,7 +1050,11 @@ def main() -> int:
     p(f"  컷 배분 변동   : {_var if _var else '0 (같은 입력 → 같은 배분)'}"
       + (f" — 같은 배분을 고정이면 --variation {_var}" if _var else " — 매번 다르게 원하면 --vary"))
     p(f"  수다장이 모드  : {'ON (모든 컷 하단에 설명)' if config.comic_chatty else 'off (지문이 있는 컷만 설명)'}")
-    p(f"  상대방 외모    : {'최소 태그 (invisible man/woman 고정 그룹) — 외모 태그 오염 차단' if getattr(config, 'comic_partner_invisible', True) else '상세 태그 (--partner-full)'}")
+    p(f"  상대방 외모    : "
+      + ("회색 실루엣 (gray silhouette + featureless + 크기 어구 1개) — 외모 태그 오염 차단"
+         if getattr(config, "comic_partner_silhouette", False) else
+         ("최소 태그 (invisible man/woman 고정 그룹) — 외모 태그 오염 차단"
+          if getattr(config, 'comic_partner_invisible', True) else "상세 태그 (--partner-full)")))
     p(f"  페이지 합성    : {'컷이 전부 렌더된 회차만 합성합니다 (모자라면 합성 보류)' if not getattr(config, 'comic_merge_partial', False) else '--merge-partial: 빠진 컷이 있어도 렌더된 것만으로 합성합니다'}")
     p(f"  디테일러 LoRA  : {'ON (--detailer)' if getattr(config, 'comic_detailer_on', False) else 'OFF — 워크플로우 3·4번 슬롯을 끕니다 (--detailer로 켜기)'}")
     # [2026-09-09] local_settings.yaml(로컬 전용 · gitignore)이 심어둔 기본값을 먼저 알린다.

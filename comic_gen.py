@@ -78,9 +78,10 @@ def _facing_tags_right() -> str:
     return f"{cap} is facing to the right, {low} is looking to the right, "
 
 
-def _facing_tags_front() -> str:
+def _facing_tags_front(two_person: bool = False) -> str:
     _, low, _ = _protagonist_pronouns()
-    return f"{low} is looking at viewer, "
+    # 두 사람이 한 화면이면 독자가 아니라 상대방을 본다 — 카메라만 정면으로 둔다.
+    return (f"{low} is facing viewer, " if two_person else f"{low} is looking at viewer, ")
 
 # ------------------------------------------------------------------ cut.yaml 페이지 레이아웃
 # [2026-09-07 A안] data/cut.yaml = 페이지 템플릿 DB(situation: 기/승/전/결 태그 + tier별 행 사양).
@@ -482,6 +483,24 @@ SPECIAL_SHOT_RULE = {
                  "배경은 흐릿하게"),
 }
 SPECIAL_STATE_LABEL_RE = re.compile(r"(?:^|[\s·,])(?:장소|상황|시간|비고)\s*[:：]\s*")
+# [2026-09-15] 지문 자리마다 장면 카드 태그가 그대로 적혀 나오는 것(실측 EP1 컷 13:
+#   "[CLOTHES2]: 슬림 핏의 블랙 수트…")를 마지막으로 닦는다 — 카드는 그림으로만 보여주는 것입니다.
+SPECIAL_CARD_LABEL_RE = re.compile(
+    r"^\s*[\[\(（]?\s*(?:CLOTHES|LOCATION|SITUATION|TIME|NOTE|복장|장소|상황|시간|비고)\s*[2-9]?"
+    r"\s*[\]\)）]?\s*[:：]\s*", re.I)
+
+
+def _strip_card_label(text) -> str:
+    """지문 앞에서 장면 카드 라벨('[CLOTHES2]: ' 등)만 벗긴다 — 내용은 살린다"""
+    t = str(text or "")
+    new = SPECIAL_CARD_LABEL_RE.sub("", t, count=1)
+    return new.strip() if new.strip() != t.strip() else t
+
+
+def _costume_ordinal(tag) -> int:
+    """헤더 태그 'CLOTHES'→1 / 'CLOTHES2'→2 … — 몇 번째 인물의 복장인지 (1=주인공)"""
+    t = re.sub(r"^CLOTHES", "", str(tag or "").strip().upper())
+    return int(t) if t.isdigit() else 1
 
 
 def _state_one_line(written, src) -> str:
@@ -508,6 +527,7 @@ def _special_specs(ep_num_1based) -> list:
     """config.ep_header_items → 컷 사양 목록 (원작 헤더를 1:1로 컷에 배분한다)
 
       LOCATION·SITUATION·TIME(한 카드) = 그림 한 장 / CLOTHES = 전신 스탠딩 한 장 + 다음 CLOTHES까지 승계
+      CLOTHES2·CLOTHES3 = **그 옆 인물의 갈아입은 옷** — 컷을 늘리지 않고 이후 컷의 p_clothes로 승계한다
       ACTION = 큰 장면 하나 / INNER·TALK = 인물 클로즈업(portrait)을 **무조건** 하나씩
     """
     if not bool(getattr(config, "comic_header_map", True)):
@@ -516,7 +536,7 @@ def _special_specs(ep_num_1based) -> list:
     items = m.get(ep_num_1based) or m.get(str(ep_num_1based)) or []
     if not items:
         return []
-    out, costume, i = [], "", 0
+    out, costume, pcostume, pwho, i = [], "", "", "", 0
     while i < len(items):
         it = items[i] if isinstance(items[i], dict) else {}
         tag = str(it.get("tag") or "").strip().upper()
@@ -529,13 +549,23 @@ def _special_specs(ep_num_1based) -> list:
             txt = "\n".join(f"{k}: {g['text']}" for g, k in
                             zip(grp, ("장소", "상황", "시간", "비고")) if str(g.get("text") or "").strip())
             out.append({"kind": "establish", "text": txt, "line": txt, "act": grp[0].get("act", ""),
-                        "costume": costume})
+                        "costume": costume, "p_costume": pcostume, "p_who": pwho})
             continue
-        if tag == "CLOTHES":
-            costume = str(it.get("text") or "").strip() or costume     # 다음 CLOTHES가 나올 때까지가 정답
-            out.append({"kind": "standing", "text": costume, "line": str(it.get("line") or ""),
-                        "act": it.get("act", ""), "costume": costume, "new_costume": True})
+        if tag.startswith("CLOTHES"):
+            n = _costume_ordinal(tag)
+            txt = str(it.get("text") or "").strip()
             i += 1
+            if n < 2:
+                costume = txt or costume                         # 다음 CLOTHES가 나올 때까지가 정답
+                out.append({"kind": "standing", "text": costume, "line": str(it.get("line") or ""),
+                            "act": it.get("act", ""), "costume": costume, "new_costume": True,
+                            "p_costume": pcostume, "p_who": pwho})
+                continue
+            # [2026-09-15] 번호가 붙은 복장 카드 = 그 인물이 **갈아입었다**는 지정입니다.
+            #   컷을 하나 더 만들면 레이아웃 슬롯이 밀리고, 자막으로 옮기면 원작에 없는 글자가 됩니다.
+            #   그래서 컷 없이 '이후 컷의 상대방(또는 군중) 복장'으로만 승계시키고 매핑 안내로 알립니다.
+            pcostume = txt or pcostume
+            pwho = str(it.get("who") or ("partner" if n == 2 else "other"))
             continue
         if tag in ("INNER", "TALK"):
             line = str(it.get("line") or "")
@@ -544,12 +574,14 @@ def _special_specs(ep_num_1based) -> list:
                 who = CI.speaker_prefix(line)
             out.append({"kind": "portrait", "device": "속마음" if tag == "INNER" else "대사",
                         "text": str(it.get("text") or "").strip(), "line": line, "who": who,
-                        "act": it.get("act", ""), "costume": costume})
+                        "act": it.get("act", ""), "costume": costume, "p_costume": pcostume,
+                        "p_who": pwho})
             i += 1
             continue
-        out.append({"kind": "wide", "text": str(it.get("text") or "").strip(),
+        out.append({"kind": "wide", "text": _strip_card_label(str(it.get("text") or "").strip()),
                     "line": str(it.get("line") or ""),
-                    "act": it.get("act", ""), "costume": costume})
+                    "act": it.get("act", ""), "costume": costume, "p_costume": pcostume,
+                    "p_who": pwho})
         i += 1
     return [s for s in out if str(s.get("text") or "").strip() or s["kind"] == "portrait"]
 
@@ -596,6 +628,8 @@ def _special_hint_block(plan, s0: int) -> str:
     """이 호출의 컷마다 '어떤 헤더에서 온 어떤 종류의 컷인지' 원문과 함께 알려준다"""
     rows = []
     worn = None                                    # 직전에 알려 준 복장 — 같은 복장을 컷마다 반복하지 않는다
+    pworn = None                                   # 상대방(또는 군중) 복장도 같은 규칙
+    pname2 = str(getattr(config, "name2", "") or "상대방")
     for j, e in enumerate(plan):
         sp, role = e.get("spec") or {}, str(e.get("role") or "")
         no = s0 + j + 1
@@ -620,6 +654,17 @@ def _special_hint_block(plan, s0: int) -> str:
             rows.append(f"      컷 {no}부터의 복장(원작 지정 · 다음 [CLOTHES]까지 계속, clothes 태그로 옮긴다):"
                         f" \"{cos}\"")
             worn = cos
+        # [2026-09-15] 번호가 붙은 복장 카드([CLOTHES2]/[CLOTHES3]) — 그 옆 인물이 갈아입은 옷입니다.
+        #   자막이 아니라 state의 p_clothes(또는 군중 묘사)로만 옮겨야 합니다.
+        pcos = str(sp.get("p_costume") or "")
+        if pcos and pcos != pworn:
+            who2 = str(sp.get("p_who") or "partner")
+            _tgt = (f"state의 p_clothes 항목에 ({pname2})"
+                    if who2 == "partner" else
+                    "그 컷에 함께 나오는 등장인물(군중) 묘사 — multi:true와 pose/background에")
+            rows.append(f"      컷 {no}부터 {_tgt}로 옮긴다(원작이 그 인물의 복장을 지정했습니다). "
+                        f"**caption_ko에 이 복장 문장을 자막으로 쓰지 않는다**: \"{pcos}\"")
+            pworn = pcos
     return ("\n[이 회차의 컷 매핑 — 원작 헤더를 프로그램이 1:1로 배분했습니다. 순서·종류·원문을 지키세요]\n"
             + "\n".join(rows) + "\n") if rows else ""
 
@@ -987,6 +1032,10 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
          place·time·background·clothes를 그 기준으로 영문 태그로 채웁니다(한글 지문을 그대로 쓰지 않는다).
          예: `시간: 심야 (밤)` → `time=night`, `장소: 심야 약국 내부 …` → `place=pharmacy interior,
          shelves of bottles` / `복장: 다크 네이비 학생 바지 …` → `clothes=navy school uniform, white shirt`.
+         ※ 복장 줄에 **이름이 붙으면 그 인물의 옷**입니다 — `료의 복장: 블랙 수트 …`는 주인공 clothes가
+           아니라 `p_clothes=black suit`로 넣습니다(주인공 clothes는 직전 컷을 이어갑니다). 원작에
+           `[CLOTHES2]`·`[CLOTHES3]`처럼 번호가 붙은 카드도 같은 뜻입니다(2=상대방, 3=그 외 인물).
+           어느 쪽이든 **caption_ko에 복장 설명을 자막으로 쓰지 않는다** — 옷은 그림으로만 보입니다.
        **근거는 [에피소드 본문]의 이 컷에 해당하는 조각뿐입니다.** 가이드(기승전결 4줄)는 흐름
        이해용입니다 — 가이드에 나온 결말의 복장·표정을 앞 컷에 미리 입히지 마세요(컷 1은 회차가
        **시작하는** 복장·표정을 입는다).
@@ -994,6 +1043,10 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
          `p_hair` · `p_posture` 를 같이 적습니다(예: `p_face=angry; p_clothes=white shirt`). 상대가 안 변하면
          비우면 직전 컷이 유지됩니다. 근거는 동일하게 이 컷 본문 조각뿐입니다.
 4. camera 어휘는 정확히 다음 5개 중 하나: front_view | side_view | back_view | close_up | pov
+   4-b. **만화는 정면입니다(사용자 지시)** — 컷의 90% 이상은 인물이 독자를 똑바로 바라보는 구도여야
+       합니다. 그래서 camera는 기본이 `front_view`(행동 컷) 또는 `close_up`(초상 컷)이고, `side_view`·
+       `back_view`는 정말 필요한 컷에만 쓴다(한 회차에 1~2컷 이내). `pov`는 상대방 시점 컷에만. 위반한
+       응답은 프로그램이 front_view로 되돌립니다.
 5. position은 다음 7개 중 하나 (상대방 상태): He is standing. | He is sitting. | He is walking. |
    He is lying down. | He is lying on top of her. | He is behind her. | NONE
 {rule6_climax}
@@ -1021,13 +1074,15 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
 {rule10}
 11. 얼굴 클로즈업 컷(face)은 표정을 언어로 분명히 적는다 (예: "Her eyes are wet, lips parted.").
 12. facing(모든 컷 필수)은 딱 두 값 중 하나 — 컷의 구도 규칙이다:
-    "front" = 인물 몸/얼굴이 정면(독자/카메라를 정면으로)
-    "right" = 인물이 화면 왼쪽에 서서 왼쪽→오른쪽으로 향함/봄
+    "front" = 인물 몸/얼굴이 정면(독자/카메라를 정면으로) — **기본값, 컷의 90% 이상**
+    "right" = 인물이 화면 왼쪽에 서서 왼쪽→오른쪽으로 향함/봄 — 넓은 전개 컷에만 예외적으로
     ※ 풍선 자리·꼬리는 기본적으로 **화자(lines[].who)**가 정하고, facing은 화자를 모를 때만 보조로 쓰인다
-    wide=true 컷은 무조건 "right". **face 컷은 무조건 "front"** — 얼굴 전체가 보이는 정면 초상화만
+    ※ facing은 **글칸 쪽**을 고르는 값입니다 — "right"라고 camera까지 옆으로 틀지 말고 front_view를
+    그대로 두면 됩니다(인물은 정면, 글칸만 오른쪽). wide=true 컷만 "right".
+    **face 컷은 무조건 "front"** — 얼굴 전체가 보이는 정면 초상화만
     허용(측면/후면/POV/고개꺾기 금지. 위반 시 보정 단계에서 front+close_up로 강제 정규화).
     pose 문장에도 이를 반영해 쓴다 (예: front → "She faces the viewer, ...", right → "She is on the
-    left of the frame, looking to the right, ...").
+    left of the frame, her body faces the viewer, ...").
 13. **1인 화면 원칙**: 컷마다 화면 인물은 기본 주인공 혼자(1girl 또는 1boy). 상대방은 다음으로만 등장:
     (a) camera=pov 컷 — 상대방의 손/팔/어깨만 화면 가장자리에 보임
     (b) 프레임 밖 — 목소리(대사)만
@@ -1370,6 +1425,7 @@ def _head_majority(panels, key: str) -> str:
 def fold_cut_state(panels, ep_idx: int = 0) -> dict:
     """컷 순서대로 상태 델타를 누적해 각 컷에 panel['_state']로 붙인다(미언급 = 유지)."""
     st = base_cut_state(ep_idx)
+    st["_first_cut"] = True        # 첫 컷만 True (아래 루프에서 끄인다) — 도입부는 옷을 입고 있다
     # 도입 컷이 place/time/background를 비우면(실측: ★도입 컷은 빈 값) 앞으로 **처음 명시된 값**을
     #   소급한다. 회차 배경 태그는 회차 전체 장소를 담고 있어 그대로 두면 다른 장소가 섞인다.
     for _k in ("place", "time", "background"):
@@ -1405,6 +1461,8 @@ def fold_cut_state(panels, ep_idx: int = 0) -> dict:
         if _e:
             st["face"] = _e
         p["_state"] = dict(st)
+        # [2026-09-15] 회차의 첫 컷 표식 — 노출 램프가 도입부를 '옷을 입고 시작하는' 컷으로 본다.
+        st["_first_cut"] = False
     return st
 
 
@@ -1691,6 +1749,67 @@ def _apply_slot_meta(panels: list, slots: list, notes: list):
             p["camera"] = "close_up" if p["camera"] not in ("close_up", "pov") else p["camera"]
 
 
+# [2026-09-15] 컷 지문에 상대방이 분명히 있는데 LLM이 multi를 안 붙이면, 상대방 태그가 아예 없이
+#   ("his" 대명사만 남아) 그림이 무너진다(실측 EP1 컷 25). 대명사·명사 하나로 판정한다.
+_PARTNER_PRESENT_RE = re.compile(
+    r"\b(he|him|his|himself|the man|the boy|a man|a boy|his hands?|his arms?|his back|"
+    r"his shoulders?|his chest|his face)\b", re.I)
+
+
+def _partner_in_frame(p) -> bool:
+    """이 컷에 상대방이 화면에 있는지 — LLM의 multi 표식이 없을 때의 결정론 안전망."""
+    if p.get("multi") or p.get("camera") == "pov":
+        return True
+    st = p.get("_state") if isinstance(p.get("_state"), dict) else {}
+    if any(str(st.get(k) or "") for k in ("p_clothes", "p_posture", "p_props", "p_face")):
+        return True
+    txt = " ".join(str(p.get(k) or "") for k in ("pose", "p_desc", "position"))
+    return bool(_PARTNER_PRESENT_RE.search(txt))
+
+
+def _enforce_straight_on(panels, ep_num_1based: int = 1, notes: list = None) -> int:
+    """[2026-09-15] **만화는 정면** — 컷의 90% 이상을 독자를 똑바로 바라보는 구도로 되돌린다.
+
+    실측(EP1)이 side_view 17컷 / front_view 2컷이었습니다. 원인은 facing=right을
+    camera=side_view로 올리던 규칙(오래된 규칙) — facing은 글칸 쪽을 고르는 값입니다.
+    여기서는 예산 안에서만 옆모습/뒷모습을 남기고 나머지를 front_view로 되돌립니다.
+      · pov 컷은 정면으로 봅니다(상대방이 독자를 마주봄) → 계산에 포함, 건드리지 않는다
+      · 배경만 그리는 확립 컷(bg_only)도 대상이 아니다
+      · 남기는 옆모습은 (회차|컷번호) 해시로 고른다 — 같은 원고는 같은 그림을 그리므로
+    환원: 바꾼 컷 수. 바뀐 컷은 facing=front로 고하고 pose에서 각도 어구(looking to the right,
+    tilted head …)를 지운 뒤, `_straight_on` 표를 남긴다(빌더가 'looking at viewer'를
+    고르는 근거).
+    """
+    notes = notes if notes is not None else []
+    try:
+        ratio = float(getattr(config, "comic_straight_on", 0.9))
+    except (TypeError, ValueError):
+        ratio = 0.9
+    ratio = min(1.0, max(0.0, ratio))
+    cand = [p for p in panels or [] if isinstance(p, dict) and not p.get("bg_only")]
+    off = [p for p in cand if str(p.get("camera")) in ("side_view", "back_view")]
+    keep = int(len(cand) * (1.0 - ratio))            # 옆모습을 허용할 컷 수
+    if len(off) > keep:
+        import zlib as _z
+        ranked = sorted(off, key=lambda p: _z.crc32(f"{ep_num_1based}|{p.get('no')}".encode("utf-8")))
+        for p in ranked[keep:]:
+            _was = p.get("camera")
+            p["camera"] = "front_view"
+            p["facing"] = "front"
+            p["pose"] = _FACE_ANGLE_STRIP_RE.sub("", str(p.get("pose") or "")).strip().rstrip(",")
+            notes.append(f"컷 {p['no']}: 정면 구도 정책 → camera {_was} → front_view")
+    for p in cand:
+        if str(p.get("camera")) in ("front_view", "close_up", "pov"):
+            p["_straight_on"] = True
+    # [2026-09-15] 컷 위치(0~1)를 적어 둔다 — 노출 램프(anima_gen._cut_exposure)가 "이 컷이 회차
+    #   어디쯤인지"를 알아야 도입부를 '입고 있는 옷'으로 둡니다. 프롬프트 빌더는 컷 전체를 모릅니다.
+    tot = max(1, len(panels or []))
+    for i, p in enumerate(panels or []):
+        if isinstance(p, dict):
+            p["_depth"] = round((i + 1) / float(tot), 4)
+    return len(off)
+
+
 def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: int = MAX_PANELS,
                    ep_num_1based: int = 1, pages: int = 0, plans_out: list = None):
     """LLM 컷 목록 → 검증/수정된 컷 리스트. (panels, notes) 반환
@@ -1712,6 +1831,8 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         if "#" in pose:                                  # LLM이 슬롯을 붙여 쓰면 버리고 ours로 재조립
             pose = pose.split("#", 1)[0].strip()
         cap = str(it.get("caption_ko") or it.get("caption") or "").strip().replace("\n", " ")
+        # [2026-09-15] "[CLOTHES2]: 슬림 핏의 블랙 수트…" 같은 카드 라벨이 지문으로 안 나간다
+        cap = _strip_card_label(cap)
         # [2026-09-13] ★프롤로그·에필로그는 여러 줄을 쓴다(사용자 지시). 태그·프롬프트 쪽은 기존대로
         #   한 줄로 평탄화된 caption_ko를 쓰고, 화면에만 여러 줄이 필요한 컷이 caption_screen을 쓴다.
         cap_screen = re.sub(r"\n{2,}", "\n", re.sub(r"[ \t]+", " ",
@@ -1846,12 +1967,20 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
         else:
             p["facing"] = "front"
         # facing이 허락하지 않은 카메라는 구도에 맞게 고친다 (policy: front 또는 left→right)
-        if p["facing"] == "right" and p["type"] == "action" and p["camera"] in ("front_view", "back_view"):
-            p["camera"] = "side_view"
-            notes.append(f"컷 {p['no']}: facing=right → camera side_view")
+        # [2026-09-15] facing=right을 camera=side_view로 **올리던 규칙을 풀었습니다** — facing은
+        #   글칸 쪽을 고르는 값인데 카메라까지 옆으로 돌려 만화 컷의 60%가 옆모습으로 찍혔습니다
+        #   (실측 EP1: side_view 17컷 / front_view 2컷). 바로 아래 정면 구도 강제에서 예산을 봅니다.
         if p["facing"] == "front" and p["camera"] in ("side_view", "back_view"):
             p["camera"] = "front_view"
             notes.append(f"컷 {p['no']}: facing=front → camera front_view")
+    # [2026-09-15] 두 사람이 한 화면인 컷에 multi 표식을 메운다 — 상대방 고정 그룹(실루엣)이
+    #   프롬프트에 들어가게 하려면 이 표식이 있어야 한다(POV는 위에서 이미 True).
+    for p in panels:
+        if not p.get("multi") and p["camera"] != "pov" and not p.get("bg_only") \
+                and _partner_in_frame(p):
+            p["multi"] = True
+            notes.append(f"컷 {p['no']}: 지문에 상대방이 있다 → multi")
+    _enforce_straight_on(panels, ep_num_1based, notes)
     if not spec:
         # wide 상한은 컷 수에 비례 (긴 회차에서 3고정은 단조로운 페이지를 만든다)
         wide_cap = max(MAX_WIDE_PANELS, int(round(len(panels) * WIDE_RATIO)))
@@ -2658,7 +2787,7 @@ def _ko_fragments(ep_idx: int) -> list:
     """
     srcs = [getattr(config, "clothes", ""), getattr(config, "outfit2", ""), getattr(config, "location", ""),
             getattr(config, "acc", ""), getattr(config, "face_style", ""), getattr(config, "body_shape", "")]
-    for attr in ("bodystyle_tag", "body_tag", "exposure_tag", "p_exposure_tag", "makeup_tag",
+    for attr in ("bodystyle_tag", "body_tag", "exposure_tag", "exposure_late_tag", "p_exposure_tag", "makeup_tag",
                  "marks_tag", "background_tag", "face_tag"):
         arr = getattr(config, attr, None)
         try:
@@ -2810,20 +2939,53 @@ def dedupe_flat(text: str) -> tuple:
 
 
 def strip_duplicate_counters(header: str) -> str:
-    """카운터 중복 제거: artist 트리거 앞의 '1girl, solo,'를 지우고 헤더가 붙이는 카운터 하나만 남긴다.
+    """헤더에 인원 태그를 **정확히 하나**, 앵글과 같은 줄 맨 앞에 둔다.
 
-    (order/anima_gen_flow.md §15.1 Patch A가 build_prompt_header에서 한 일을 comic 헤더에서도 한다.
-     face 컷은 '1girl, solo', action 컷은 '1girl,1 boy' — 2인 구도에 solo가 남는 것도 막는다.)
+    (order/anima_gen_flow.md §15.1 Patch A가 build_prompt_header에서 한 일을 comic 헤더에서도 한다.)
+
+    [2026-09-15] 사용자 지시: "from side와 1girl, solo는 한 줄로 붙일 것."
+      예전은 머리의 카운터를 지우고 `[ANGLE]`에 들러붙은 중복을 남겼다 → 앵글 치환 후
+      'score_9 … explicit, from_side' 줄과 '1girl, solo.' 줄이 **두 줄로 갈라졌다**.
+      SD 계열은 인원 태그와 카메라 태그를 같은 줄에서 한 덩어리로 읽어야 구도가 잡힌다.
+      이제 (1) 헤더에서 인원 태그를 전부 걷어내고 (2) 정답을 맨 앞에 하나만 되올린다.
+      2인 구도인데 solo이 남는 것도 같은 자리에서 고른다(실측: 2인 컷에 solo이 남아 혼자 있는 그림).
     """
     if not header:
         return header
-    head, sep, tail = header.partition("\n")            # '\n' 이후가 "A detailed anime illustration…" 문장
-    tail = sep + tail
-    trig = re.sub(r"\b(1girl|1boy|2girls|2boys|1girl, solo|1boy, solo)\b,?\s*(solo,)?\s*", "", head, count=1)
-    trig = re.sub(r",\s*,", ", ", trig).strip()
-    if "solo" in tail.lower() and re.search(r"\b(1boy|two|both)\b", tail, re.I):   # 2인 구도에서 solo 제거
-        tail = re.sub(r"\bsolo\b\s*,?\s*", "", tail)
-    return trig + tail
+    head, sep, rest = header.partition("\n")            # '\n' 이후가 "A detailed anime illustration…" 문장
+    rest = sep + rest
+
+    def _norm(t: str) -> str:
+        return re.sub(r"\s+", " ", str(t or "").lower()).replace("_", " ").strip()
+
+    # ① 헤더 첫 줄에서 인원 태그를 전부 걷어낸다(중복·혼재 포함).
+    found = re.findall(r"\b(1girl|1boy|2girls|2boys|3girls|3boys|solo)\b", head, flags=re.I)
+    # 앵글 뒤에 들러붙은 중복은 버리고 **머리의** 카운터를 정답으로 쓴다(같은 값의 중복이
+    # 합쳐져 2girls가 되는 것을 막는다).
+    cut = re.search(r"(?:\[ANGLE\]|\b(?:from_side|from_front|from_back|close-up|pov)\b)", head, re.I)
+    if cut:
+        pre = re.findall(r"\b(1girl|1boy|2girls|2boys|3girls|3boys|solo)\b", head[:cut.start()], re.I)
+        if pre:
+            found = pre
+    counts = [f.lower() for f in found if _norm(f) != "solo"]
+    clean = re.sub(r"\b(?:1girl|1boy|2girls|2boys|3girls|3boys|solo)\b[\s,]*", "", head, flags=re.I)
+    clean = re.sub(r",\s*,", ", ", clean)
+    clean = re.sub(r"[\s,]*\.(?=\s*(?:\n|$|\[))", "", clean)            # '[ANGLE],.' 같은 마침표 잔해
+    clean = re.sub(r",\s*,", ", ", clean).strip().strip(", ").strip(".")
+
+    # ② 정답 고르기 — 여럿이면 같은 종류를 합치고(1girl+1boy = 2인), 없으면 본문 문장에서 유추한다.
+    girls = max([int(re.match(r"(\d+)", c).group(1)) for c in counts if "girl" in c] or [0])
+    boys = max([int(re.match(r"(\d+)", c).group(1)) for c in counts if "boy" in c] or [0])
+    if not counts:
+        girls = 1 if re.search(r"\b(?:1girl|girls?|a girl|she |her )\b", rest, re.I) else 0
+        boys = 1 if re.search(r"\b(?:1boy|boys?|a boy|he |him |his )\b", rest, re.I) else 0
+    if girls == 0 and boys == 0:
+        girls = 1
+        boys = 0
+    people = ([f"{girls}girl" + ("s" if girls > 1 else "")] if girls else []) + \
+             ([f"{boys}boy" + ("s" if boys > 1 else "")] if boys else [])
+    counter = ", ".join(people) + (", solo" if (girls + boys == 1 and "solo" in [ _norm(f) for f in found]) else "")
+    return (counter + ", " if clean else counter) + clean + rest
 
 
 def flatten_tag_block(block: str, is_face: bool) -> str:
@@ -3201,6 +3363,8 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     #   '2명'으로 해석). 청년향은 주인공 혼자가 기본 — 헤더는 always "1girl/1boy, solo",
     #   상대방은 POV 컷의 OBSERVER(손/팔)로만 들어온다.
     is_pov = camera_view == "pov"
+    # [2026-09-15] 두 사람 컷 판정 — LLM의 multi 표식이 없어도 지문이 말하면 두 사람이다.
+    is_two = bool(panel.get("multi")) or (not is_pov and _partner_in_frame(panel))
     # [2026-09-09] 컷의 감정을 표정 태그로 넘긴다 — 예전은 ""(빈 값)를 줘서 회차 고정 표정에 100% 밀렸다
     emo_key = _panel_face_emotion(panel)
     # [2026-09-09] 컷 스크립트가 준 컷 감정(emotion, 영문 태그)도 그대로 쓴다 — 7종 이모티표에
@@ -3213,11 +3377,17 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
                                            cut_state=(panel.get("_state") if isinstance(panel.get("_state"), dict) else None),
                                            climax_tag=climax_tag,
                                            clothes_override=str(panel.get("clothes") or ""),
-                                           partner_block=(is_pov or bool(panel.get("multi"))),
-                                           observer_block=is_pov)
+                                           partner_block=(is_pov or is_two),
+                                           observer_block=is_pov,
+                                           # [2026-09-15] 컷 위치로 노출 램프를 정한다(도입부는 옷을 입고 있다)
+                                           cut_depth=panel.get("_depth"))
     header = anima_gen._build_simple_prompt_header(config.sex, safety_tag, is_side=False,
                                                    position_sentence="", pose_text=pose_text)
     header = strip_duplicate_counters(header)
+    # [2026-09-15] 두 사람이 한 화면인 컷의 인원 태그를 고친다 — "1girl, solo"는 실루엣을 무시하게 한다.
+    # (POV는 예외 — 상대방이 곧 카메라라 프레임에 사람이 한 명뿐인 '1girl, solo'가 맞다.)
+    if is_two and not is_pov and re.search(r"(?i)\b1girl, solo\b", header):
+        header = re.sub(r"(?i)\b1girl, solo\b", "1girl, 1boy", header, count=1)
     # [2026-09-07] comic은 LLM이 태그를 고치는 단계가 없으니 항상 단부루 정석 뷰 토큰으로 보낸다.
     # (-camera_canon OFF라도 정석 사용. -camera_canon 스위치는 anima_gen_simple A/B 전용으로 남긴다.)
     canon = anima_gen.CAMERA_TAG_CANONICAL
@@ -3234,7 +3404,7 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     # [2026-09-07] 컷 종류별 본문 전략(사용자 지시):
     #   portrait(face) = 기존 결정론 방식 유지 / POV = prompt_pov.md 가이드 / multi = prompt_multi.md 가이드
     guide_kind = "" if is_face else ("pov" if camera_view == "pov" else
-                                     ("multi" if panel.get("multi") else ""))
+                                     ("multi" if is_two else ""))
     composed = _llm_compose_panel_prompt(ep_idx, tag_block, angle.strip(), guide_kind,
                                          safety_tag) if guide_kind else None
     if composed:
@@ -3248,10 +3418,12 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         # 시선/구도 정책 강제:
         #   right(오른쪽文本) = 인물 왼쪽 배치 + 왼쪽→오른쪽 시선 / front(아래文本) = 정면
         facing = str(panel.get("facing") or ("right" if panel.get("wide") else "front")).lower()
-        if panel.get("wide") or facing.startswith("r"):
+        # [2026-09-15] 정면 구도 정책이 확정한 컷은 글칸이 오른쪽이어도 시선은 독자를 본다
+        #   (wide는 글칸 쪽만 고르는 값이다 — 실측에서 wide가 전부 옆모습으로 그려진 원인).
+        if (panel.get("wide") or facing.startswith("r")) and not panel.get("_straight_on"):
             body = _facing_tags_right() + body
         else:
-            body = _facing_tags_front() + body
+            body = _facing_tags_front(two_person=is_two) + body
     body, removed = dedupe_flat(body)
     body, dropped = sanitize_english(body, gloss)
     # [2026-09-07] 해부학 정책(갱신): 성기 계열(vagina/penis 등)만 최종 필터로 제거.
@@ -3265,7 +3437,10 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         _PROMPT_SAN["hangul"].update(dropped)
     # [2026-09-08] 시트 #…# 캐릭터 공식 태그: 결정론 본문이든 LLM 재작성이든 정제를 통과하며 빠질 수 있어
     #   마지막에 보장 주입한다(상대방 태그는 상대방이 프레임에 실제로 있는 POV 컷에서만 — [BBB] 분리 유지).
-    body, ct_added = anima_gen.ensure_char_tags(body, include_partner=is_pov)
+    _pgroup = (anima_gen._partner_simple_tag(
+        ep_idx, clothed=bool(str((panel.get("_state") or {}).get("p_clothes") or "")))
+        if (is_pov or is_two) else "")
+    body, ct_added = anima_gen.ensure_char_tags(body, include_partner=is_pov, partner_group=_pgroup)
     if ct_added:
         _clog(f"EP{ep_idx+1} 컷{panel['no']} #캐릭터 태그 보장 주입: {', '.join(ct_added)}")
     # [2026-09-08] 헤더末尾 마침표와 본문 첫 단어('center.subject')가 붙는 것 → 공백으로 잇는다

@@ -72,9 +72,13 @@ META_HEAD_RE = re.compile(r"^\s*[（(\[]?\s*장소\s*[:：]", re.S)
 EP_HEAD_RE = re.compile(r"^\s*#+\s*EPISODE\b", re.I)                 # '##EPISODE 1:' — 지문이 아니라 구간 헤더
 # 장면 카드: [LOCATION]/[SITUATION]/[TIME]/[CLOTHES] (2026-09-11 신형) = 장소/상황/시간/복장 (구형)
 #   신형은 키마다 한 줄, 구형은 한 줄에 '장소: … / 상황: …'로 붙어 있다. 둘 다 받는다.
+# [2026-09-15] 복장 카드에 번호가 붙는 원고가 있습니다 — `[CLOTHES]`=주인공, `[CLOTHES2]`=상대방,
+#   `[CLOTHES3]`=세 번째 인물(군중). 번호를 모르면 카드가 아니라 **지문**으로 읽혀서
+#   "[CLOTHES2]: 슬림 핏의 블랙 수트…"가 화면 자막으로 그대로 나갔습니다(그림은 갈아입지 않고).
+#   그래서 키 뒤에 2~9 한 자리를 붙여 받고, 몇 번째 인물인지는 키 이름으로 기억합니다.
 _CARD_KEY_RE = re.compile(
     r"^[\[\(（]?\s*(?P<k>시간의 흐름|시간|상황|장소|LOCATION|SITUATION|TIME|CLOTHES|복장"
-    r"|(?P<owner>.{1,20}?)의\s*복장)\s*[\]\)）]?\s*[:：]\s*(?P<v>.*)$", re.S | re.I)
+    r"|(?P<owner>.{1,20}?)의\s*복장)(?P<ord>[2-9])?\s*[\]\)）]?\s*[:：]\s*(?P<v>.*)$", re.S | re.I)
 CARD_KEYS = {"location": "장소", "situation": "상황", "time": "시간", "clothes": "복장",
              "장소": "장소", "상황": "상황", "시간": "시간", "복장": "복장"}
 ANCHOR_MAX = 120            # split_by_segments는 접두사 매칭이라 잘라도 붙는다( comic_input 주석)
@@ -290,12 +294,28 @@ def sniff(text: str) -> bool:
 
 
 # ------------------------------------------------------------------ 본문 파서
+def _clothes_key(m) -> str:
+    """복장 카드 키 → 저장 필드명. 번호가 없으면 '복장'(주인공), 붙으면 '복장2'·'복장3'…"""
+    try:
+        n = int(m.group("ord") or 1)
+    except (TypeError, ValueError):
+        n = 1
+    return "복장" if n < 2 else f"복장{n}"
+
+
+def _clothes_ordinal(key: str) -> int:
+    """'복장'→1 / '복장2'→2 / '복장9'→9 — 몇 번째 인물 복장인지 (1=주인공, 2=상대방, 3+=그 외)"""
+    t = re.sub(r"^복장", "", str(key or "")).strip()
+    return int(t) if t.isdigit() else 1
+
+
 def _parse_card_line(line: str) -> dict:
-    """장면 카드 한 줄 → {장소,상황,시간,복장,(복장 주인)} — 카드가 아니면 {}
+    """장면 카드 한 줄 → {장소,상황,시간,복장,(복장2…),복장 주인} — 카드가 아니면 {}
 
     2026-09-11 신형: `[LOCATION]: …` 처럼 **키마다 한 줄** (값에 '/'가 들어가도 쪼개지 않는다).
     그 앞 구형: `[장소: … / 상황: … / 아야의 복장: …]` 처럼 **한 줄에 여러 필드**.
     키는 한/영 모두 받는다 (LOCATION·SITUATION·TIME·CLOTHES / 장소·상황·시간·복장).
+    [2026-09-15] 복장에는 번호를 받습니다 — `[CLOTHES2]`는 상대방, `[CLOTHES3]`는 세 번째 인물.
     """
     s = str(line or "").strip()
     if not s:
@@ -318,8 +338,8 @@ def _parse_card_line(line: str) -> dict:
             key = "상황"
         elif ku == "TIME" or k.startswith("시간"):
             key = "시간"
-        else:                                            # "복장" / "오카다 유즈키의 복장" / CLOTHES
-            key = "복장"
+        else:                                            # "복장" / "오카다 유즈키의 복장" / CLOTHES2
+            key = _clothes_key(m)
             own = re.sub(r"\s+", " ", str(m.group("owner") or "")).strip()
             if own and not out.get("복장 주인"):
                 out["복장 주인"] = own
@@ -512,18 +532,34 @@ class _Speakers:
         return spk
 
 
+def _card_fields(card: dict, sp: "_Speakers") -> list:
+    """장면 카드 → [(원작 키, 태그, 본문 줄)] — 본문과 헤더 매핑이 **같은 줄 문자열**을 쓰게 한곳에 둔다.
+
+    복장에 번호가 붙으면(=그 인물의 복장) 주인공이 아닌 사람의 줄로 나갑니다.
+    「료의 복장: …」처럼 이름이 적힌 카드는 그 이름을 우선합니다.
+    """
+    out = []
+    for k in _card_order(card):
+        v = str(card.get(k) or "").strip()
+        if not v:
+            continue
+        if re.fullmatch(r"복장[2-9]?", str(k)):
+            n = _clothes_ordinal(k)
+            tag = "CLOTHES" if n < 2 else f"CLOTHES{n}"
+            owner = str(card.get("복장 주인") or "").strip() or \
+                (sp.disp["protagonist"] if n < 2 else
+                 (sp.disp["partner"] if n == 2 else "주변 인물들"))
+            out.append((k, tag, f"{owner}의 복장: {v}"))
+        elif k == "비고":
+            out.append((k, "NOTE", f"비고: {v}"))
+        else:
+            out.append((k, CARD_ITEM_TAGS[k], f"{k}: {v}"))
+    return out
+
+
 def _card_lines(card: dict, sp: "_Speakers") -> list:
     """장면 카드 → 본문에 들어갈 상태 줄 (한글 원문 그대로 — 영문 태그로 옮기는 일은 LLM 몫)"""
-    out = []
-    for k in ("장소", "상황", "시간"):
-        if card.get(k):
-            out.append(f"{k}: {card[k]}")
-    if card.get("복장"):
-        owner = card.get("복장 주인") or sp.disp["protagonist"]
-        out.append(f"{owner}의 복장: {card['복장']}")
-    if card.get("비고"):
-        out.append(f"비고: {card['비고']}")
-    return out
+    return [f"{line}" for _k, _tag, line in _card_fields(card, sp)]
 
 
 def render(parsed: dict) -> tuple:
@@ -586,11 +622,25 @@ CARD_ITEM_TAGS = {"장소": "LOCATION", "상황": "SITUATION", "시간": "TIME",
 CARD_ITEM_ORDER = ("장소", "상황", "시간", "복장", "비고")
 
 
+def _card_order(c: dict) -> list:
+    """카드 필드 순서 — '복장' 바로 뒤에 '복장2'·'복장3'을 놓는다 (원작이 적힌 순서를 지킨다)"""
+    keys = [k for k in CARD_ITEM_ORDER if c.get(k)]
+    extra = sorted([k for k in c if re.fullmatch(r"복장[2-9]", str(k)) and c.get(k)],
+                   key=lambda s: _clothes_ordinal(s))
+    at = keys.index("복장") + 1 if "복장" in keys else len(keys) - (1 if c.get("비고") else 0)
+    return keys[:at] + extra + keys[at:]
+
+
 def header_items(src) -> list:
     """회차 산출물 → 헤더 순서 그대로의 평면 목록 (special 컷 배분의 재료)
 
-      [{"tag":"LOCATION|SITUATION|TIME|CLOTHES|NOTE|ACTION|INNER|TALK|TEXT",
-        "text":"헤더 원문(라벨 제거)", "line":"본문에 들어간 그 줄(화자·(속마음) 포함)", "act":"기|승|전|결|"}]
+      [{"tag":"LOCATION|SITUATION|TIME|CLOTHES|CLOTHES2|CLOTHES3|NOTE|ACTION|INNER|TALK|TEXT",
+        "text":"헤더 원문(라벨 제거)", "line":"본문에 들어간 그 줄(화자·(속마음) 포함)", "act":"기|승|전|결|",
+        "who":"protagonist|partner|other|"}]
+
+    CLOTHES2/CLOTHES3는 [2026-09-15]부터 나오는 **번호가 붙은 복장 카드**입니다 — 원작이
+    두 번째/세 번째 인물의 옷차림을 지정한 줄이라, 주인공 복장이 아니라 컷의 p_clothes(상대방)
+    ·군중 묘사로 들어가야 하고 자막이 되어서는 안 됩니다.
 
     `render`와 **같은 순서로 같은 화자 상태기계**를 돌므로 `line`은 본문 줄과 문자 단위로 같다.
     장면 카드는 그 자리에(항목 앞) 놓인다 — 컷 배분도 그 순서를 따른다.
@@ -600,18 +650,13 @@ def header_items(src) -> list:
     out = []
 
     def _card(c: dict):
-        for k in CARD_ITEM_ORDER:
-            if not c.get(k):
-                continue
-            tag, v = CARD_ITEM_TAGS[k], str(c[k]).strip()
-            if tag == "CLOTHES":
-                owner = c.get("복장 주인") or sp.disp["protagonist"]
-                line = f"{owner}의 복장: {v}"
-            elif tag == "NOTE":
-                line = f"비고: {v}"
-            else:
-                line = f"{k}: {v}"
-            out.append({"tag": tag, "text": v, "line": line, "act": str(c.get("act") or "")})
+        for k, tag, line in _card_fields(c, sp):
+            who = ""
+            if tag.startswith("CLOTHES"):
+                n = _clothes_ordinal(k)
+                who = "protagonist" if n < 2 else ("partner" if n == 2 else "other")
+            out.append({"tag": tag, "text": str(c[k]).strip(), "line": line,
+                        "act": str(c.get("act") or ""), "who": who})
 
     pre, per_act = [], {}
     for c in parsed.get("cards") or []:

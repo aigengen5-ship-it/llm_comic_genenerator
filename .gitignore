@@ -11,6 +11,7 @@ README_local.md
 
 # 로컬 전용 검증 입력(개인 실험 시트). selftest는 inputs/만 읽고 여기는 건드리지 않습니다.
 input_test/
+inputs/progress_2nd/
 
 # 로컬 전용 설정(수위 스위치·LoRA 강도·민감 한글 어휘 사전). 템플릿만 커밋합니다.
 local_settings.yaml

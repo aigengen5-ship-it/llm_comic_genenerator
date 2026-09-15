@@ -1161,6 +1161,7 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
         "stats": _BASE_STATS_BY_PROGRESS[fb_idx],
         "face": "blushing", "makeup": "natural makeup", "marks": "",
         "exposure": _llm_tag_str(config.clothes) or "casual clothes",
+        "exposure_late": "",
         "parts_exposure": "",
         "body": _llm_tag_str(config.body_shape) or "slim body",
         "bodystyle": "", "background": "",
@@ -1203,7 +1204,10 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
   (그렇게 하면 일상 컷까지 그 표정으로 고정된다). 극단 표정은 expressions 풀에 최대 1개만
 - makeup: 화장 (없으면 natural makeup)
 - marks: 몸에 남은 자국·장신구 (예: choker, sweat, tear trail)
-- exposure: 이 회차의 복장 상태 (예: school uniform, open shirt, wet clothes, topless)
+- exposure: 이 회차가 **시작하는** 순간의 복장 상태(컷 1의 옷) — 옷을 여미고 있는 상태면 그대로 쓴다
+  (예: school uniform, police uniform, white shirt and navy slacks). 아직 벗지 않았습니다.
+- exposure_late: 회차 **후반(클라이맥스)**에 도달하는 복장 상태 (예: open shirt, wet clothes, topless).
+  후반에도 옷이 그대로면 빈 문자열. 초반 컷에 이 태그가 붙으면 안 됩니다(옷을 안 입고 시작하게 됩니다)
 - parts_exposure: 복장 밖으로 드러나는 부위 (예: cleavage, cameltoe, see-through clothes, navel)
 - body: 체형·질감 (예: slim body, large breasts, pale skin, oily skin)
 - bodystyle: 자세·습관 (예: standing, kneeling, shy posture) + 복장 추가 아이템 (예: police cap)
@@ -1220,7 +1224,7 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
 주인공의 머리색/눈색/이름/직업은 태그에 다시 넣지 마세요(프롬프트 헤더에 이미 들어갑니다).
 
 JSON 하나만 출력 (설명·코드펜스 금지):
-{{"stats":{{"M":4,"L":1,"A":3,"O":2,"I":4,"S":4,"D":2}},"face":"...","makeup":"...","marks":"...","exposure":"...","parts_exposure":"...","body":"...","bodystyle":"...","background":"...","expressions":["...","...","...","...","..."],"partner_exposure":"...","partner_expression":"...","location":"a bedroom","time_of_day":"at night","safety":"nsfw"}}
+{{"stats":{{"M":4,"L":1,"A":3,"O":2,"I":4,"S":4,"D":2}},"face":"...","makeup":"...","marks":"...","exposure":"...","exposure_late":"...","parts_exposure":"...","body":"...","bodystyle":"...","background":"...","expressions":["...","...","...","...","..."],"partner_exposure":"...","partner_expression":"...","location":"a bedroom","time_of_day":"at night","safety":"nsfw"}}
 """
     try:
         messages = [{"role": "system", "content": config.system_prompt_anima +
@@ -1254,8 +1258,8 @@ JSON 하나만 출력 (설명·코드펜스 금지):
         out["stats"] = [max(0, min(5, int(sd.get(k, fb["stats"][i])))) for i, k in enumerate(keys)]
     except Exception:
         pass
-    for k in ("face", "makeup", "marks", "exposure", "parts_exposure", "body", "bodystyle",
-              "background", "partner_exposure", "partner_expression"):
+    for k in ("face", "makeup", "marks", "exposure", "exposure_late", "parts_exposure", "body",
+              "bodystyle", "background", "partner_exposure", "partner_expression"):
         v = _llm_tag_str(data.get(k))
         if v:
             out[k] = v
@@ -1365,6 +1369,7 @@ def init_anima_tags(episode: int, client=None, json_value: dict = None) -> dict:
     makeup_tag = tagset["makeup"]
     marks_tag = tagset["marks"]
     exposure_tag = tagset["exposure"]
+    exposure_late_tag = tagset.get("exposure_late") or ""
     p_exposure_tag = tagset["parts_exposure"]
     body_tag = tagset["body"]
     bodystyle_tag = tagset["bodystyle"]
@@ -1380,6 +1385,12 @@ def init_anima_tags(episode: int, client=None, json_value: dict = None) -> dict:
     config.body_tag[episode] = body_tag
     config.bodystyle_tag[episode] = bodystyle_tag
     config.exposure_tag[episode] = exposure_tag
+    # [2026-09-15] 회차 노출을 '시작 / 후반'으로 갈라 둔다 — 예전은 회차 태그 하나를 모든 컷에
+    #   붙여 EP1 컷 1(제복을 단정히 입고 시작하는 장면)이 topless로 찍혔습니다.
+    #   후반 태그는 램프(_cut_exposure)를 지난 컷에만 붙습니다.
+    if 0 <= episode < len(getattr(config, "exposure_late_tag", [])):
+        config.exposure_late_tag[episode] = exposure_late_tag
+    config._ep_exposure_late = exposure_late_tag       # 배열이 잘린 환경(짧은 run)에서도 동작
     config.p_exposure_tag[episode] = p_exposure_tag
     config.background_tag[episode] = background_tag
     # [2026-08-30] -real 전용: stats[1] 두근거림(L) 레벨별 체모 태그 (_build_tag_block이 real 모드일 때만 주입 — comic 기본 경로 아님)
@@ -2161,6 +2172,7 @@ _PARTNER_APPEARANCE_BAN_RE = re.compile(
     r'suit|tie|jacket|blazer|coat|shoes|loafers|socks|sneakers|clothes|clothed|undressed|naked|nude|'
     r'underwear|boxers|briefs|pants unbuttoned|open shirt|bare chest|bare shoulders|tanned|tan skin|'
     r'olive skin|\btan\b|masculine|feminine|male features|flat chest|handsome|ugly|average face|tall male|'
+    r'silhouett\w*|featureless|backlit|rim lighting|out of focus|'
     r'short male)',
     re.IGNORECASE,
 )
@@ -2206,10 +2218,42 @@ def _partner_body_token(episode: int = -1) -> str:
     return "petite" if is_female else "thin"
 
 
-def _partner_simple_tag(episode: int = -1) -> str:
-    """상대방 최소 태그 그룹 (소괄호 단일 그룹, weight 3.0) — 외모의 전부."""
+def _partner_silhouette() -> bool:
+    """[2026-09-15] 상대방을 **회색 실루엣**으로 그리는지 — 두 사람이 한 화면일 때 한 명을 윤곽으로
+    두는 모드입니다. **기본 켬**이며, 끄면 run_comic.py --partner-invisible(얼굴 없는 사람 그룹)이거나
+    --partner-full(시트 상세 태그)입니다."""
+    return bool(getattr(config, "comic_partner_silhouette", False))
+
+
+PARTNER_SILHOUETTE_TAGS = "(gray silhouette:5.0) and (featureless:5.0)"
+# 체형 어휘를 '크기'로만 좁힌다(사용자 지시: "키가 크다, 작다, 근육질이다 정도의 특징만").
+#   얼굴·머리·피부·옷 태그를 상대방에게 주면 주인공에게 새는 사고가 실측에서 반복됐다.
+_PARTNER_SIZE_WORDS = {"muscle": "muscular", "fat": "heavy-set", "old": "tall",
+                       "petite": "short", "shota": "short", "thin": "tall"}
+
+
+def _partner_size_word(episode: int = -1) -> str:
+    """상대방을 가리키는 크기 어구 하나 — tall | short | muscular | heavy-set."""
+    return _PARTNER_SIZE_WORDS.get(_partner_body_token(episode), "tall")
+
+
+def _partner_simple_tag(episode: int = -1, clothed: bool = False) -> str:
+    """상대방 최소 태그 그룹 — 외모의 전부 (두 사람이 한 화면일 때 '한 명을 실루엣으로').
+
+    [2026-09-15] 사용자 실측: 컷 e1_p25에서 상대방을 'his'로만 두니 화질이 떨어졌고,
+    `(gray silhouette:5.0) and (featureless:5.0) tall man`으로 두니 좋아졌다. 그래서
+    기본을 회색 실루엣으로 바꾼다 — 주인공에 시선이 모이고, 상대방 외모 태그가 주인공에게
+    새는 사고도 원천 차단된다. 특징은 크기 한 단어만 허용(tall/short/muscular/heavy-set).
+
+    껐을 때(--partner-invisible)는 예전 얼굴 없는 사람 그룹.
+    clothed=True면 원작이 그 인물에게 지정한 옷([CLOTHES2] 카드)이 있는 컷 — 'naked nude'을
+    빼야 옷이 그려진다(실루엣은 옷을 어차피 감추므로 그대로).
+    """
     figure = "man" if getattr(config, 'sex2', '남자') in ("male", "남자", "남성") else "woman"
-    return f"(bald featureless faceless naked nude {_partner_body_token(episode)} invisible {figure}:3.0)"
+    if _partner_silhouette():
+        return f"{PARTNER_SILHOUETTE_TAGS} {_partner_size_word(episode)} {figure}"
+    body = "" if clothed else "naked nude "
+    return f"(bald featureless faceless {body}{_partner_body_token(episode)} invisible {figure}:3.0)"
 
 
 def _split_top_level_commas(text: str) -> list:
@@ -2264,7 +2308,8 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
     """
     if not prompt or not _partner_invisible():
         return prompt
-    group = _partner_simple_tag(episode)
+    # 원작이 그 인물에게 옷을 지정했으면([BBB CLOTHES]가 살아있으면) naked nude를 뺀다.
+    group = _partner_simple_tag(episode, clothed=bool(re.search(r"(?im)^\[BBB CLOTHES\]", prompt)))
     # [2026-09-12] "…, Subject 2: 1boy, …"처럼 **줄 중간**에 붙은 상대방 섹션도 있다(log 실측 EP1 p14).
     #   이 정규화는 줄 단위이므로 앞에 줄바꿈을 심어 둔다. Subject 1(주인공)은 건드리지 않는다.
     prompt = re.sub(r"(?i)([.,;])\s*(subject\s*2\b\s*[:\-]?\s*)", r"\1\n\2\n", prompt)
@@ -2317,9 +2362,13 @@ def simplify_partner_section(prompt: str, name_b: str = "", episode: int = -1) -
         first = src.strip().split(",")[0].strip()
         head = first if re.fullmatch(r"(?i)\s*\d+(girls?|boys?|animals?)\s*", first) else ""
         # 이미 고정 그룹이 있으면 **그 그룹을 그대로** 쓴다(체형 토큰·강도를 임의로 바꾸지 않는다 → 멱등)
-        existing = next((x.strip() for x in _split_top_level_commas(src) if "invisible man" in x.lower()
-                         or "invisible woman" in x.lower()), "")
-        kept = [k for k in _partner_kept_phrases(src) if k.lower() != head.lower()]
+        # [2026-09-15] 고정 그룹이 두 종이다 — invisible man/woman(예전)과 회색 실루엣(기본).
+        #   이 인식이 빠져야 할 때 못 하면 그룹을 두 번 감싸서 멱등이 깨진다(실측 회귀).
+        existing = next((x.strip() for x in _split_top_level_commas(src)
+                         if "invisible man" in x.lower() or "invisible woman" in x.lower()
+                         or "gray silhouette" in x.lower() or "black silhouette" in x.lower()), "")
+        kept = [k for k in _partner_kept_phrases(src) if k.lower() != head.lower()
+                and (not existing or k.strip().rstrip(',') != existing.strip().rstrip(','))]
         items = ([head] if head else []) + [existing or group] + kept   # 고정 그룹은 인원 태그 다음 **독립 태그**
         new_body = ", ".join(items)
         same = new_body.strip() == "\n".join(lines[j:end]).strip()
@@ -2462,7 +2511,7 @@ def partner_char_tag_line() -> str:
     return ", ".join(_char_tag_list("partner_char_tags"))
 
 
-def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
+def ensure_char_tags(body: str, include_partner: bool = True, partner_group: str = "") -> tuple:
     """#…# 태그가 최종 프롬프트에 살아남았는지 확인하고 빠진 것을 채운다 → (문자열, 추가된 태그 목록)
 
     [2026-09-08] POV/multi 컷 본문은 LLM이 가이드(prompt_pov.md/prompt_multi.md)로 다시 쓰기 때문에
@@ -2482,6 +2531,10 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
     head_add = [t for t in _char_tag_list("char_tags") if not present(t)]
     tail_add = [t for t in _char_tag_list("partner_char_tags") if not present(t)] \
         if (include_partner and not _partner_invisible()) else []
+    # [2026-09-15] 상대방을 고정 그룹(실루엣/invisible)으로 닫는 중에는 시트 태그 대신 **그 그룹**이
+    #   본문에 살아있어야 한다. LLM이 포즈만 옮겨 적고 그룹을 빠뜨리면 두 번째 사람이 사라진다.
+    if partner_group and _partner_invisible() and not present(partner_group):
+        tail_add = tail_add + [partner_group]
     out = text.strip().strip(", ")
     if head_add:
         out = ", ".join(head_add) + (", " + out if out else "")
@@ -2490,7 +2543,7 @@ def ensure_char_tags(body: str, include_partner: bool = True) -> tuple:
     return out, head_add + tail_add
 
 
-def _build_partner_block(episode: int, name_b: str, cut_state: dict = None) -> list:
+def _build_partner_block(episode: int, name_b: str, cut_state: dict = None, cut_depth=None) -> list:
     """[2026-08-28] 상대방(BBB) 태그 블록 — 주인공(AAA)과 물리 분리.
 
     [2026-09-12] 기본(`comic_partner_invisible=True`)은 **고정 최소 그룹 1개**다.
@@ -2505,14 +2558,23 @@ def _build_partner_block(episode: int, name_b: str, cut_state: dict = None) -> l
     """
     if _partner_invisible():
         # 외모는 고정 그룹이 전부 — 컷 상태에서는 포즈·소지품만 살린다(한글/외모 항목은 버린다).
+        _cs = cut_state or {}
+        # [2026-09-15] 단 원작이 **그 인물에게 입힌 옷**([CLOTHES2] 카드 → p_clothes)은 지켜야 합니다.
+        #   옷이 지정된 컷에서는 'naked nude'을 빼고 [BBB CLOTHES]를 따로 내보낸다.
+        _pcs = _dedupe_csv(str(_cs.get("p_clothes") or "").strip())
+        _pcs = ",".join(t for t in _pcs.split(",")
+                        if t and not re.search(r"[\u3131-\u318e\uac00-\ud7af\u4e00-\u9fff]", t))
         lines = [
-            f"[BBB] {name_b} (partner) - appearance is COMPLETE and FINAL: {_partner_simple_tag(episode)}",
+            f"[BBB] {name_b} (partner) - appearance is COMPLETE and FINAL: "
+            f"{_partner_simple_tag(episode, clothed=bool(_pcs))}",
             f"[BBB RULE] Output the {name_b} tag group above VERBATIM. Do NOT add or invent any "
             f"hair / eye / skin / face / beard / makeup / glasses / clothing / body-shape tags for "
             f"{name_b} (skinny, thin, masculine body, uniform, shirt, hair color 등 금지). "
-            f"{name_b}에게 허용하는 나머지 구문은 [ACTION]/[POSITION]/[BBB ACTION]의 포즈·행동뿐입니다.",
+            f"{name_b}에게 허용하는 나머지 구문은 [ACTION]/[POSITION]/[BBB ACTION]의 포즈·행동뿐"
+            + (f"이고, 옷은 [BBB CLOTHES] 라인의 지정만을 따릅니다." if _pcs else "."),
         ]
-        _cs = cut_state or {}
+        if _pcs:
+            lines.append(f"[BBB CLOTHES] {_pcs}")
         for _lab, _k in (("[BBB ACTION]", "p_posture"), ("[BBB PROPS]", "p_props")):
             _v = _dedupe_csv(str(_cs.get(_k) or "").strip())
             _v = ",".join(t for t in _v.split(",")
@@ -2562,7 +2624,7 @@ def _build_partner_block(episode: int, name_b: str, cut_state: dict = None) -> l
         lines.append(f"[BBB CLOTHES] {_own('p_clothes')}")
     elif pbase["clothes"]:
         lines.append(f"[BBB CLOTHES] {pbase['clothes']} (Korean - translate to English)")
-    p_exposure = config.partner_exposure_tag[episode] if 0 <= episode < len(config.partner_exposure_tag) else ""
+    p_exposure = _partner_exposure_at(episode, cut_depth=cut_depth)
     if p_exposure:
         lines.append(f"[BBB EXPOSURE] {p_exposure}")
     for _lab, _k in (("[BBB ACCESSORIES]", "p_accessories"), ("[BBB MARKS]", "p_marks"),
@@ -2694,12 +2756,101 @@ def _undress_guard(clothes: str, base: str = "") -> str:
     return ", ".join(kept or parts)
 
 
+# [2026-09-15] 노출 램프 — 컷이 회차의 어디쯤인지로 '이 컷에서 살 노출'을 가릅니다.
+#   사용자 지시: "옷 노출을 잘 처리하라. 특히 1화 처음은 옷을 잘 입고 있는 것이 일반적이다."
+#   회차 태그셋은 회차 **전체**를 보므로 exposure이 후반 상태(topless 등)가 되기 쉽습니다.
+#   그래서 회차 태그를 '시작/후반'으로 갈라 두고(exposure / exposure_late), 아래 기준으로 컷마다 고릅니다.
+#   기준(판별 근거)은 회차 수위 등급 config.review_safety[ep] — safe | sensitive | nsfw | explicit.
+_EXPOSE_HOT = ("topless", "nude", "naked", "no clothes", "undressing", "undress", "clothes removed",
+               "removed clothes", "clothes aside", "clothes pull", "skirt lift", "dress lift",
+               "see-through", "sheer", "wet clothes", "torn clothes", "tattered", "ripped clothes",
+               "cameltoe", "visible nipples", "nipples", "areolae", "cleavage", "sideboob",
+               "underboob", "navel", "bare shoulders", "bareback", "bra", "panties", "underwear",
+               "lingerie", "open shirt", "unbuttoned", "unzipped", "pulled aside", "pulled up",
+               "ass visible", "thighs", "legs")
+
+
+def _hot_exposure(token: str) -> bool:
+    t = str(token or "").strip().lower()
+    # 품목 이름 자체를 지우면 안 됩니다 — 'no clothes'류만 노출로 봅니다(garment 토큰은 보존).
+    return any(w in t for w in _EXPOSE_HOT)
+
+
+def _cut_exposure(episode: int, cut_depth=None, climax: bool = False,
+                  first_cut: bool = False, with_costume: bool = True) -> str:
+    """이 컷에 붙일 노출 태그(쉼표 분리) — '언제 옷을 입고 언제 벗는가'를 컷 단위로 고른다.
+
+    사용자 지시(2026-09-15): "옷 노출을 잘 다룰 것. 특히 1화 첫머리는 옷을 잘 입고 있는 것이 일반적."
+    예전은 회차 태그셋이 고른 **하나의 exposure**을 모든 컷에 붙였습니다 — 태그셋은 회차 전체를
+    보므로 그 값이 후반 상태(topless 등)면 컷 1부터 반라가 됐습니다. 근거는 두 개입니다.
+
+      ① 회차 수위 등급 `config.review_safety[ep]` — safe | sensitive | nsfw | explicit.
+         `safe` 회차는 노출 태그를 어떤 컷에서도 쓰지 않습니다(등급이 곧 근거).
+      ② 컷의 위치(0~1) — 회차를 `config.comic_exposure_ramp`(기본 절반)만큼 지난 컷·클라이맥스
+         컷만 **후반 복장**(exposure_late)을 받습니다. explicit도 램프는 동일합니다
+         (다 벗는 회차라도 1화 첫 컷은 입고 시작하는 것이 만화 문법입니다).
+      ③ 회차의 첫 컷은 항상 '입고 시작하는' 컷으로 봅니다(도입부 강제).
+
+    with_costume=False면 컷이 자기 옷을 직접 적은 경우(갈아입기) — 회차 복장/후반 복장은
+    그 컷의 옷에 밀려나고, 부분 노출 태그만 남습니다(예전 동작과 같게).
+    """
+    def _at(arr, i, d=""):
+        try:
+            v = arr[i]
+        except Exception:
+            v = d
+        return str(v or "").strip()
+
+    lvl = _at(getattr(config, "review_safety", []), episode)
+    try:
+        ramp = float(getattr(config, "comic_exposure_ramp", 0.5))
+    except (TypeError, ValueError):
+        ramp = 0.5
+    try:
+        d = float(cut_depth) if cut_depth is not None else 1.0
+    except (TypeError, ValueError):
+        d = 1.0
+    deep = bool(climax) or d >= ramp            # 후반 복장을 받을 만큼 왔는가
+    naked = (lvl == "safe") or bool(first_cut)  # 이번 컷에서 노출 어구는 걷는가
+    late = _at(getattr(config, "exposure_late_tag", []), episode) or \
+        str(getattr(config, "_ep_exposure_late", "") or "").strip()
+    pool = [_at(config.exposure_tag, episode)] if with_costume else []   # 회차가 **시작하는** 복장
+    pool.append(_at(config.p_exposure_tag, episode))
+    if with_costume and (climax or d >= ramp):      # 후반 복장을 받을 위치인가
+        pool.append(late)
+    kept, seen = [], set()
+    for grp in pool:
+        for t in [q.strip() for q in str(grp or "").split(",") if q.strip()]:
+            k = t.lower()
+            if k in seen:
+                continue
+            if naked and _hot_exposure(t):
+                continue
+            seen.add(k)
+            kept.append(t)
+    return ", ".join(kept)
+
+
+def _partner_exposure_at(episode: int, cut_depth=None, climax: bool = False) -> str:
+    """상대방 옷 상태도 같은 기준으로 — 도입부에 상대만 상의 탈의인 일은 없습니다."""
+    base = ""
+    try:
+        base = str(config.partner_exposure_tag[episode] or "").strip()
+    except Exception:
+        base = ""
+    lvl = str((config.review_safety[episode] if 0 <= episode < len(config.review_safety) else "") or "")
+    if lvl == "safe":
+        return ", ".join(t for t in [p.strip() for p in base.split(",") if p.strip()]
+                         if not _hot_exposure(t))
+    return base
+
+
 def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_ratio: str,
                      position_sentence: str, step_expression: str, is_side: bool,
                      name_a: str = None, name_b: str = None, observer_text: str = None,
                      climax_tag: str = "", clothes_override: str = "",
                      partner_block: bool = None, observer_block: bool = None,
-                     cut_state: dict = None) -> str:
+                     cut_state: dict = None, cut_depth=None) -> str:
     """자연어 문장 대신 원본 danbooru 태그를 카테고리별로 나열 (LLM 프롬프트 생성용)
 
     [2026-08-28] [AAA ...]/[BBB ...] 블록으로 캐릭터별 물리 분리 (오염 방지):
@@ -2835,9 +2986,13 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         lines_block.append(f"[POSTURE] {str(_st['posture']).strip()}")
     # [2026-08-28] 주인공 노출: exposure + p_exposure(parts exposure) + marks (모두 주인공)
     # makeup은 [AAA MAKEUP]으로 분리 (이전에는 [EXPOSURE]에 섞여 상대방 전이 원인)
-    exposure_parts = [p for p in ["" if _wardrobe_changed else config.exposure_tag[episode],
-                                  config.p_exposure_tag[episode],
-                                  config.marks_tag[episode]] if p]
+    # [2026-09-15] 회차 노출 태그를 그대로 다 붙이면(예전 동작) EP1 컷 1부터 topless가 됐습니다.
+    #   _cut_exposure이 컷 위치와 회차 수위 등급으로 '이 컷에서 살 노출'만 고릅니다.
+    _exp_now = _cut_exposure(episode, cut_depth=cut_depth,
+                             climax=not _is_no_climax(climax_tag),
+                             first_cut=bool((cut_state or {}).get("_first_cut")),
+                             with_costume=not _wardrobe_changed)
+    exposure_parts = [p for p in [_exp_now, config.marks_tag[episode]] if p]
     # [2026-08-30] -real 모드: 두근거림(L) 레벨별 체모 태그 강제 주입 (신체 속성 → [AAA EXPOSURE], real 모드만)
     if _real_mode_active():
         _pubic = getattr(config, 'pubic_hair_tag', None)
@@ -2851,7 +3006,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     # [2026-09-07] 청년향 1인 화면: comic은 상대방이 실제로 프레임에 있는 컷(POV)만 True로 켠다.
     #   (예전엔 무조건 주입 — "혼자 있는" 회차에서도 상대방 태그가 프레임을 오염시켰다.)
     if True if partner_block is None else partner_block:
-        lines_block.extend(_build_partner_block(episode, name_b, cut_state))
+        lines_block.extend(_build_partner_block(episode, name_b, cut_state, cut_depth=cut_depth))
 
     # [2026-09-07] observer도 동일: 기본은 옛 동작(not is_side)이나 comic은 POV 컷만 켠다.
     if (not is_side) if observer_block is None else observer_block:

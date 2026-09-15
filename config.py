@@ -117,6 +117,12 @@ marks_tag = ["" for _ in range(total_episodes)]
 body_tag = ["" for _ in range(total_episodes)]
 bodystyle_tag = ["" for _ in range(total_episodes)]
 exposure_tag = ["" for _ in range(total_episodes)]
+# [2026-09-15] 회차 노출을 '시작 / 후반'으로 갈라 둔다 (clothes_late와 같은 이유).
+#   회차 태그셋은 회차 전체를 보는 탓에 exposure이 후반 상태(topless 등)로 적히기 쉽고,
+#   그 태그를 모든 컷에 붙이면 1화 컷 1(옷을 단정히 입고 시작하는 장면)부터 반라가 됐습니다.
+#   후반 태그는 회차 절반 이후·클라이맥스 컷에만 붙습니다 (anima_gen._cut_exposure).
+#   판별 근거는 회차 수위 등급 review_safety — safe 회차는 노출 태그를 아예 쓰지 않습니다.
+exposure_late_tag = ["" for _ in range(total_episodes)]
 p_exposure_tag = ["" for _ in range(total_episodes)]      # 주인공 parts exposure (cameltoe 등)
 pubic_hair_tag = ["" for _ in range(total_episodes)]      # -real 전용
 background_tag = ["" for _ in range(total_episodes)]
@@ -188,6 +194,20 @@ comic_templates_pin = []
 #   True  = (bald featureless faceless naked nude <체형> invisible man:3.0) — 외모 태그 오염 원천 차단
 #   False = [BBB HAIR]/[BBB FACE]/[BBB CLOTHES]… 상세 태그 (run_comic.py --partner-full)
 comic_partner_invisible = True
+# [2026-09-15] 두 사람이 한 화면인 컷에서 **상대방을 회색 실루엣**으로 그린다 — **기본 켬**.
+#   사용자 실측(EP1 컷 25·26): 상대방을 'his'로만 두면 화질이 떨어지고
+#   "(gray silhouette:5.0) and (featureless:5.0) tall man"으로 두면 좋아졌다.
+#   특징은 크기 한 단어(tall | short | muscular | heavy-set)만 준다 — 얼굴·머리·옷 태그는
+#   주인공에게 새는 사고가 실측에서 반복됐다. (--partner-invisible = 예전 얼굴 없는 사람 그룹)
+comic_partner_silhouette = True
+comic_partner_silhouette_off = False     # run_comic --partner-invisible
+# [2026-09-15] 만화 정면 구도 정책 — 컷의 몇 비율 이상을 '독자를 똑바로 바라보는' 구도로 강제한다.
+#   실측(EP1)이 side_view 17컷 / front_view 2컷이었고 원인은 facing=right을 side_view로 올리던 규칙.
+#   나머지(1-이 값)만 옆모습/뒷모습으로 남습니다. run_comic.py --straight-on 0.95
+comic_straight_on = 0.9
+# [2026-09-15] 노출 램프 — 회차를 이만큼 지난 컷부터 후반 노출(exposure_late)을 붙인다.
+#   도입부(컷 1~)는 회차가 **시작하는** 복장만 입는다. run_comic.py --exposure-ramp 0.4
+comic_exposure_ramp = 0.5
 # [2026-09-12] 페이지 합성 게이트 — 컷이 **전부** 렌더된 회차만 페이지로 합친다.
 #   true(run_comic --merge-partial)면 예전 동작: 렌더된 컷만으로 합성(마지막 페이지가 짧아진다).
 comic_merge_partial = False

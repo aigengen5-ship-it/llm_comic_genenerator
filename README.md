@@ -1143,7 +1143,61 @@ state/extract_cache.yaml                        추출 체크포인트 (아래 3
 
 ---
 
-## 5. 파일 지도
+### 3-11) 그린 컷을 LLM이 채점합니다 — `image_eval.py` (사용/재생성 판정)
+
+그림을 다 그린 뒤에도 "이 컷을 쓸지 다시 그릴지"는 사람이 눈으로 확인해야 했습니다. 그 판단을
+LLM에게 맡기는 독립 파일입니다(100점 만점 채점 기준은 삽화 평가용 기준을 그대로 씁니다).
+**별도 설치가 필요 없습니다**(이 repo의 `openai`·`Pillow`만 씁니다). 엔드포인트·모델은
+`plot.json`에서 읽습니다(하드코딩 없음).
+
+```bash
+./venv/bin/python image_eval.py --check          # ① 우리 서버가 그림을 보는지부터 확인
+./venv/bin/python image_eval.py image/*.png --tag "1girl, solo, police uniform, ..." \
+    --context "퇴근한 미즈키는 거실에 선다." --min-score 70      # ② 점수 보기
+./venv/bin/python image_eval.py a.png b.png --pick               # ③ 최고점 1장 고르기
+./venv/bin/python image_eval.py a.png b.png --min-score 70 --delete-below
+                                                 # ④ 기준 미만은 지웁니다(= 재생성 대상)
+```
+
+- **첫 단계는 항상 `--check`입니다.** 서버가 텍스트 전용이면(이미지 입력을 500으로 죽이는
+  상태) 그 자리에서 이유를 알려 주고, 지원 여부와 무관하게 **작은 그림을 실제로 한 장 보내**
+  점수가 나오는지까지 확인합니다.
+- 응답 규격은 **첫 줄 = 총점(숫자), 둘째 줄 = 한 줄 이유**입니다. 점수는 첫 줄에서만 뽑으므로
+  본문 산문을 점수로 오독하지 않습니다.
+- 전송은 긴 변을 `--max-side`(기본 768)로 줄여 **JPEG**로 보냅니다(컨텍스트 토큰 절감). 원본
+  1024×1344 PNG를 그대로 쏘면 같은 평가에 두 배 이상 걸립니다.
+- **평가 실패는 렌더를 막지 않습니다.** 점수를 못 뽑으면(비전 미지원·응답 이상) 그 컷은
+  지우지 않고 사용으로 두고 `error`만 남깁니다.
+- 파이썬에서:
+
+  ```python
+  import image_eval
+  r = image_eval.score_image("image/e1_p04.png", tag=panel_prompt, context=caption_ko)
+  if r["score"] is not None and r["score"] < 70: ...      # 다시 그린다
+  out = image_eval.evaluate_and_filter(paths, min_score=70, delete=True)   # → keep / regen
+  ```
+
+- **인원 기대치는 TAG에서 자동**으로 정합니다(`detect_people`). 이게 틀리면 점수가 체계적으로
+  깎입니다(실측): 사람 없는 배경 컷을 "1명 전용"으로 채점하면 인물 항목이 전부 N/A라 32~42점,
+  배경 항목으로 재배분하니 82~92점. 두 사람 컷(실루엣)을 "1명 전용"으로 채점하면 상대방이 전부
+  감점 사유가 되어 컷 전체가 10점씩 밀렸습니다.
+- **제작 의도를 알려 줍니다.** `--camera`(또는 `score_image(camera=…, silhouette=…)`)로 촬영 정보를
+  주면 "클로즈업인데 하반신 태그가 없다", "실루엣이라 상호작용이 부족하다" 같은 **의도한 장치를
+  결점으로 깎지 않습니다**(실측: 두 사람 컷 평균 69.2 → 73.8). 사람 없는 컷에는 행동 컷 면제
+  문장을 붙이지 않습니다(붙이면 "사람이 없다"고 깎입니다).
+- **컷을 고를 때는 상대 비교를 쓰세요.** `compare_images(a, b)`는 두 장을 한 번에 보여주고 나은 쪽을
+  물은 뒤 **A/B 순서를 뒤집어 한 번 더** 물어, 순서만 바뀌면 답도 바뀌는(=자리 편향) 경우를
+  무승부로 처리합니다. 절대 점수는 같은 설정에서도 재현성이 약합니다(아래 실측).
+- CLI exit code는 **쓸 만한 컷이 있으면 0, 전부 기준 미만이면 1**이라 쉘 스크립트에서
+  `image_eval.py … || 재생성` 식으로 바로 연결됩니다.
+- 실측(채점 1컷, 768px JPEG): 1.6~2.3초. 한 회차 43컷 전체 채점은 4병렬로 **61초**입니다.
+- **재현성은 '문턱 판정' 정도만** 됩니다: 같은 컷 3번 채점에 72/72/73점이었지만(단일 컷), 한 회차
+  43컷을 같은 설정으로 두 번 채점하면 **정확히 같은 점수는 19/43**이었고 |Δ| 평균 2.7점(최대 30점,
+  배경·클로즈업 컷에서 흔들립니다). 그래서 권장 정책은 — ① 절대 점수는 **버리는 판정**(<70)에만,
+  ② 여러 장 중 고를 때는 `compare_images`, ③ 재생성은 낮은 컷만 상한을 두고(예: 회당 ≤5컷)
+  시드를 바꿔 1회 재렌더 → 재채점, ④ 사람 없는 배경 컷은 채점에서 제외(신호가 약합니다).
+
+
 
 ```
 run_comic.py          런처(입력→추출→주입→렌더→합성, finally LLM 반납, pre-flight) **+ 모든 OS 분기**
@@ -1156,6 +1210,7 @@ comic_page_merge.py   흰 프레임+검은 선 + 화면 문법(설명 박스/말
 anima_gen.py          EP 태그 LLM 생성 + 태그블록/헤더 + ComfyUI 클라이언트
 runlog.py             실행 로그 위생(시에 초기화 + error.log 분리 + 종료 요약)
 openAPI_control.py    LLM 클라이언트(ollama shim/router), 재시도, unload 3경로
+image_eval.py         [선택] 그린 컷을 LLM이 채점(0~100점) — 사용/재생성 판정, 3-11절
 config.py             전역 상태(plot.json, data/episode_setup.json)
 LORA.md             선택 가능한 LoRA·UNet 안내(화풍을 고르실 때만 보는 문서 — 활성 키만 수록)
 llm_server.py         [선택] ollama 대체 전용 LLM 서버

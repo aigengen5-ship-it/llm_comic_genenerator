@@ -4045,6 +4045,92 @@ def main() -> int:
           CPM._balloon_slot_pref({"speaker": "me"}) == (("tl", "ml"), "r"),
           str(CPM._balloon_slot_pref({"speaker": "me"})))
 
+    # -------------------------------------------------------------------
+    # [2026-09-15] image_eval.py — 이미지 LLM 평가(원작 merge_episode_images.py 에서 옮겨옴)
+    # -------------------------------------------------------------------
+    print("\n== ⑰ image_eval: 그림 평가 → 사용/재생성 ==")
+    import image_eval as IE
+    _op = IE.build_order_prompt("1girl, solo, school uniform", "e1_p04.png", "그녀는 창가에 선다.", True)
+    check("[2026-09-15] 평가 기준은 원작과 같은 100점 만점 10개 항목 + 1인 화면 규칙",
+          all(f"{i})" in _op for i in range(1, 10))
+          and "인원수 조건" in _op and "단일 캐릭터(1명)" in _op and "2명 이상 등장 시 큰 감점" in _op,
+          _op[:120])
+    _op2 = IE.build_order_prompt("1girl, 1boy", "e1_p25.png", "", False)
+    check("[2026-09-15] 2인 화면 기준으로는 상호작용/투시 항목으로 바뀐다",
+          "다중 캐릭터(2명 이상)" in _op2 and "1명만 등장 시 큰 감점" in _op2, "")
+    check("[2026-09-15] 점수는 첫 줄에서만 뽑는다(본문 산문을 점수로 오독하지 않는다)",
+          IE.extract_score("95\n화풍이 우수합니다") == 95 and IE.extract_score("총점 72점\n이유") == 72
+          and IE.extract_score("판정 불가") is None and IE.extract_score("") is None
+          and IE.extract_reason("95\n손이 붕괴됨") == "손이 붕괴됨", "")
+    check("[2026-09-15] 1인/2인 판정은 TAG에서 자동(인원 태그가 없으면 1인 기준)",
+          IE.score_image.__defaults__ is not None
+          and IE.vision_supported.__doc__ is not None)
+    _fake = {"a.png": ("88\n구도가 좋다", True), "b.png": ("41\n손이 붕괴", True),
+             "c.png": (None, False)}
+    _ask = IE.ask_image
+    IE.ask_image = lambda p, prompt_text, **k: _fake[os.path.basename(p)][0]
+    try:
+        _rs = IE.score_images(["a.png", "b.png", "c.png"], tag="1girl, solo", workers=2)
+        check("[2026-09-15] 여러 장을 병렬 평가하고 점수 없는 컷은 실패로 남긴다",
+              [r["score"] for r in _rs] == [88, 41, None]
+              and _rs[0]["reason"] == "구도가 좋다" and _rs[2]["error"], str(_rs))
+        _b = IE.pick_best(_rs)
+        check("[2026-09-15] 최고점 1장을 고른다", _b["path"] == "a.png" and _b["score"] == 88, str(_b))
+        _tmp = []
+        for _n in ("keep.png", "drop.png", "unknown.png"):
+            open(_n, "wb").write(b"\x89PNG\r\n\x1a\n")
+            _tmp.append(_n)
+        _fake.update({"keep.png": ("91\n좋음", True), "drop.png": ("20\n붕괴", True),
+                      "unknown.png": (None, False)})
+        IE.ask_image = lambda p, prompt_text, **k: _fake[os.path.basename(p)][0]
+        _out = IE.evaluate_and_filter(_tmp, min_score=70, delete=True, workers=3)
+        check("[2026-09-15] 생성→평가→삭제/사용: 기준 미만은 삭제, 기준 이상은 사용",
+              _out["keep"] == ["keep.png", "unknown.png"]      # 평가 불능은 사용으로 둔다
+          and [r["path"] for r in _out["regen"]] == ["drop.png"]
+              and os.path.isfile("keep.png") and not os.path.isfile("drop.png"), str(_out["keep"]))
+        check("[2026-09-15] 평가 불능(비전 미지원 등)은 아무것도 지우지 않는다 — 렌더를 막지 않는다",
+              _out["results"][2]["score"] is None and os.path.isfile("unknown.png"), "")
+        for _n in _tmp:
+            try:
+                os.remove(_n)
+            except OSError:
+                pass
+    finally:
+        IE.ask_image = _ask
+    # prerun(2026-09-15 EP1 43컷 실측)에서 드러난 세 가지 함정 — 채점 기준이 틀리면 점수가-systematically 깎인다
+    check("[2026-09-15] 인원 기대치는 TAG에서 자동 판정(1girl/1boy/no humans)",
+          IE.detect_people("1girl, solo, police uniform") == "one"
+          and IE.detect_people("1girl, 1boy, gray silhouette") == "multi"
+          and IE.detect_people("detailed background, no humans, empty scene") == "none"
+          and IE.detect_people("1boy, solo") == "one", "")
+    _bg = IE.build_order_prompt("an empty desk, night", "p03.png", "", people="none")
+    check("[2026-09-15] 사람 없는 배경 컷은 인물 항목(50점)을 버리고 배경 기준으로 재배분",
+          "배경(분위기) 컷" in _bg and "배경 밀도·원근" in _bg and "인체 구조" not in _bg, _bg[:100])
+    _n = IE.build_intent_note(silhouette=True, camera="close_up")
+    check("[2026-09-15] 제작 의도(실루엣/클로즈업)를 알려주면 그 이유로 감점하지 않는다",
+          "실루엣인 사실 자체는 감점 사유가 아니고" in _n and "클로즈업" in _n, _n[:90])
+    check("[2026-09-15] 사람 없는 컷에 '넓은 장면(행동)' 면제를 붙이지 않는다(사람 없다고 깎인다)",
+          IE.build_intent_note(camera="front_view", people="none") == ""
+          and "넓은 장면" in IE.build_intent_note(camera="front_view", people="one"), "")
+    _raw, _url = IE.ask_image_raw, IE.image_data_url
+    IE.image_data_url = lambda path, **k: "data:image/jpeg;base64,AA=="
+    # 내용 편향: 순서를 바꿔도 항상 같은 파일(path_a=A)을 고른다 → 자리 편향이 아니라고 볼 수 없다
+    IE.ask_image_raw = lambda msgs, **k: "A\n손이 더 자연스럽습니다"
+    try:
+        _c = IE.compare_images("a.png", "b.png", tag="1girl, solo")
+        check("[2026-09-15] 상대 비교는 순서를 뒤집어 물어 **자리 편향**이면 무승부로 본다",
+              _c["votes"] == ["A", "A"] and _c["winner"] is None and _c["agreed"] is False, str(_c["votes"]))
+    finally:
+        IE.ask_image_raw, IE.image_data_url = _raw, _url
+
+    check("[2026-09-15] 전송 이미지는 긴 변 리사이즈 + JPEG(컨텍스트 토큰 절감)",
+          IE.image_data_url(os.path.join(ROOT, "data", "balloons", "speech_plain.png"),
+                            max_side=64).startswith("data:image/jpeg;base64,"), "")
+    check("[2026-09-15] CLI: --check/--pick/--delete-below/--min-score 를 노출한다",
+          all(f in " ".join(__import__("inspect").getsource(IE.main).split())
+              for f in ("--check", "--pick", "--delete-below", "--min-score")), "")
+
+
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:
         print(" -", f)

@@ -257,9 +257,10 @@ def start_comfyui(wait_seconds: int = 300) -> bool:
     env.update(_comfy_env())
     log_path = _repo_path("comfyui.log")
     with open(log_path, "ab") as logf:
-        subprocess.Popen(_comfy_args(), cwd=comfy_dir, env=env,
+        # [2026-09-16] POSIX에서는 ['main.py']를 실행 파일로 잘못 해석해 터졌다 — 인터프리터를 앞에 둔다
+        subprocess.Popen([comfy_py] + _comfy_args(), cwd=comfy_dir, env=env,
                          stdout=logf, stderr=subprocess.STDOUT, **_detach_kwargs())
-    p(f"  ComfyUI 기동 시도… {comfy_dir} (로그 {log_path})")
+    p(f"  ComfyUI 기동 시도… {comfy_dir} ({os.path.basename(comfy_py)} main.py, 로그 {log_path})")
     t0 = time.time()
     while time.time() - t0 < wait_seconds:
         if _tcp(*COMFY_URL, timeout=1.0):

@@ -60,3 +60,5 @@ anima_gen_diff.md
 # 캐릭터 태그 DB 빌더 실행 흔적 (결과 YAML은 커밋한다 — 실행에 네트워크가 필요 없다)
 analysis_chara/*.log
 analysis_chara/*.json
+# 캐릭터 태그 프로브 실렌더 결과 (probe.py 로 재생성 — 그림이라 커밋하지 않습니다)
+analysis_chara/probe/

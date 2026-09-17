@@ -1573,6 +1573,28 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     if ct["protagonist"] or ct["partner"]:
         clog(f"#캐릭터 태그 인식: 주인공={ct['protagonist'] or '(없음)'} "
              f"상대방={ct['partner'] or '(없음)'} — 모든 컷 프롬프트에 강제 주입됩니다")
+    # [2026-09-16] 시트에 #…# 이 **없는** 회차는 주인공 얼굴이 회차를 넘어 흔들립니다.
+    #   그래서 시트 속성(머리색·길이·눈·나이대)으로 '학습량이 확인된 닮은 캐릭터 태그'를 골라 넣습니다.
+    #   점수가 임계값 아래면 억지로 고르지 않고 속성 태그만 씁니다(없는 얼굴을 빌리면 원작 캐릭터가 섞임).
+    #   대상은 주인공 1명뿐 — 상대방은 계속 실루엣입니다(정체 태그가 머리·복장을 통째로 끌어옵니다).
+    if not config.char_tags and getattr(config, "char_match", True):
+        _cm = None
+        try:
+            import chara_match
+            if not chara_match.load_db():
+                clog("[[CHAR TAG]] 캐릭터 태그 DB가 없습니다(data/chara_tags.yaml) — 속성 태그만 사용합니다")
+            else:
+                _cm = chara_match.pick_char_lookalike(proto, skin=proto.get("skin_color"))
+        except Exception as e:
+            clog(f"[[CHAR TAG]] 선택기를 부르지 못했습니다 ({e}) — 속성 태그만 사용합니다")
+        if _cm and _cm.get("tag"):
+            config.char_tags = [_cm["tag"]]
+            if getattr(config, "char_match_series", False) and _cm.get("series"):
+                config.char_tags.append(_cm["series"])
+            clog(f"[[CHAR TAG]] 시트 속성( {_cm.get('why','')} ) → **{_cm['tag']}** "
+                 f"(유사도 {_cm['score']}, 학습 {_cm['posts']}글) — 모든 컷에 강제 주입됩니다")
+        elif _cm:
+            clog(f"[[CHAR TAG]] {_cm.get('rejected', '후보 없음')} — 속성 태그만 사용합니다")
 
     config.name2 = _pn2 or part.get("name") or "상대"
     config.sex2 = "남자" if part.get("sex") == "male" else "여자"

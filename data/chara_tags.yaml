@@ -1,0 +1,2878 @@
+# 캐릭터 태그 DB — Danbooru 실측으로 채운 데이터 (수기 속성 금지)
+# 속성 값 = '그 캐릭터 태그가 붙은 대표 글(fav순 32장) 중 해당 속성 태그도 붙은 비율(%)'.
+#         즉 사람의 기억이 아니라 '모델이 실제로 뭘 많이 봤는가'의 측정치입니다.
+# 재생성: venv/bin/python analysis_chara/build.py
+# generated_at: 2026-09-17
+# source: danbooru counts/posts.json + posts.json (캐릭터 106종)
+version: 1
+characters:
+  hakurei_reimu:
+    posts: 100980
+    series: "touhou"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 3
+    hair_color:
+      blonde_hair: 34
+      brown_hair: 66
+
+    hair_length:
+      long_hair: 91
+
+    eyes:
+      brown_eyes: 31
+      red_eyes: 50
+
+    traits:
+      braid: 25
+      hair_bow: 100
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  kochiya_sanae:
+    posts: 41133
+    series: "touhou"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 22
+    hair_color:
+      green_hair: 84
+
+    hair_length:
+      long_hair: 88
+
+    eyes:
+      green_eyes: 59
+
+    traits:
+      hair_bow: 25
+      hair_ornament: 94
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  akemi_homura:
+    posts: 29985
+    series: "mahou_shoujo_madoka_magica"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 3
+    hair_color:
+      black_hair: 78
+
+    hair_length:
+      long_hair: 97
+
+    eyes:
+      purple_eyes: 50
+
+    traits:
+      hair_bow: 28
+
+    outfit:
+      dress: 28
+
+    skin:
+      {}
+
+  kaname_madoka:
+    posts: 29936
+    series: "mahou_shoujo_madoka_magica"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 9
+    hair_color:
+      black_hair: 38
+      pink_hair: 84
+
+    hair_length:
+      long_hair: 69
+      short_hair: 50
+
+    eyes:
+      pink_eyes: 44
+      purple_eyes: 28
+
+    traits:
+      hair_bow: 66
+      twintails: 59
+
+    outfit:
+      dress: 62
+      school_uniform: 25
+
+    skin:
+      {}
+
+  raiden_shogun:
+    posts: 22059
+    series: "genshin_impact"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 9
+    hair_color:
+      pink_hair: 28
+      purple_hair: 81
+
+    hair_length:
+      long_hair: 78
+      very_long_hair: 28
+
+    eyes:
+      purple_eyes: 81
+
+    traits:
+      braid: 34
+      hair_ornament: 56
+
+    outfit:
+      dress: 34
+      kimono: 34
+
+    skin:
+      {}
+
+  shimakaze_(kancolle):
+    posts: 20730
+    series: "kantai_collection"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 31
+    hair_color:
+      blonde_hair: 59
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      grey_eyes: 28
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  gotoh_hitori:
+    posts: 18009
+    series: "bocchi_the_rock!"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      pink_hair: 78
+      red_hair: 44
+
+    hair_length:
+      long_hair: 84
+
+    eyes:
+      blue_eyes: 53
+
+    traits:
+      hair_ornament: 84
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  frieren:
+    posts: 16244
+    series: "sousou_no_frieren"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      grey_hair: 31
+      purple_hair: 25
+      white_hair: 66
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      green_eyes: 62
+
+    traits:
+      twintails: 59
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  usami_renko:
+    posts: 15519
+    series: "touhou"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      blonde_hair: 59
+      brown_hair: 88
+
+    hair_length:
+      long_hair: 38
+      medium_hair: 66
+
+    eyes:
+      brown_eyes: 66
+      purple_eyes: 28
+
+    traits:
+      hair_bow: 34
+
+    outfit:
+      dress: 72
+
+    skin:
+      {}
+
+  maribel_hearn:
+    posts: 15144
+    series: "touhou"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      blonde_hair: 75
+      brown_hair: 59
+
+    hair_length:
+      long_hair: 59
+      medium_hair: 47
+
+    eyes:
+      brown_eyes: 44
+      purple_eyes: 31
+
+    traits:
+      hair_bow: 25
+
+    outfit:
+      dress: 75
+
+    skin:
+      {}
+
+  akagi_(kancolle):
+    posts: 13004
+    series: "kantai_collection"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 19
+    hair_color:
+      black_hair: 50
+      brown_hair: 47
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      brown_eyes: 41
+
+    traits:
+      side_ponytail: 28
+
+    outfit:
+      kimono: 34
+      swimsuit: 31
+
+    skin:
+      {}
+
+  yae_miko:
+    posts: 12474
+    series: "genshin_impact"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 56
+    hair_color:
+      blue_hair: 25
+      pink_hair: 84
+      purple_hair: 31
+
+    hair_length:
+      long_hair: 81
+
+    eyes:
+      purple_eyes: 56
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  shiroko_(blue_archive):
+    posts: 11528
+    series: "blue_archive"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 22
+    hair_color:
+      grey_hair: 75
+
+    hair_length:
+      long_hair: 38
+      medium_hair: 28
+
+    eyes:
+      blue_eyes: 59
+
+    traits:
+      hair_ornament: 72
+
+    outfit:
+      swimsuit: 25
+
+    skin:
+      {}
+
+  yor_forger:
+    posts: 11443
+    series: "spy_x_family"
+    age_band: adult
+    kid_pct: 9
+    mature_pct: 3
+    explicit_pct: 12
+    hair_color:
+      black_hair: 81
+      blonde_hair: 53
+
+    hair_length:
+      long_hair: 50
+      short_hair: 59
+      very_short_hair: 31
+
+    eyes:
+      blue_eyes: 28
+      red_eyes: 53
+
+    traits:
+      {}
+
+    outfit:
+      dress: 38
+
+    skin:
+      {}
+
+  makima_(chainsaw_man):
+    posts: 11022
+    series: "chainsaw_man"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      red_hair: 88
+
+    hair_length:
+      long_hair: 62
+
+    eyes:
+      yellow_eyes: 50
+
+    traits:
+      braid: 56
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  tohsaka_rin:
+    posts: 10941
+    series: "fate_(series)"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 34
+    hair_color:
+      black_hair: 41
+      brown_hair: 56
+
+    hair_length:
+      long_hair: 88
+
+    eyes:
+      blue_eyes: 59
+
+    traits:
+      hair_ribbon: 47
+      twintails: 41
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  megumin:
+    posts: 10858
+    series: "kono_subarashii_sekai_ni_shukufuku_wo!"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 44
+    hair_color:
+      black_hair: 22
+      brown_hair: 72
+
+    hair_length:
+      short_hair: 31
+
+    eyes:
+      red_eyes: 81
+
+    traits:
+      {}
+
+    outfit:
+      dress: 53
+
+    skin:
+      {}
+
+  ayanami_rei:
+    posts: 10499
+    series: "neon_genesis_evangelion"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 9
+    hair_color:
+      blue_hair: 81
+
+    hair_length:
+      long_hair: 28
+      short_hair: 88
+
+    eyes:
+      red_eyes: 78
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  rem_(re:zero):
+    posts: 10275
+    series: "re:zero_kara_hajimeru_isekai_seikatsu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      black_hair: 31
+      blue_hair: 84
+
+    hair_length:
+      long_hair: 34
+      short_hair: 75
+
+    eyes:
+      blue_eyes: 59
+
+    traits:
+      hair_ornament: 62
+      hair_ribbon: 31
+
+    outfit:
+      dress: 28
+
+    skin:
+      {}
+
+  fern_(sousou_no_frieren):
+    posts: 9741
+    series: "sousou_no_frieren"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 50
+    hair_color:
+      purple_hair: 94
+      red_hair: 25
+      white_hair: 25
+
+    hair_length:
+      long_hair: 66
+
+    eyes:
+      purple_eyes: 62
+
+    traits:
+      blunt_bangs: 34
+
+    outfit:
+      dress: 31
+
+    skin:
+      {}
+
+  nagato_yuki:
+    posts: 9264
+    series: "suzumiya_haruhi_no_yuuutsu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      purple_hair: 81
+
+    hair_length:
+      short_hair: 84
+
+    eyes:
+      brown_eyes: 72
+
+    traits:
+      glasses: 28
+
+    outfit:
+      school_uniform: 84
+      serafuku: 75
+
+    skin:
+      {}
+
+  chun-li:
+    posts: 9169
+    series: "street_fighter"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 28
+    hair_color:
+      black_hair: 34
+      brown_hair: 50
+
+    hair_length:
+      short_hair: 41
+
+    eyes:
+      brown_eyes: 34
+
+    traits:
+      {}
+
+    outfit:
+      dress: 31
+      swimsuit: 31
+
+    skin:
+      {}
+
+  tamamo_no_mae_(fate):
+    posts: 9164
+    series: "fate_(series)"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 28
+    hair_color:
+      blonde_hair: 28
+      pink_hair: 94
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      yellow_eyes: 53
+
+    traits:
+      {}
+
+    outfit:
+      swimsuit: 31
+
+    skin:
+      {}
+
+  kinomoto_sakura:
+    posts: 9034
+    series: "cardcaptor_sakura"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 3
+    hair_color:
+      brown_hair: 81
+
+    hair_length:
+      long_hair: 25
+      short_hair: 69
+
+    eyes:
+      green_eyes: 88
+
+    traits:
+      hair_ornament: 28
+
+    outfit:
+      dress: 47
+      school_uniform: 25
+
+    skin:
+      {}
+
+  nico_robin:
+    posts: 7716
+    series: "one_piece"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 22
+    hair_color:
+      black_hair: 69
+      blonde_hair: 22
+
+    hair_length:
+      long_hair: 50
+      short_hair: 25
+
+    eyes:
+      blue_eyes: 38
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  matou_sakura:
+    posts: 6897
+    series: "fate_(series)"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      purple_hair: 88
+
+    hair_length:
+      long_hair: 84
+
+    eyes:
+      purple_eyes: 75
+
+    traits:
+      hair_ribbon: 78
+
+    outfit:
+      dress: 34
+      school_uniform: 31
+
+    skin:
+      {}
+
+  tsukino_usagi:
+    posts: 6863
+    series: "bishoujo_senshi_sailor_moon"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      blonde_hair: 88
+
+    hair_length:
+      long_hair: 94
+      very_long_hair: 47
+
+    eyes:
+      blue_eyes: 75
+
+    traits:
+      hair_ornament: 38
+      twintails: 81
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  aqua_(konosuba):
+    posts: 6781
+    series: "kono_subarashii_sekai_ni_shukufuku_wo!"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      blonde_hair: 25
+      blue_hair: 72
+      brown_hair: 31
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      blue_eyes: 56
+
+    traits:
+      hair_ornament: 47
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  power_(chainsaw_man):
+    posts: 6711
+    series: "chainsaw_man"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 19
+    hair_color:
+      blonde_hair: 50
+      pink_hair: 22
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      yellow_eyes: 34
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  izumi_konata:
+    posts: 6561
+    series: "lucky_star"
+    age_band: adult
+    kid_pct: 6
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      blue_hair: 94
+
+    hair_length:
+      long_hair: 84
+      very_long_hair: 50
+
+    eyes:
+      green_eyes: 84
+
+    traits:
+      ahoge: 78
+
+    outfit:
+      school_uniform: 34
+      serafuku: 31
+
+    skin:
+      {}
+
+  kitagawa_marin:
+    posts: 6488
+    series: "sono_bisque_doll_wa_koi_wo_suru"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 50
+    hair_color:
+      blonde_hair: 84
+      pink_hair: 25
+
+    hair_length:
+      long_hair: 81
+
+    eyes:
+      red_eyes: 44
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  silence_suzuka_(umamusume):
+    posts: 6376
+    series: "umamusume"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      brown_hair: 47
+      orange_hair: 72
+
+    hair_length:
+      long_hair: 78
+      short_hair: 41
+
+    eyes:
+      blue_eyes: 31
+      green_eyes: 41
+
+    traits:
+      blunt_bangs: 50
+      hair_ornament: 34
+      hime_cut: 34
+
+    outfit:
+      swimsuit: 25
+
+    skin:
+      {}
+
+  asuna_(sao):
+    posts: 6102
+    series: "sword_art_online"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 41
+    hair_color:
+      black_hair: 25
+      blonde_hair: 22
+      brown_hair: 62
+
+    hair_length:
+      long_hair: 84
+      very_long_hair: 31
+
+    eyes:
+      brown_eyes: 47
+
+    traits:
+      braid: 53
+
+    outfit:
+      dress: 25
+
+    skin:
+      {}
+
+  artoria_pendragon_(lancer):
+    posts: 5788
+    series: "fate/grand_order"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 44
+    hair_color:
+      blonde_hair: 94
+
+    hair_length:
+      long_hair: 41
+
+    eyes:
+      green_eyes: 69
+
+    traits:
+      ahoge: 53
+      braid: 38
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  ishtar_(fate):
+    posts: 5333
+    series: "fate_(series)"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      black_hair: 75
+
+    hair_length:
+      long_hair: 84
+
+    eyes:
+      red_eyes: 88
+
+    traits:
+      hair_ribbon: 50
+
+    outfit:
+      swimsuit: 47
+
+    skin:
+      {}
+
+  emilia_(re:zero):
+    posts: 5264
+    series: "re:zero_kara_hajimeru_isekai_seikatsu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      grey_hair: 53
+      white_hair: 38
+
+    hair_length:
+      long_hair: 78
+      short_hair: 28
+      very_long_hair: 34
+
+    eyes:
+      purple_eyes: 69
+
+    traits:
+      blunt_bangs: 41
+      braid: 66
+      hair_ornament: 75
+      hair_ribbon: 50
+
+    outfit:
+      dress: 28
+
+    skin:
+      {}
+
+  special_week_(umamusume):
+    posts: 5022
+    series: "umamusume"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      brown_hair: 94
+      white_hair: 22
+
+    hair_length:
+      long_hair: 50
+      short_hair: 94
+
+    eyes:
+      purple_eyes: 47
+
+    traits:
+      hair_ornament: 31
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  nakano_nino:
+    posts: 4689
+    series: "go-toubun_no_hanayome"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      orange_hair: 25
+      pink_hair: 44
+      red_hair: 72
+
+    hair_length:
+      long_hair: 31
+      medium_hair: 44
+      short_hair: 31
+
+    eyes:
+      blue_eyes: 88
+
+    traits:
+      ahoge: 25
+      blunt_bangs: 38
+      hair_ornament: 59
+      hair_ribbon: 41
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  holo:
+    posts: 4487
+    series: "spice_and_wolf"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      brown_hair: 100
+
+    hair_length:
+      long_hair: 91
+
+    eyes:
+      red_eyes: 84
+
+    traits:
+      blunt_bangs: 31
+
+    outfit:
+      dress: 38
+
+    skin:
+      {}
+
+  zero_two_(darling_in_the_franxx):
+    posts: 4477
+    series: "darling_in_the_franxx"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      pink_hair: 88
+
+    hair_length:
+      long_hair: 94
+
+    eyes:
+      green_eyes: 59
+
+    traits:
+      {}
+
+    outfit:
+      dress: 25
+
+    skin:
+      {}
+
+  makise_kurisu:
+    posts: 4346
+    series: "science_adventure"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      brown_hair: 38
+      red_hair: 47
+
+    hair_length:
+      long_hair: 97
+      very_long_hair: 34
+
+    eyes:
+      blue_eyes: 41
+      purple_eyes: 50
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  nakano_miku:
+    posts: 4152
+    series: "go-toubun_no_hanayome"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 59
+    hair_color:
+      brown_hair: 72
+      orange_hair: 34
+
+    hair_length:
+      long_hair: 56
+      short_hair: 38
+
+    eyes:
+      blue_eyes: 94
+
+    traits:
+      hair_ribbon: 28
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  futaba_anzu:
+    posts: 4129
+    series: "idolmaster"
+    age_band: adult
+    kid_pct: 6
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      blonde_hair: 72
+      brown_hair: 41
+
+    hair_length:
+      long_hair: 66
+      very_long_hair: 25
+
+    eyes:
+      brown_eyes: 44
+
+    traits:
+      hair_ornament: 34
+      twintails: 72
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  hiiragi_tsukasa:
+    posts: 3723
+    series: "lucky_star"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      blue_hair: 34
+      pink_hair: 22
+      purple_hair: 69
+
+    hair_length:
+      long_hair: 38
+      medium_hair: 53
+      short_hair: 28
+
+    eyes:
+      blue_eyes: 59
+      purple_eyes: 31
+
+    traits:
+      twintails: 25
+
+    outfit:
+      school_uniform: 78
+      serafuku: 59
+
+    skin:
+      {}
+
+  nakano_yotsuba:
+    posts: 3694
+    series: "go-toubun_no_hanayome"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 56
+    hair_color:
+      brown_hair: 38
+      orange_hair: 84
+      pink_hair: 22
+
+    hair_length:
+      medium_hair: 38
+      short_hair: 69
+
+    eyes:
+      blue_eyes: 81
+
+    traits:
+      hair_ribbon: 56
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  aisaka_taiga:
+    posts: 3496
+    series: "toradora!"
+    age_band: adult
+    kid_pct: 22
+    mature_pct: 0
+    explicit_pct: 34
+    hair_color:
+      brown_hair: 88
+
+    hair_length:
+      long_hair: 91
+
+    eyes:
+      brown_eyes: 84
+
+    traits:
+      {}
+
+    outfit:
+      school_uniform: 38
+
+    skin:
+      {}
+
+  senjougahara_hitagi:
+    posts: 3406
+    series: "monogatari_(series)"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      black_hair: 22
+      purple_hair: 91
+
+    hair_length:
+      long_hair: 84
+      short_hair: 28
+      very_long_hair: 50
+
+    eyes:
+      blue_eyes: 72
+
+    traits:
+      {}
+
+    outfit:
+      school_uniform: 56
+
+    skin:
+      {}
+
+  kamado_nezuko:
+    posts: 3396
+    series: "kimetsu_no_yaiba"
+    age_band: adult
+    kid_pct: 6
+    mature_pct: 0
+    explicit_pct: 22
+    hair_color:
+      black_hair: 69
+      blonde_hair: 28
+      brown_hair: 28
+      pink_hair: 28
+
+    hair_length:
+      long_hair: 78
+      short_hair: 38
+
+    eyes:
+      pink_eyes: 53
+
+    traits:
+      {}
+
+    outfit:
+      kimono: 41
+
+    skin:
+      {}
+
+  shihouin_yoruichi:
+    posts: 3052
+    series: "bleach"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 47
+    hair_color:
+      purple_hair: 78
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      yellow_eyes: 75
+
+    traits:
+      ponytail: 72
+
+    outfit:
+      {}
+
+    skin:
+      dark_skin: 94
+
+  hanekawa_tsubasa:
+    posts: 2996
+    series: "monogatari_(series)"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 6
+    hair_color:
+      black_hair: 78
+
+    hair_length:
+      long_hair: 66
+      short_hair: 41
+
+    eyes:
+      purple_eyes: 66
+
+    traits:
+      braid: 59
+      glasses: 41
+      hair_ornament: 53
+
+    outfit:
+      swimsuit: 47
+
+    skin:
+      {}
+
+  shinku:
+    posts: 2658
+    series: "rozen_maiden"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      blonde_hair: 94
+      brown_hair: 22
+      white_hair: 22
+
+    hair_length:
+      long_hair: 91
+      very_long_hair: 69
+
+    eyes:
+      blue_eyes: 78
+      red_eyes: 31
+
+    traits:
+      twintails: 72
+
+    outfit:
+      dress: 84
+
+    skin:
+      {}
+
+  nakano_itsuki:
+    posts: 2590
+    series: "go-toubun_no_hanayome"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 47
+    hair_color:
+      brown_hair: 25
+      pink_hair: 31
+      red_hair: 78
+
+    hair_length:
+      long_hair: 81
+      short_hair: 25
+
+    eyes:
+      blue_eyes: 66
+
+    traits:
+      ahoge: 50
+      hair_ornament: 56
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  shinomiya_kaguya:
+    posts: 2572
+    series: "kaguya-sama_wa_kokurasetai_~tensai-tachi_no_renai_zunousen~"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 44
+    hair_color:
+      black_hair: 88
+      blonde_hair: 25
+      brown_hair: 25
+
+    hair_length:
+      long_hair: 38
+      short_hair: 41
+
+    eyes:
+      red_eyes: 78
+
+    traits:
+      hair_ribbon: 38
+
+    outfit:
+      dress: 31
+      school_uniform: 38
+
+    skin:
+      {}
+
+  kugisaki_nobara:
+    posts: 2553
+    series: "jujutsu_kaisen"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 59
+    hair_color:
+      brown_hair: 59
+
+    hair_length:
+      short_hair: 75
+
+    eyes:
+      brown_eyes: 44
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  komi_shouko:
+    posts: 2479
+    series: "komi-san_wa_komyushou_desu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 47
+    hair_color:
+      black_hair: 56
+      purple_hair: 28
+
+    hair_length:
+      long_hair: 66
+
+    eyes:
+      purple_eyes: 25
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  tsunade_(naruto):
+    posts: 2465
+    series: "naruto_(series)"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 56
+    explicit_pct: 78
+    hair_color:
+      blonde_hair: 75
+
+    hair_length:
+      long_hair: 28
+
+    eyes:
+      brown_eyes: 31
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  shima_rin:
+    posts: 2437
+    series: "yurucamp"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 22
+    hair_color:
+      blue_hair: 78
+      pink_hair: 28
+
+    hair_length:
+      long_hair: 44
+
+    eyes:
+      purple_eyes: 72
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  hoshino_ai:
+    posts: 2409
+    series: "oshi_no_ko"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 19
+    hair_color:
+      blonde_hair: 28
+      purple_hair: 84
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      blue_eyes: 25
+      purple_eyes: 59
+
+    traits:
+      hair_ornament: 50
+
+    outfit:
+      dress: 44
+
+    skin:
+      {}
+
+  sinon:
+    posts: 2378
+    series: "sword_art_online"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 28
+    hair_color:
+      blue_hair: 62
+
+    hair_length:
+      medium_hair: 50
+      short_hair: 41
+
+    eyes:
+      blue_eyes: 53
+
+    traits:
+      hair_ornament: 47
+      hair_ribbon: 25
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  nishizumi_shiho:
+    posts: 2344
+    series: "girls_und_panzer"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 41
+    explicit_pct: 47
+    hair_color:
+      black_hair: 28
+      brown_hair: 62
+
+    hair_length:
+      long_hair: 94
+
+    eyes:
+      brown_eyes: 59
+
+    traits:
+      blunt_bangs: 41
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  yamato_(one_piece):
+    posts: 2343
+    series: "one_piece"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 34
+    hair_color:
+      blue_hair: 34
+      white_hair: 75
+
+    hair_length:
+      long_hair: 66
+
+    eyes:
+      {}
+
+    traits:
+      hair_ornament: 41
+      ponytail: 53
+
+    outfit:
+      kimono: 28
+
+    skin:
+      {}
+
+  ada_wong:
+    posts: 2340
+    series: "resident_evil"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 6
+    explicit_pct: 9
+    hair_color:
+      black_hair: 97
+      blonde_hair: 31
+      brown_hair: 31
+
+    hair_length:
+      short_hair: 91
+
+    eyes:
+      brown_eyes: 28
+
+    traits:
+      {}
+
+    outfit:
+      dress: 50
+
+    skin:
+      {}
+
+  nakano_ichika:
+    posts: 2320
+    series: "go-toubun_no_hanayome"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 19
+    hair_color:
+      black_hair: 38
+      orange_hair: 25
+      pink_hair: 81
+
+    hair_length:
+      short_hair: 97
+
+    eyes:
+      blue_eyes: 72
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  fujiwara_chika:
+    posts: 2263
+    series: "kaguya-sama_wa_kokurasetai_~tensai-tachi_no_renai_zunousen~"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 69
+    hair_color:
+      pink_hair: 78
+
+    hair_length:
+      long_hair: 75
+
+    eyes:
+      blue_eyes: 69
+
+    traits:
+      blunt_bangs: 25
+      hair_bow: 41
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  boa_hancock:
+    posts: 2177
+    series: "one_piece"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 34
+    hair_color:
+      black_hair: 94
+
+    hair_length:
+      long_hair: 84
+
+    eyes:
+      blue_eyes: 41
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  yukinoshita_yukino:
+    posts: 2116
+    series: "yahari_ore_no_seishun_lovecome_wa_machigatteiru."
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 75
+    hair_color:
+      black_hair: 91
+
+    hair_length:
+      long_hair: 97
+      very_long_hair: 31
+
+    eyes:
+      blue_eyes: 66
+
+    traits:
+      ahoge: 75
+      hair_ribbon: 72
+      ponytail: 62
+
+    outfit:
+      swimsuit: 41
+
+    skin:
+      {}
+
+  katsuragi_misato:
+    posts: 2101
+    series: "neon_genesis_evangelion"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 16
+    explicit_pct: 41
+    hair_color:
+      blue_hair: 25
+      purple_hair: 56
+
+    hair_length:
+      long_hair: 66
+
+    eyes:
+      brown_eyes: 34
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  kusanagi_motoko:
+    posts: 2098
+    series: "ghost_in_the_shell"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 22
+    hair_color:
+      blue_hair: 59
+      purple_hair: 25
+
+    hair_length:
+      short_hair: 38
+
+    eyes:
+      red_eyes: 56
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  himeno_(chainsaw_man):
+    posts: 2082
+    series: "chainsaw_man"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 34
+    hair_color:
+      black_hair: 44
+      green_hair: 47
+
+    hair_length:
+      short_hair: 75
+
+    eyes:
+      {}
+
+    traits:
+      ponytail: 28
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  yamada_anna:
+    posts: 1972
+    series: "boku_no_kokoro_no_yabai_yatsu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      black_hair: 66
+
+    hair_length:
+      long_hair: 78
+
+    eyes:
+      brown_eyes: 56
+
+    traits:
+      {}
+
+    outfit:
+      school_uniform: 31
+
+    skin:
+      {}
+
+  yuigahama_yui:
+    posts: 1825
+    series: "yahari_ore_no_seishun_lovecome_wa_machigatteiru."
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 3
+    explicit_pct: 19
+    hair_color:
+      black_hair: 34
+      orange_hair: 59
+      pink_hair: 28
+
+    hair_length:
+      long_hair: 28
+      medium_hair: 38
+      short_hair: 66
+
+    eyes:
+      blue_eyes: 28
+
+    traits:
+      ahoge: 28
+
+    outfit:
+      school_uniform: 25
+      swimsuit: 25
+
+    skin:
+      {}
+
+  albedo_(overlord):
+    posts: 1575
+    series: "overlord_(maruyama)"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 44
+    hair_color:
+      black_hair: 88
+
+    hair_length:
+      long_hair: 81
+
+    eyes:
+      yellow_eyes: 72
+
+    traits:
+      ahoge: 34
+
+    outfit:
+      dress: 44
+
+    skin:
+      {}
+
+  uzaki_hana:
+    posts: 1486
+    series: "uzaki-chan_wa_asobitai!"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 9
+    explicit_pct: 75
+    hair_color:
+      grey_hair: 88
+
+    hair_length:
+      short_hair: 84
+
+    eyes:
+      blue_eyes: 84
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  hayasaka_ai:
+    posts: 1408
+    series: "kaguya-sama_wa_kokurasetai_~tensai-tachi_no_renai_zunousen~"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 69
+    hair_color:
+      blonde_hair: 97
+
+    hair_length:
+      long_hair: 31
+
+    eyes:
+      blue_eyes: 50
+
+    traits:
+      hair_ornament: 78
+      side_ponytail: 84
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  isshiki_iroha:
+    posts: 1307
+    series: "yahari_ore_no_seishun_lovecome_wa_machigatteiru."
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      black_hair: 28
+      brown_hair: 66
+      orange_hair: 31
+
+    hair_length:
+      long_hair: 38
+      medium_hair: 62
+      short_hair: 41
+
+    eyes:
+      brown_eyes: 38
+      yellow_eyes: 25
+
+    traits:
+      hair_ornament: 28
+
+    outfit:
+      school_uniform: 25
+      swimsuit: 25
+
+    skin:
+      {}
+
+  katou_megumi:
+    posts: 1178
+    series: "saenai_heroine_no_sodatekata"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 16
+    hair_color:
+      black_hair: 34
+      blonde_hair: 25
+      brown_hair: 66
+
+    hair_length:
+      long_hair: 25
+      short_hair: 47
+
+    eyes:
+      brown_eyes: 66
+
+    traits:
+      {}
+
+    outfit:
+      school_uniform: 41
+      swimsuit: 25
+
+    skin:
+      {}
+
+  uzaki_tsuki:
+    posts: 1143
+    series: "uzaki-chan_wa_asobitai!"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 62
+    explicit_pct: 75
+    hair_color:
+      grey_hair: 78
+
+    hair_length:
+      long_hair: 59
+
+    eyes:
+      blue_eyes: 28
+
+    traits:
+      {}
+
+    outfit:
+      swimsuit: 34
+
+    skin:
+      {}
+
+  melony_(pokemon):
+    posts: 1109
+    series: "pokemon"
+    age_band: elder
+    kid_pct: 9
+    mature_pct: 81
+    explicit_pct: 56
+    hair_color:
+      grey_hair: 28
+
+    hair_length:
+      long_hair: 69
+
+    eyes:
+      blue_eyes: 50
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  iino_miko:
+    posts: 999
+    series: "kaguya-sama_wa_kokurasetai_~tensai-tachi_no_renai_zunousen~"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 62
+    hair_color:
+      black_hair: 22
+      brown_hair: 94
+
+    hair_length:
+      long_hair: 78
+
+    eyes:
+      brown_eyes: 59
+
+    traits:
+      blunt_bangs: 25
+      twintails: 59
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  anjou_naruko:
+    posts: 953
+    series: "ano_hi_mita_hana_no_namae_wo_bokutachi_wa_mada_shiranai."
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 56
+    hair_color:
+      brown_hair: 28
+      orange_hair: 38
+
+    hair_length:
+      long_hair: 50
+
+    eyes:
+      brown_eyes: 38
+
+    traits:
+      hair_ornament: 66
+      twintails: 88
+
+    outfit:
+      school_uniform: 31
+
+    skin:
+      {}
+
+  kasumigaoka_utaha:
+    posts: 939
+    series: "saenai_heroine_no_sodatekata"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 41
+    hair_color:
+      black_hair: 69
+      blonde_hair: 25
+      brown_hair: 22
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      red_eyes: 59
+
+    traits:
+      {}
+
+    outfit:
+      school_uniform: 38
+      swimsuit: 38
+
+    skin:
+      {}
+
+  mizuhara_chizuru:
+    posts: 929
+    series: "kanojo_okarishimasu"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 31
+    hair_color:
+      brown_hair: 91
+
+    hair_length:
+      long_hair: 94
+
+    eyes:
+      brown_eyes: 75
+
+    traits:
+      braid: 34
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  sawamura_spencer_eriri:
+    posts: 883
+    series: "saenai_heroine_no_sodatekata"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      blonde_hair: 91
+
+    hair_length:
+      long_hair: 75
+
+    eyes:
+      blue_eyes: 75
+
+    traits:
+      hair_ribbon: 62
+      twintails: 84
+
+    outfit:
+      school_uniform: 34
+
+    skin:
+      {}
+
+  kawashima_ami:
+    posts: 723
+    series: "toradora!"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 25
+    hair_color:
+      blue_hair: 75
+      brown_hair: 41
+      red_hair: 22
+
+    hair_length:
+      long_hair: 72
+
+    eyes:
+      blue_eyes: 28
+      purple_eyes: 28
+
+    traits:
+      {}
+
+    outfit:
+      blazer: 28
+      school_uniform: 53
+
+    skin:
+      {}
+
+  ieiri_shoko:
+    posts: 713
+    series: "jujutsu_kaisen"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 6
+    explicit_pct: 12
+    hair_color:
+      black_hair: 34
+      brown_hair: 78
+      white_hair: 22
+
+    hair_length:
+      long_hair: 69
+      short_hair: 38
+
+    eyes:
+      brown_eyes: 56
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  unohana_retsu:
+    posts: 699
+    series: "bleach"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 0
+    hair_color:
+      black_hair: 53
+      grey_hair: 31
+
+    hair_length:
+      long_hair: 66
+
+    eyes:
+      {}
+
+    traits:
+      braid: 50
+
+    outfit:
+      kimono: 38
+
+    skin:
+      {}
+
+  kuonji_ukyou:
+    posts: 684
+    series: "ranma_1/2"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 9
+    explicit_pct: 3
+    hair_color:
+      black_hair: 38
+      blue_hair: 28
+      brown_hair: 88
+      purple_hair: 28
+
+    hair_length:
+      long_hair: 72
+      short_hair: 41
+
+    eyes:
+      {}
+
+    traits:
+      hair_bow: 53
+      ponytail: 34
+
+    outfit:
+      dress: 34
+
+    skin:
+      {}
+
+  esdeath:
+    posts: 598
+    series: "akame_ga_kill!"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 3
+    explicit_pct: 47
+    hair_color:
+      blue_hair: 91
+
+    hair_length:
+      long_hair: 75
+      very_long_hair: 47
+
+    eyes:
+      blue_eyes: 88
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  akagi_ritsuko:
+    posts: 589
+    series: "neon_genesis_evangelion"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 9
+    explicit_pct: 28
+    hair_color:
+      blonde_hair: 78
+      brown_hair: 25
+      orange_hair: 25
+
+    hair_length:
+      long_hair: 28
+      short_hair: 53
+
+    eyes:
+      {}
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  kirisaki_chitoge:
+    posts: 539
+    series: "nisekoi"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 12
+    hair_color:
+      blonde_hair: 91
+      brown_hair: 41
+
+    hair_length:
+      long_hair: 88
+      short_hair: 28
+      very_long_hair: 62
+
+    eyes:
+      blue_eyes: 88
+      brown_eyes: 41
+
+    traits:
+      hair_ribbon: 75
+
+    outfit:
+      school_uniform: 75
+      serafuku: 47
+
+    skin:
+      {}
+
+  delia_ketchum:
+    posts: 493
+    series: "pokemon"
+    age_band: elder
+    kid_pct: 3
+    mature_pct: 69
+    explicit_pct: 69
+    hair_color:
+      brown_hair: 78
+
+    hair_length:
+      long_hair: 50
+
+    eyes:
+      brown_eyes: 47
+
+    traits:
+      ahoge: 47
+      ponytail: 53
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  balalaika_(black_lagoon):
+    posts: 456
+    series: "black_lagoon"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 22
+    explicit_pct: 9
+    hair_color:
+      blonde_hair: 91
+
+    hair_length:
+      long_hair: 91
+
+    eyes:
+      blue_eyes: 59
+
+    traits:
+      ponytail: 34
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  karen_(pokemon):
+    posts: 450
+    series: "pokemon"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 19
+    hair_color:
+      blue_hair: 72
+
+    hair_length:
+      long_hair: 84
+
+    eyes:
+      blue_eyes: 53
+
+    traits:
+      wavy_hair: 31
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  integra_hellsing:
+    posts: 445
+    series: "hellsing"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 16
+    hair_color:
+      blonde_hair: 59
+
+    hair_length:
+      long_hair: 75
+
+    eyes:
+      blue_eyes: 31
+
+    traits:
+      glasses: 81
+
+    outfit:
+      {}
+
+    skin:
+      dark_skin: 53
+
+  renee_graves:
+    posts: 410
+    series: "the_coffin_of_andy_and_leyley"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 44
+    explicit_pct: 88
+    hair_color:
+      black_hair: 84
+
+    hair_length:
+      long_hair: 38
+      medium_hair: 25
+
+    eyes:
+      green_eyes: 69
+
+    traits:
+      ponytail: 69
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  yuigahama_yui's_mother:
+    posts: 391
+    series: "yahari_ore_no_seishun_lovecome_wa_machigatteiru."
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 66
+    explicit_pct: 56
+    hair_color:
+      brown_hair: 22
+      orange_hair: 84
+
+    hair_length:
+      short_hair: 38
+
+    eyes:
+      {}
+
+    traits:
+      {}
+
+    outfit:
+      swimsuit: 50
+
+    skin:
+      {}
+
+  onodera_kosaki:
+    posts: 390
+    series: "nisekoi"
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 38
+    hair_color:
+      blonde_hair: 28
+      brown_hair: 88
+
+    hair_length:
+      long_hair: 59
+      medium_hair: 28
+      short_hair: 28
+      very_long_hair: 25
+
+    eyes:
+      blue_eyes: 28
+      brown_eyes: 81
+
+    traits:
+      hair_ornament: 25
+
+    outfit:
+      school_uniform: 56
+      serafuku: 44
+
+    skin:
+      {}
+
+  komi_shuuko:
+    posts: 347
+    series: "komi-san_wa_komyushou_desu"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 75
+    explicit_pct: 69
+    hair_color:
+      black_hair: 69
+      purple_hair: 22
+
+    hair_length:
+      short_hair: 84
+
+    eyes:
+      {}
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  azuma_fubuki:
+    posts: 260
+    series: "mato_seihei_no_slave"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 50
+    explicit_pct: 81
+    hair_color:
+      black_hair: 44
+      blue_hair: 38
+
+    hair_length:
+      long_hair: 88
+      very_long_hair: 25
+
+    eyes:
+      yellow_eyes: 31
+
+    traits:
+      braid: 38
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  kalifa_(one_piece):
+    posts: 260
+    series: "one_piece"
+    age_band: adult
+    kid_pct: 3
+    mature_pct: 0
+    explicit_pct: 9
+    hair_color:
+      black_hair: 28
+      blonde_hair: 59
+
+    hair_length:
+      long_hair: 69
+
+    eyes:
+      blue_eyes: 25
+
+    traits:
+      glasses: 66
+
+    outfit:
+      dress: 56
+
+    skin:
+      {}
+
+  drasna_(pokemon):
+    posts: 182
+    series: "pokemon"
+    age_band: elder
+    kid_pct: 3
+    mature_pct: 81
+    explicit_pct: 47
+    hair_color:
+      black_hair: 88
+      blue_hair: 28
+
+    hair_length:
+      long_hair: 88
+
+    eyes:
+      {}
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  hiratsuka_shizuka:
+    posts: 149
+    series: "yahari_ore_no_seishun_lovecome_wa_machigatteiru."
+    age_band: adult
+    kid_pct: 0
+    mature_pct: 0
+    explicit_pct: 41
+    hair_color:
+      black_hair: 91
+      brown_hair: 28
+
+    hair_length:
+      long_hair: 88
+      short_hair: 47
+      very_long_hair: 47
+
+    eyes:
+      blue_eyes: 28
+      grey_eyes: 66
+
+    traits:
+      ahoge: 41
+
+    outfit:
+      school_uniform: 28
+      swimsuit: 28
+
+    skin:
+      {}
+
+  agatha_(pokemon):
+    posts: 143
+    series: "pokemon"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 38
+    explicit_pct: 3
+    hair_color:
+      black_hair: 38
+      blonde_hair: 66
+      brown_hair: 34
+      orange_hair: 25
+      red_hair: 28
+
+    hair_length:
+      long_hair: 34
+      short_hair: 56
+
+    eyes:
+      red_eyes: 28
+
+    traits:
+      {}
+
+    outfit:
+      dress: 53
+
+    skin:
+      {}
+
+  kali_belladonna:
+    posts: 131
+    series: "rwby"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 41
+    explicit_pct: 78
+    hair_color:
+      black_hair: 91
+
+    hair_length:
+      long_hair: 41
+      short_hair: 75
+
+    eyes:
+      yellow_eyes: 91
+
+    traits:
+      {}
+
+    outfit:
+      {}
+
+    skin:
+      {}
+
+  cologne_(ranma_1/2):
+    posts: 117
+    series: "ranma_1/2"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 69
+    explicit_pct: 3
+    hair_color:
+      black_hair: 56
+      blue_hair: 41
+      brown_hair: 38
+      grey_hair: 34
+      purple_hair: 50
+      red_hair: 34
+      white_hair: 25
+
+    hair_length:
+      long_hair: 72
+      short_hair: 56
+
+    eyes:
+      {}
+
+    traits:
+      braid: 47
+      glasses: 31
+      hair_bow: 28
+
+    outfit:
+      dress: 31
+
+    skin:
+      {}
+
+  yamada_sanae_(bokuyaba):
+    posts: 104
+    series: "boku_no_kokoro_no_yabai_yatsu"
+    age_band: elder
+    kid_pct: 0
+    mature_pct: 69
+    explicit_pct: 56
+    hair_color:
+      black_hair: 84
+
+    hair_length:
+      short_hair: 91
+
+    eyes:
+      brown_eyes: 53
+
+    traits:
+      {}
+
+    outfit:
+      swimsuit: 25
+
+    skin:
+      {}
+

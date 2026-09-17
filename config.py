@@ -82,6 +82,11 @@ hip_size = -1
 # 예) sheet: "#Usagi Tsukino from Sailor Moon#" → char_tags = ["Usagi Tsukino from Sailor Moon"]
 char_tags = []                    # 주인공 태그 목록(list[str])
 partner_char_tags = []            # 상대방 태그 목록 — [BBB]쪽(POV 컷만 프레임에 들어간다)
+# [2026-09-16] 시트에 #…# 태그가 **없는** 에피소드는 주인공 얼굴이 회차를 넘어 흔들립니다.
+#   그래서 시트 속성(머리색·길이·눈·나이대)으로 '닮은 캐릭터 태그'를 데이터에서 골라 넣습니다.
+#   DB: data/chara_tags.yaml (Danbooru 실측) · 선택기: chara_match.py · 대상: 주인공 1명만(상대방은 실루엣 유지)
+char_match = True                 # off: 속성 태그만 사용
+char_match_series = False         # 작품(저작권) 태그를 같이 넣는가 — 화풍을 그 작품으로 끌어당겨 기본 OFF
 
 # ------------------------------------------------------------------ 상대방 (Character B)
 name2 = ""

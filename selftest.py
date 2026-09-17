@@ -366,8 +366,8 @@ def main() -> int:
           and config.partner_char_tags == ["Tuxedo Mask"],
           f"{config.char_tags}/{config.partner_char_tags}")
     CI.apply_to_config(data, ep_text, sheet_text, ep_num=1, panels_per_page=3, book_num=1)
-    check("시트에 #태그 없으면 빈 목록(기존 동작 그대로)",
-          config.char_tags == [] and config.partner_char_tags == [],
+    check("시트에 #태그 없으면 주인공은 자동 선택(또는 DB가 없어 비움), 상대방은 항상 비움",
+          config.partner_char_tags == [] and len(config.char_tags) <= 1,
           f"{config.char_tags}/{config.partner_char_tags}")
     # [2026-09-07] EP2 회귀: episode_setup.json=1이어도 --ep 2 주입 시 배열이 확장돼야 한다
     # (EP2 첫 실행에서 review_safety[1] IndexError로 터졌음)
@@ -4229,6 +4229,97 @@ def main() -> int:
           all(f in " ".join(__import__("inspect").getsource(IE.main).split())
               for f in ("--check", "--pick", "--delete-below", "--min-score")), "")
 
+
+    # ══════════════════════ 닮은 캐릭터 태그 선택기 (chara_match) ═══════════════════════
+    try:
+        import chara_match as _CM
+        check("선택기가 import 된다", True)
+    except Exception as e:
+        check(f"선택기가 import 된다 ({e})", False)
+        _CM = None
+    FIX = {
+        "black_adult": {"posts": 9000, "series": "some_series", "age_band": "adult", "kid_pct": 1,
+                         "mature_pct": 2, "explicit_pct": 20,
+                         "hair_color": {"black_hair": 85}, "hair_length": {"very_long_hair": 70},
+                         "eyes": {"brown_eyes": 60}, "traits": {}, "outfit": {}, "skin": {}},
+        "pink_girl": {"posts": 6000, "series": "", "age_band": "adult", "kid_pct": 2, "mature_pct": 1,
+                       "explicit_pct": 30, "hair_color": {"pink_hair": 60},
+                       "hair_length": {"long_hair": 70}, "eyes": {"blue_eyes": 50},
+                       "traits": {}, "outfit": {}, "skin": {}},
+        "kid_char": {"posts": 1500, "series": "", "age_band": "child", "kid_pct": 70, "mature_pct": 1,
+                      "explicit_pct": 15, "hair_color": {"black_hair": 80},
+                      "hair_length": {"short_hair": 80}, "eyes": {"blue_eyes": 60},
+                      "traits": {}, "outfit": {}, "skin": {}},
+        "elder_char": {"posts": 800, "series": "", "age_band": "elder", "kid_pct": 0, "mature_pct": 60,
+                        "explicit_pct": 40, "hair_color": {"black_hair": 70},
+                        "hair_length": {"long_hair": 60}, "eyes": {"brown_eyes": 50},
+                        "traits": {}, "outfit": {}, "skin": {}},
+        "tiny_char": {"posts": 90, "series": "", "age_band": "adult", "kid_pct": 0, "mature_pct": 0,
+                       "explicit_pct": 5, "hair_color": {"black_hair": 90}, "hair_length": {},
+                       "eyes": {}, "traits": {}, "outfit": {}, "skin": {}},
+        "hot_char": {"posts": 5000, "series": "", "age_band": "adult", "kid_pct": 0, "mature_pct": 5,
+                      "explicit_pct": 92, "hair_color": {"black_hair": 90}, "hair_length": {},
+                      "eyes": {}, "traits": {}, "outfit": {}, "skin": {}},
+    }
+    if _CM:
+        _bk = _CM.load_db()
+        _CM._DB = FIX
+        r = _CM.pick_char_lookalike({"hair_color": "black hair", "hair_style": "very long hair",
+                                     "eye_color": "brown eyes"}, db=FIX)
+        check("시트 속성(검은색·매우김·갈색눈) → black_adult 을 고른다",
+              bool(r) and r.get("tag") == "black_adult", str(r)[:70])
+        r2 = _CM.pick_char_lookalike({"hair_color": "black hair", "eye_color": "blue eyes",
+                                      "body_shape": "loli, child"}, db=FIX)
+        check("시트가 어린 체형이면 child 캐릭터를 고른다", bool(r2) and r2.get("tag") == "kid_char", str(r2)[:60])
+        r3 = _CM.pick_char_lookalike({"hair_color": "black hair", "body_shape": "mature female, milf"}, db=FIX)
+        check("시트가 성숙/MILF 를 요구하면 elder 캐릭터를 고른다",
+              bool(r3) and r3.get("tag") == "elder_char", str(r3)[:60])
+        r4 = _CM.pick_char_lookalike({"hair_color": "green hair", "eye_color": "purple eyes"}, db=FIX)
+        check("머리색이 초록이면 억지로 빌리지 않고 속성 태그만 쓴다(임계값 아래)",
+              bool(r4) and "rejected" in r4 or r4 is None, str(r4)[:70])
+        r5 = _CM.pick_char_lookalike({"hair_color": "", "eye_color": ""}, db=FIX)
+        check("읽은 속성이 없으면 None (억지 선택 금지)", r5 is None)
+        _tags = " ".join(FIX)
+        names = [c["tag"] for c in (_CM.pick_char_lookalike({"hair_color": "black hair"}, db=FIX) or {})
+                 .get("candidates", [])]
+        check("글 수 부족한 캐릭터는 후보에서 잘라낸다", "tiny_char" not in names, str(names))
+        check("성인 콘텐츠 비율 높은 태그는 safe 정책 밖으로 뺀다", "hot_char" not in names, str(names))
+        _CM._DB = _bk
+    _src = ("chara_match.py", open("chara_match.py", encoding="utf-8").read() if os.path.isfile("chara_match.py") else "")
+    check("선택기에 학습량 하한이 있다(MIN_POSTS)", "MIN_POSTS" in _src[1])
+    check("선택기에 임계값이 있다(억지 유사 캐스팅 방지)", "THRESHOLD" in _src[1])
+    check("선택기가 아동 코드 캐릭터를 별도 처리한다(실측 P1-9)", "child" in _src[1] and "P1-9" in _src[1])
+    _ci = ("comic_input.py", open("comic_input.py", encoding="utf-8").read())
+    check("시트에 #태그#가 없을 때만 자동 선택한다", 'if not config.char_tags and getattr(config, "char_match"' in _ci[1])
+    check("선택 결과는 로그 한 줄로 남긴다", "[[CHAR TAG]]" in _ci[1])
+    check("자동 선택은 주인공만 (상대방 태그에는 손대지 않는다)",
+          _ci[1].count("config.partner_char_tags = ") >= 1 and "partner_char_tags" not in
+          _ci[1].split("[[CHAR TAG]] 시트 속성")[-1][:600])
+    _cf = ("config.py", open("config.py", encoding="utf-8").read())
+    check("config에 char_match 기본값이 있다", "char_match = True" in _cf[1])
+    check("config에 char_match_series 기본 OFF (화풍 LoRA와 경쟁하므로)", "char_match_series = False" in _cf[1])
+    _rc = ("run_comic.py", open("run_comic.py", encoding="utf-8").read())
+    check("CLI에 --char-tag 가 있다", '"--char-tag"' in _rc[1])
+    check("CLI에 --char-series 가 있다(기본 OFF)", '"--char-series"' in _rc[1])
+    check("CLI 플래그가 config로 이어진다", "config.char_match =" in _rc[1])
+    _dbfile = os.path.join("data", "chara_tags.yaml")
+    if os.path.isfile(_dbfile):
+        try:
+            import yaml as _Y2
+            _d = _Y2.safe_load(open(_dbfile, encoding="utf-8")).get("characters") or {}
+            check("DB가 YAML로 파싱되고 캐릭터가 있다", len(_d) >= 10, f"{len(_d)}종")
+            check("DB의 모든 캐릭터에 실측 출처가 있다(posts)",
+                  all(isinstance(v, dict) and int(v.get("posts") or 0) > 0 for v in _d.values()))
+            check("DB는 원작 태그 원문(공백·대문자 없음)",
+                  all(re.fullmatch(r"[a-z0-9_()!'~:/-]+", k) for k in _d),
+                  ",".join(k for k in _d if not re.fullmatch(r"[a-z0-9_()!'~:/-]+", k))[:60])
+        except Exception as e:
+            check(f"DB가 파싱된다 ({e})", False)
+    else:
+        check("캐릭터 태그 DB 가 커밋되어 있다(실행 시 네트워크 불필요)", False)
+    rd = open("README.md", encoding="utf-8").read()
+    check("README 에 닮은 캐릭터 태그 기능이 적혀 있다", "닮은 캐릭터 태그" in rd and "--char-tag" in rd)
+    check("README 가 로컬 경로를 노출하지 않는다", "danbooru.donmai.us" not in rd)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:

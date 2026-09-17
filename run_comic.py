@@ -791,6 +791,10 @@ def main() -> int:
     ap.add_argument("--anima-close-framing", action="store_true", dest="anima_close_framing",
                     help="사람이 있는 컷의 먼 화각(wide shot·full body)을 upper body 로 바꿉니다 "
                          "(캐릭터가 작게 나오는 구도 억제 — 전신 요청 칸·배경 컷은 건드리지 않음)")
+    ap.add_argument("--char-tag", default="auto", dest="char_tag", choices=["auto", "off"],
+                    help="시트에 #태그#가 없을 때 닮은 캐릭터 태그를 자동으로 골라 넣는가 (기본 auto; off = 속성 태그만)")
+    ap.add_argument("--char-series", action="store_true", dest="char_series",
+                    help="고른 캐릭터의 작품(저작권) 태그도 같이 넣습니다 — 화풍을 그 작품으로 끌어당기므로 A/B 후 사용")
     ap.add_argument("--font", default="", help="한글 폰트 ttf/ttc 경로 (비우면 OS별 자동probe; 예: C:\\Windows\\Fonts\\malgunbd.ttf)")
     # [2026-09-09] 화면 문법(설명/대사/속마음/의성어) 용도별 폰트 — 우선순위: 여기 > data/fonts/ > OS
     ap.add_argument("--font-narration", dest="font_narration", default="",
@@ -917,6 +921,9 @@ def main() -> int:
     if getattr(args, "no_cut_gen", False):
         import comic_gen as _CG0
         _CG0.GEN_REQ_ENABLE = False
+    # [2026-09-16] 닮은 캐릭터 태그 자동 선택 (chara_match) — 시트에 #태그#가 없는 회차의 얼굴 고정
+    config.char_match = (str(getattr(args, "char_tag", "auto")).lower() != "off")
+    config.char_match_series = bool(getattr(args, "char_series", False))
     # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한
     #   프롬프트 재단기. 렌더 직전 comfyui_run_anima 에서 도므로 여기서는 스위치만 세운다.
     import anima_gen as _AG0

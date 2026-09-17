@@ -1,0 +1,180 @@
+# -*- coding: utf-8 -*-
+"""
+주인공 시트 → 닮은 캐릭터 태그 선택기 (2026-09-16).
+
+쓸모: 회차를 넘겨 주인공 얼굴이 흔들리는 문제. 속성 태그만으로는 "같은 인물"이 안 되고,
+     our audit가 밝힌 대로 프롬프트 문장 재배열로도 고정되지 않습니다. 그래서 **학습량이
+     확인된 캐릭터 태그**를 하나 빌려 씁니다 — 단, 사람이 고르지 않고 시트 속성으로 고릅니다.
+
+  data/chara_tags.yaml ← analysis_chara/build.py 가 Danbooru 실측으로 채운 DB (네트워크 불필요)
+  pick_char_lookalike(proto, skin=None) → {"tag","series","score","why"} | None
+
+판정 원칙 두 가지:
+  ① 점수는 "요청한 속성에서 그 캐릭터가 실제로 얼마나 강하게 학습됐나"의 가중 평균입니다.
+     (DB 값 = 그 캐릭터 태그에 해당 속성 태그가 함께 붙은 비율. 사람의 기억이 아니라 측정치.)
+  ② 임계값 아래면 **태그를 쓰지 않습니다.** 없는 얼굴을 억지로 빌리면 원작 캐릭터가 섞여
+     들어옵니다 — 속성 태그만 쓰는 편이 낫습니다.
+"""
+import os
+import re
+
+DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chara_tags.yaml")
+_DB = None
+MIN_POSTS = 600          # 학습량 하한 — 이 아래면 얼굴이 아니라 그림체로 새어나온다
+#   단 나이대 코드는 모수가 원래 작습니다. 성인 태그는 수만 글이어도 나이 태그를 안 붙이는
+#   Danbooru 관례가 있어서, elder/child는 같은 신호로 더 적은 글을 먹습니다.
+MIN_POSTS_BY_BAND = {"adult": 600, "child": 400, "elder": 250}
+THRESHOLD = 0.50         # 이보다 낮으면 태그 사용 중단(속성 태그만)
+MAX_EXPLICIT = 60        # 이 태그가 끌어오는 성인 콘텐츠 비율 상한 (safe 기본 정책)
+
+# 요청 속성(시트의 영문 태그 문자열) → DB 속성 키. 점수 가중치.
+W = {"hair_color": 0.35, "hair_length": 0.20, "traits": 0.15,
+     "eyes": 0.10, "age_band": 0.10, "skin": 0.05, "outfit_avoid": 0.05}
+
+_LENGTH_WORDS = [("very long", "very_long_hair"), ("발목", "very_long_hair"), ("허리", "very_long_hair"),
+                 ("long", "long_hair"), ("긴", "long_hair"), ("medium", "medium_hair"),
+                 ("어깨", "medium_hair"), ("턱", "medium_hair"),
+                 ("short", "short_hair"), ("짧", "short_hair"), ("초단발", "very_short_hair")]
+_COLOR_WORDS = {"black_hair": ("black hair", "black_hair", "jet black", "흑발"),
+                "brown_hair": ("brown hair", "brown_hair", "brunette", "갈색"),
+                "blonde_hair": ("blonde", "blond hair", "금발"),
+                "pink_hair": ("pink hair", "pink_hair", "분홍"),
+                "red_hair": ("red hair", "red_hair", "빨강", "적발"),
+                "blue_hair": ("blue hair", "blue_hair", "파랑", "청발"),
+                "purple_hair": ("purple hair", "violet hair", "purple_hair", "보라"),
+                "green_hair": ("green hair", "green_hair", "초록"),
+                "grey_hair": ("grey hair", "gray hair", "silver hair", "grey_hair", "회색", "은발"),
+                "orange_hair": ("orange hair", "orange_hair", "주황")}
+_EYE_WORDS = {"brown_eyes": ("brown eyes", "갈색"), "blue_eyes": ("blue eyes", "파랑"),
+              "green_eyes": ("green eyes", "초록"), "red_eyes": ("red eyes", "빨강", "적발"),
+              "purple_eyes": ("purple eyes", "violet eyes", "보라"), "grey_eyes": ("grey eyes", "gray eyes", "회색")}
+_SKIN_WORDS = {"dark_skin": ("dark skin", "tan skin", "brown skin", "태닝", "검은 피부"),
+               "tanned_skin": ("tanned", "tan skin", "태닝", "그을린")}
+_CHILD_WORDS = ("loli", "child", "child body", "flat chest", "petite", "어린", "로리", "child_")
+_MATURE_WORDS = ("mature", "milf", "aged up", "adult", "성숙", "미시", "부인", "아내")
+
+
+def load_db(path: str = None) -> dict:
+    """DB를 읽어 {tag: attrs}. 없으면 {} — 이 모듈은 DB가 없을 때도 조용히 죽어야 옳습니다."""
+    global _DB
+    if _DB is not None and path is None:
+        return _DB
+    p = path or DB_FILE
+    if not os.path.isfile(p):
+        _DB = {}
+        return _DB
+    try:
+        import yaml
+        data = yaml.safe_load(open(p, encoding="utf-8")) or {}
+        _DB = data.get("characters") or {}
+    except Exception:
+        _DB = {}
+    return _DB
+
+
+def _req(proto: dict, skin: str = None) -> dict:
+    """시트(또는 LLM 시트 JSON)의 protagonist dict → 요청 속성 세트."""
+    def flat(*vals):
+        return " , ".join(str(v) for v in vals if v).lower()
+    hc = flat(proto.get("hair_color"), proto.get("hair_style"), proto.get("hair"))
+    eye = flat(proto.get("eye_color"), proto.get("eyes"))
+    body = flat(proto.get("body_shape"), proto.get("age"), proto.get("appearance"))
+    sk = flat(proto.get("skin_color"), proto.get("skin"), skin or "")
+    r = {"color": set(), "length": set(), "eyes": set(), "skin": set(), "traits": set(),
+         "kid": None, "mature": None}
+    for tag, words in _COLOR_WORDS.items():
+        if any(w in hc for w in words):
+            r["color"].add(tag)
+    for w, tag in _LENGTH_WORDS:
+        if w in hc:
+            r["length"].add(tag)
+    for tag, words in _EYE_WORDS.items():
+        if any(w in eye for w in words):
+            r["eyes"].add(tag)
+    for tag, words in _SKIN_WORDS.items():
+        if any(w in sk for w in words):
+            r["skin"].add(tag)
+    # 스타일(투테일/포니테일 등)은 시트 태그 문자열에 적힌 그대로 DB 키와 대조
+    for t in re.split(r"[,;\s]+", re.sub(r"[^a-z_ ]", " ", hc)):
+        if "_" in t:
+            r["traits"].add(t)
+    r["kid"] = any(w in body for w in _CHILD_WORDS)
+    r["mature"] = any(w in body for w in _MATURE_WORDS) or re.search(r"(3[5-9]|[4-9][0-9])\s*세", body)
+    return r
+
+
+def _frac(db_set: dict, want: set) -> float:
+    """요청 속성(want)이 그 캐릭터에서 얼마나 강하게 학습됐나 (0.0~1.0, 비율 가중)."""
+    if not want:
+        return 0.0
+    hits = [db_set.get(w, 0) for w in want]
+    return max(hits) / 100.0 if hits else 0.0
+
+
+def score_one(tag: str, d: dict, req: dict) -> tuple:
+    """(점수, 사유) — 하드 필터를 통과한 캐릭터만."""
+    floor = MIN_POSTS_BY_BAND.get(d.get("age_band") or "adult", MIN_POSTS)
+    if int(d.get("posts") or 0) < floor:
+        return 0.0, f"posts 부족({d.get('posts')} < {floor})"
+    if int(d.get("explicit_pct") or 0) > MAX_EXPLICIT:
+        return 0.0, f"성인 콘텐츠 {d.get('explicit_pct')}% — safe 정책에 맞지 않음"
+    band = d.get("age_band") or "adult"
+    if req["kid"] and band == "elder":
+        return 0.0, "시트는 어린 체형, 캐릭터는 성숙"
+    if (not req["kid"]) and band == "child":
+        return 0.0, "아동 코드 캐릭터 — 성인 징후와 만나면 화면이 갈라집니다(실측 P1-9)"
+    parts, why = [], []
+
+    def add(key, got, w):
+        parts.append(got * w)
+        if got >= 0.6:
+            why.append(f"{key}✓")
+        elif got >= 0.3:
+            why.append(f"{key}~")
+    add("hair_color", _frac(d.get("hair_color") or {}, req["color"]), W["hair_color"])
+    add("hair_length", _frac(d.get("hair_length") or {}, req["length"]), W["hair_length"])
+    add("traits", _frac(d.get("traits") or {}, req["traits"]), W["traits"])
+    add("eyes", _frac(d.get("eyes") or {}, req["eyes"]), W["eyes"])
+    add("skin", _frac(d.get("skin") or {}, req["skin"]), W["skin"])
+    # 나이대 요청 일치
+    if req["kid"] is not None or req["mature"]:
+        got = 1.0 if ((req["kid"] and band == "child") or (req["mature"] and band == "elder")
+                      or (not req["kid"] and not req["mature"] and band == "adult")) else 0.2
+        add("age_band", got, W["age_band"])
+    # 정장/교복 등 복장 유입은 컷별 의상과 싸울 수 있다 → 감점(0점 처리는 안 함)
+    of = d.get("outfit") or {}
+    pen = 0.0
+    for k, v in of.items():
+        if v >= 50:
+            pen = max(pen, 0.04)
+    s = sum(parts) / (sum(W[k] for k in ("hair_color", "hair_length", "traits", "eyes", "skin")
+                          if req.get({"hair_color": "color", "hair_length": "length", "traits": "traits",
+                                      "eyes": "eyes", "skin": "skin"}[k])) or 1)
+    return max(0.0, s - pen), ",".join(why) + (",복장 유입 감점" if pen else "")
+
+
+def pick_char_lookalike(proto: dict, skin: str = None, db: dict = None, top: int = 3) -> dict:
+    """시트 protagonist 속성으로 가장 닮은(학습량 확인된) 캐릭터 태그를 고릅니다. 없으면 None."""
+    db = db if db is not None else load_db()
+    if not db or not proto:
+        return None
+    req = _req(proto, skin)
+    if not (req["color"] or req["length"] or req["eyes"]):
+        return None                       # 속성을 하나도 못 읽었으면 억지 선택 금지
+    scored = []
+    for tag, d in db.items():
+        s, why = score_one(tag, d or {}, req)
+        if s > 0:
+            scored.append((s, int((d or {}).get("posts") or 0), tag, why))
+    if not scored:
+        return None
+    scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+    best = scored[0]
+    out = {"candidates": [{"tag": t, "score": round(s, 3), "why": w} for s, p, t, w in scored[:top]],
+           "threshold": THRESHOLD}
+    if best[0] < THRESHOLD:
+        out["rejected"] = f"최고 유사도 {best[0]:.2f} < {THRESHOLD} — 속성 태그만 사용"
+        return out
+    out.update({"tag": best[2], "score": round(best[0], 3), "why": best[3],
+                "posts": best[1], "series": (db.get(best[2]) or {}).get("series") or ""})
+    return out

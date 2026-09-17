@@ -54,3 +54,9 @@ state/extract_cache.yaml
 analysis_cut/*.json
 analysis_cut/*.jsonl
 analysis_cut/*.log
+# anima_gen.py 정본 비교 결과 (analysis_cut/anima_diff.py 로 재생성 — 기계마다 정본 경로가 다르므로 로컬)
+anima_gen_diff.md
+
+# 캐릭터 태그 DB 빌더 실행 흔적 (결과 YAML은 커밋한다 — 실행에 네트워크가 필요 없다)
+analysis_chara/*.log
+analysis_chara/*.json

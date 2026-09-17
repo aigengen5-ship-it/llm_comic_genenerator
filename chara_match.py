@@ -23,7 +23,7 @@ _DB = None
 MIN_POSTS = 600          # 학습량 하한 — 이 아래면 얼굴이 아니라 그림체로 새어나온다
 #   단 나이대 코드는 모수가 원래 작습니다. 성인 태그는 수만 글이어도 나이 태그를 안 붙이는
 #   Danbooru 관례가 있어서, elder/child는 같은 신호로 더 적은 글을 먹습니다.
-MIN_POSTS_BY_BAND = {"adult": 600, "child": 400, "elder": 250}
+MIN_POSTS_BY_BAND = {"adult": 600, "child": 300, "elder": 150}   # 나이대 코드는 모수가 원래 작다
 THRESHOLD = 0.50         # 이보다 낮으면 태그 사용 중단(속성 태그만)
 MAX_EXPLICIT = 60        # 이 태그가 끌어오는 성인 콘텐츠 비율 상한 (safe 기본 정책)
 
@@ -51,7 +51,9 @@ _EYE_WORDS = {"brown_eyes": ("brown eyes", "갈색"), "blue_eyes": ("blue eyes",
 _SKIN_WORDS = {"dark_skin": ("dark skin", "tan skin", "brown skin", "태닝", "검은 피부"),
                "tanned_skin": ("tanned", "tan skin", "태닝", "그을린")}
 _CHILD_WORDS = ("loli", "child", "child body", "flat chest", "petite", "어린", "로리", "child_")
-_MATURE_WORDS = ("mature", "milf", "aged up", "adult", "성숙", "미시", "부인", "아내")
+_MATURE_WORDS = ("mature", "milf", "aged up", "adult woman", "성숙", "미시", "부인", "아내", "기혼")
+_ELDER_WORDS = ("old_woman", "old woman", "obasan", "grandmother", "grandma", "baking", "senior",
+                "주부", "노년", "할머니", "아줌마", "연로", "노파", "노모", "부인")
 
 
 def load_db(path: str = None) -> dict:
@@ -99,7 +101,8 @@ def _req(proto: dict, skin: str = None) -> dict:
         if "_" in t:
             r["traits"].add(t)
     r["kid"] = any(w in body for w in _CHILD_WORDS)
-    r["mature"] = any(w in body for w in _MATURE_WORDS) or re.search(r"(3[5-9]|[4-9][0-9])\s*세", body)
+    r["mature"] = bool(any(w in body for w in _MATURE_WORDS) or re.search(r"(3[5-9]|[4-9][0-9])\s*세", body))
+    r["elder"] = bool(any(w in body for w in _ELDER_WORDS) or re.search(r"(6[0-9]|[7-9][0-9])\s*세", body))
     return r
 
 
@@ -136,20 +139,27 @@ def score_one(tag: str, d: dict, req: dict) -> tuple:
     add("traits", _frac(d.get("traits") or {}, req["traits"]), W["traits"])
     add("eyes", _frac(d.get("eyes") or {}, req["eyes"]), W["eyes"])
     add("skin", _frac(d.get("skin") or {}, req["skin"]), W["skin"])
-    # 나이대 요청 일치
-    if req["kid"] is not None or req["mature"]:
-        got = 1.0 if ((req["kid"] and band == "child") or (req["mature"] and band == "elder")
-                      or (not req["kid"] and not req["mature"] and band == "adult")) else 0.2
-        add("age_band", got, W["age_band"])
+    # 나이대 — 시트가 나이대를 요구하면 가중치를 3배로 올립니다(미시 요청에 20대 얼굴이 오면 안 되니까요)
+    asked_age = bool(req["kid"] or req["mature"] or req["elder"])
+    if req["elder"]:
+        got = 1.0 if band == "elder" else (0.15 if band == "adult" else 0.0)
+    elif req["kid"]:
+        got = 1.0 if band == "child" else (0.30 if band == "adult" else 0.0)
+    elif req["mature"]:
+        got = 1.0 if band == "elder" else (0.50 if band == "adult" else 0.0)
+    else:
+        got = 1.0 if band == "adult" else 0.40
+    add("age_band", got, W["age_band"] * (3 if asked_age else 1))
     # 정장/교복 등 복장 유입은 컷별 의상과 싸울 수 있다 → 감점(0점 처리는 안 함)
     of = d.get("outfit") or {}
     pen = 0.0
     for k, v in of.items():
         if v >= 50:
             pen = max(pen, 0.04)
-    s = sum(parts) / (sum(W[k] for k in ("hair_color", "hair_length", "traits", "eyes", "skin")
-                          if req.get({"hair_color": "color", "hair_length": "length", "traits": "traits",
-                                      "eyes": "eyes", "skin": "skin"}[k])) or 1)
+    want = [W[k] for k, rk in (("hair_color", "color"), ("hair_length", "length"), ("traits", "traits"),
+                               ("eyes", "eyes"), ("skin", "skin")) if req.get(rk)]
+    want.append(W["age_band"] * (3 if asked_age else 1))
+    s = sum(parts) / (sum(want) or 1)
     return max(0.0, s - pen), ",".join(why) + (",복장 유입 감점" if pen else "")
 
 

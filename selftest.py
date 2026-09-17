@@ -4268,6 +4268,14 @@ def main() -> int:
                                      "eye_color": "brown eyes"}, db=FIX)
         check("시트 속성(검은색·매우김·갈색눈) → black_adult 을 고른다",
               bool(r) and r.get("tag") == "black_adult", str(r)[:70])
+        check("유사도는 1.0을 넘지 않는다(임계값이 의미를 가지려면)",
+              bool(r) and 0 < r.get("score", 0) <= 1.0, str(r.get("score")) if r else "-")
+        # 같은 흑발 후보군(black_adult/elder_char/kid_char)에서 '성숙'을 요구하면 elder 가 이깁니다
+        rM = _CM.pick_char_lookalike({"hair_color": "black hair", "hair_style": "short hair",
+                                      "eye_color": "brown eyes", "body_shape": "mature female, milf",
+                                      "age": "42세"}, db=FIX)
+        check("성숙/MILF 요청에는 나이대 후보가 이긴다",
+              bool(rM) and rM.get("tag") == "elder_char", str(rM)[:80])
         r2 = _CM.pick_char_lookalike({"hair_color": "black hair", "eye_color": "blue eyes",
                                       "body_shape": "loli, child"}, db=FIX)
         check("시트가 어린 체형이면 child 캐릭터를 고른다", bool(r2) and r2.get("tag") == "kid_char", str(r2)[:60])

@@ -1211,6 +1211,63 @@ def main() -> int:
     check("run_comic 에 템플릿 DB 교체(--cut-yaml)·요청 OFF(--no-cut-gen) 스위치가 있다",
           "--cut-yaml" in _rc and "--no-cut-gen" in _rc)
 
+    # ── [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식
+    AG = anima_gen
+    _ag_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "anima_gen.py"),
+                   encoding="utf-8").read()
+    check("anima_gen 에 창 게이트가 있다(정본과 같은 회귀식·호출은 comfyui_run_anima 직전)",
+          "def _anima_est_tokens" in _ag_src and "_anima_fit_token_window(full_prompt" in _ag_src
+          and "ANIMA_TOKEN_BUDGET = 430" in _ag_src)
+    _est = AG._anima_est_tokens("score_9, 1girl, upper body, (sweat:1.3)")
+    check("토큰 추정기가 양수이고 가중치 태그를 더 센다", 30 < _est < 200 and
+          AG._anima_est_tokens("(sweat:1.3)") > AG._anima_est_tokens("sweat"), str(_est))
+    _short = "score_9, 1girl, upper body, smile"
+    check("예산 안의 프롬프트는 손대지 않는다(대부분의 컷)",
+          AG._anima_fit_token_window(_short) == (_short, []))
+    check("약한 가중치(<=1.3)는 베어 태그로 강등", AG._anima_demote_weak_weights("a, (sweat:1.2), b")[0] == "a, sweat, b")
+    _ko, _kn = AG._anima_strip_hangul("focus on 스와베 준이치's face and large breasts")
+    check("한글 잔존(서브토큰 자리만 먹는 태그)을 지우고 쉼표 더미를 정리한다",
+          _kn == 1 and not re.search(r"[\uac00-\ud7a3]", _ko) and " 's" not in _ko, _ko)
+    _age, _an = AG._anima_collapse_age_tokens("(loli:1.6), (child:1.5), large breasts, wide hips")
+    check("성인 징후와 공존하는 나이대 태그는 가중치 최고 1개만 남긴다",
+          _an == 1 and "loli" in _age and "child" not in _age, _age)
+    _lay, _ln = AG._anima_rewrite_layout("1girl, 1boy. He is standing at the right. she smiles")
+    check("좌/우 좌표 서술(split screen·두 칸 착각의 범인)을 버린다",
+          _ln >= 1 and "left" not in _lay and "right" not in _lay, _lay)
+    _long = "score_9, 1girl, " + ", ".join(f"tag{i}" for i in range(400))
+    _cut, _notes = AG._anima_fit_token_window(_long)
+    check("창을 넘는 프롬프트는 예산 안으로 재단된다(앞부분은 살린다)",
+          AG._anima_est_tokens(_cut) <= AG.ANIMA_TOKEN_BUDGET and _cut.startswith("score_9, 1girl, tag0")
+          and len(_cut) < len(_long), f"{AG._anima_est_tokens(_cut)}토큰 | {_notes}")
+    _bg = "1girl, no humans, wide establishing shot of the office, empty scene"
+    _old_cf = AG.ANIMA_CLOSE_FRAMING
+    AG.set_close_framing(True)
+    check("클로즈 프레이밍 정책: 사람이 없는 배경 컷의 전경 화각은 건드리지 않는다",
+          AG._anima_close_framing_text(_bg) == (_bg, 0))
+    check("클로즈 프레이밍 정책: 사람이 있는 컷의 wide shot 는 upper body 로 바꾼다",
+          "upper body" in AG._anima_close_framing_text("1girl, smile, wide shot")[0])
+    _kb = AG._anima_close_framing_text("1girl, (full body:1.5), full body shot")[0]
+    check("페이지 템플릿이 전신을 요청한 칸(가중치 태그)은 클로즈 프레이밍이 건드리지 않는다",
+          "(full body:1.5)" in _kb and "upper body" in _kb, _kb)
+    AG.set_close_framing(_old_cf)
+    _old_off = AG.ANIMA_NO_TOKEN_GATE
+    AG.ANIMA_NO_TOKEN_GATE = True
+    check("게이트 OFF(환경변수·--no-token-gate) 면 초장문도 원문 그대로",
+          AG._anima_fit_token_window(_long) == (_long, []))
+    AG.ANIMA_NO_TOKEN_GATE = _old_off
+    _old_rs = getattr(AG.config, "review_safety", None)
+    try:
+        AG.config.review_safety = ["safe"]
+        AG.config.episode_num = 0
+        check("negative 수위 정책은 정본과 같은 폴백(회차 등급 → plot.json)을 탄다",
+              AG.neg_safety_terms("") == AG.NEG_SAFETY_BLOCK)
+        AG.config.review_safety = ["explicit"]
+        check("explicit 회차는 negative 를 비운다(정본과 같은 규칙)", AG.neg_safety_terms("") == "")
+    finally:
+        AG.config.review_safety = _old_rs
+    check("run_comic 에 게이트 OFF·클로즈 프레이밍 스위치가 있다",
+          "--no-token-gate" in _rc and "--anima-close-framing" in _rc)
+
     print("\n== ⑦ 에피소드 전체 반영 (본문→컷 수→페이지 수, 장면 분할 호출) ==")
     body = "\n\n".join(f"장면{i}입니다. 유즈키는 걸어서 도착한다." for i in range(1, 61))   # ≈2.6k자
     check("episode_char_budget: num_ctx에서 본문 예산 산출(0보다 크게)",

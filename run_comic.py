@@ -786,6 +786,11 @@ def main() -> int:
                     help="페이지 템플릿 DB 경로를 바꿉니다 (예: data/cut_new.yaml — 실측 기반 20종, 칸별 생성 요청 gen 포함)")
     ap.add_argument("--no-cut-gen", action="store_true",
                     help="템플릿의 gen(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 비율/순서만 씁니다")
+    ap.add_argument("--no-token-gate", action="store_true", dest="no_token_gate",
+                    help="Anima 학습 창(512 슬롯) 게이트를 끕니다 — 긴 프롬프트를 그대로 보냅니다")
+    ap.add_argument("--anima-close-framing", action="store_true", dest="anima_close_framing",
+                    help="사람이 있는 컷의 먼 화각(wide shot·full body)을 upper body 로 바꿉니다 "
+                         "(캐릭터가 작게 나오는 구도 억제 — 전신 요청 칸·배경 컷은 건드리지 않음)")
     ap.add_argument("--font", default="", help="한글 폰트 ttf/ttc 경로 (비우면 OS별 자동probe; 예: C:\\Windows\\Fonts\\malgunbd.ttf)")
     # [2026-09-09] 화면 문법(설명/대사/속마음/의성어) 용도별 폰트 — 우선순위: 여기 > data/fonts/ > OS
     ap.add_argument("--font-narration", dest="font_narration", default="",
@@ -912,6 +917,13 @@ def main() -> int:
     if getattr(args, "no_cut_gen", False):
         import comic_gen as _CG0
         _CG0.GEN_REQ_ENABLE = False
+    # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한
+    #   프롬프트 재단기. 렌더 직전 comfyui_run_anima 에서 도므로 여기서는 스위치만 세운다.
+    import anima_gen as _AG0
+    if getattr(args, "no_token_gate", False):
+        _AG0.ANIMA_NO_TOKEN_GATE = True
+    if getattr(args, "anima_close_framing", False):
+        _AG0.set_close_framing(True)
 
     # [2026-09-10] 실행 시작에 본 로그를 비웁니다(전부 append라 어제 실패와 섞였습니다).
     #   에러·경고는 지우지 않는 log/error.log에 따로 남깁니다.

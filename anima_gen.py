@@ -1898,16 +1898,31 @@ NEG_SAFETY_OPEN = ""
 
 
 def neg_safety_terms(safety_tag: str = "") -> str:
-    """[2026-09-15] 수위 모드별 ComfyUI negative 어구 (novel 측 anima_gen 과 동일 규칙).
+    """[2026-09-15] 수위 모드별 ComfyUI negative 어구 (정본 anima_gen 과 동일 규칙·동일 값).
 
     [2026-09-15 정책 통일] safe·sensitive 공통 차단 (정본 anima_gen.py 와 같은 값/같은 규칙).
       safe / sensitive -> NEG_SAFETY_BLOCK("nsfw, explicit, ") / nsfw·explicit -> ""
     컷 렌더는 회차 수위 등급 config.review_safety[ep] 이 기준이므로 그것을 따라간다.
+    인자를 비우면 정본과 같은 순서로 스스로 해석한다: review_safety[현재 화] → plot.json extended
+    (비확장 = 청년향 = safe). 이 repo의 기본 정책도 safe 상한이므로 폴백 결과同样是 차단이다.
     """
     sf = str(safety_tag or "").lower().strip()
+    if not sf:
+        try:
+            _arr = getattr(config, "review_safety", []) or []
+            _i = int(getattr(config, "episode_num", 0) or 0)
+            if 0 <= _i < len(_arr):
+                sf = str(_arr[_i] or "").lower()
+        except Exception:
+            sf = ""
+    if not sf:
+        try:
+            sf = "" if (config.get_json_value() or {}).get("extended", "no") == "yes" else "safe,"
+        except Exception:
+            sf = "safe,"
     if "explicit" in sf or "nsfw" in sf:
         return NEG_SAFETY_OPEN
-    return NEG_SAFETY_BLOCK
+    return NEG_SAFETY_BLOCK if ("safe" in sf or "sensitive" in sf or not sf) else NEG_SAFETY_OPEN
 
 
 def _merge_extra_negative(text: str) -> str:
@@ -1954,6 +1969,218 @@ def queue_prompt(prompt):
     return pid
 
 
+# ── [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui/anima_gen.py)에서 이식 ──
+#   근거(order/image_tag_quality_audit_260916.md): Anima 워크플로우는 프롬프트 전체를 CLIPTextEncode
+#   하나에 넣고 DiT 어댑터는 조건을 **512 슬롯**으로 패드한다. 창을 넘기면 크로스어텐션이 분산되어
+#   "태그를 그림에 안 반영"한다(원작 소설 파이프라인은 중앙값 688토큰 · 96% 초과).
+#   우리 만화 컷 421장(PNG 메타데이터에 박힌 실제 전달 프롬프트) 실측: 중앙값 202 · p90 250 · 최대 908,
+#   512 초과 27건(6%). 원작만큼 급하지는 않지만 초과 컷은 같은 증상을 겪는다 — 그래서 **창을 넘길 때만** 자른다.
+ANIMA_TOKEN_BUDGET = 430                 # 512 대비 마진 포함 예산(정본과 같은 값)
+ANIMA_NO_TOKEN_GATE = bool(os.environ.get("ANIMA_NO_TOKEN_GATE", ""))   # 비교·실험용 OFF
+ANIMA_TOK_PER_WORD = 1.594               # 실측 522건 회귀식(정본과 같은 상수) — 토크나이저 없이 창 계산
+ANIMA_TOK_PER_WEIGHT = 4.172
+ANIMA_TOK_BASE = 36.2
+ANIMA_WEAK_WEIGHT = 1.3                  # 이하 가중치는 캐시트만 낭비 → 베어 태그로 강등
+ANIMA_CLOSE_FRAMING = False              # 먼 화각(wide/full body)을 upper body 로 바꾸는 정책(기본 OFF)
+
+_ANIMA_HANGUL_RE = re.compile(r"[\uac00-\ud7a3][\uac00-\ud7a3\s\u00b7]*[\uac00-\ud7a3]")
+_ANIMA_AGE_TOKENS = ("loli", "child", "aged down", "loli body")
+_ANIMA_ADULT_RE = re.compile(r"large breasts|huge breasts|wide hips|cleavage|mature female", re.I)
+_ANIMA_FAR_FRAMING = ("extreme long shot", "establishing shot", "wide angle shot", "distant shot",
+                      "panorama", "long shot", "wide shot", "full shot", "full body view",
+                      "full body visible", "full-body view", "whole body", "full body", "full-body",
+                      "zoomed out", "wide establishing shot", "wide establishing", "full body shot",
+                      "full-body shot")
+_ANIMA_NO_HUMAN_RE = re.compile(r"no humans|no people|empty scene|nobody|scenery", re.I)
+
+
+def _anima_est_tokens(text: str) -> int:
+    """t5/qwen 토큰수 추정(정본과 같은 회귀식, MAE 23). 512 창 대비 계산용."""
+    if not text:
+        return 0
+    w = len(re.findall(r"\([^()]*?:\s*[01]?\.\d+\)", text))
+    return int(ANIMA_TOK_PER_WORD * len(text.split()) + ANIMA_TOK_PER_WEIGHT * w + ANIMA_TOK_BASE)
+
+
+def _anima_strip_hangul(text: str) -> tuple:
+    """한글 잔존 제거 — 비라틴 서브토큰은 창만 점유하고 캐릭터 고정에 기여하지 못한다."""
+    n = len(_ANIMA_HANGUL_RE.findall(text))
+    if not n:
+        return text, 0
+    t = _ANIMA_HANGUL_RE.sub(" ", text)
+    t = re.sub(r"\s+'s\b", "", t)
+    t = re.sub(r"[:,;]?\s*,\s*,", ",", t)
+    t = re.sub(r"(?m)^\s*,+\s*", "", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"[ \t]*([,/])", r"\1", t)
+    t = re.sub(r"[ ,]{2,}", ", ", t)
+    return t.strip(), n
+
+
+def _anima_demote_weak_weights(text: str) -> tuple:
+    """(tag:1.0~1.3) → tag. 가중치는 qwen 분기에서 1.0으로 강제되므로 괄호는 캐시트만 낭비한다."""
+    cnt = {"n": 0}
+
+    def _r(m):
+        tag, w = m.group(1).strip(), float(m.group(2))
+        if w <= ANIMA_WEAK_WEIGHT:
+            cnt["n"] += 1
+            return tag
+        return m.group(0)
+
+    return re.sub(r"\(([^()]*?):\s*([01]?\.\d+)\)", _r, text), cnt["n"]
+
+
+def _anima_collapse_age_tokens(text: str) -> tuple:
+    """성인 2차성징과 나이대 태그가 한 인물에 같이 있으면 나이대 태그는 가중치 최고 1개만 남긴다.
+    (실측: loli/child 류를 성인 징후와 함께 걸면 체형이 서로 상쇄되어 화면 분할이 늘어난다.)"""
+    if not _ANIMA_ADULT_RE.search(text):
+        return text, 0
+    items = _split_top_level_commas(text)
+    idx = [i for i, it in enumerate(items) if any(a in it.strip().lower() for a in _ANIMA_AGE_TOKENS)]
+    if len(idx) < 2:
+        return text, 0
+
+    def _w(s):
+        m = re.search(r":\s*([01]?\.\d+)\s*\)$", s.strip())
+        return float(m.group(1)) if m else 1.0
+
+    keep = max(idx, key=lambda i: (_w(items[i]), -i))
+    out = [it for i, it in enumerate(items) if i not in set(idx) - {keep}]
+    return ", ".join(x.strip() for x in out), len(idx) - 1
+
+
+def _anima_rewrite_layout(text: str) -> tuple:
+    """좌/우 좌표 서술을 정리한다 — 좌/우 패널 서술은 split screen(그림이 두 칸으로 갈라지는 증상)과
+    공분산하고, 만화에서는 그 자체가 "두 칸 착각"이라 특히 비싸다. (정본 §P0-4 · 우리 커버스 6% 실측)
+
+      · "AAA is positioned on the left" → `characters side-by-side, facing each other`(학습된 어구)
+      · "He is standing at the right."(2인물 헤더가 붙이는 단문) → 통째로 버린다(토큰도 준다)
+    """
+    out, n = re.subn(r"(?i)\b(?:He|She|They)\s+(?:is|are)\s+(?:(?:standing|sitting|kneeling|lying|walking|positioned)\s+)?"
+                     r"(?:on|at)\s+the\s+(?:left|right)(?:\s+side)?(?:\s+of\s+the\s+(?:frame|image|panel))?\s*[.,;]?\s*",
+                     "", text)                      # 2인물 헤더가 붙이는 단문 — 통째로 버리면 토큰도 준다
+    n2 = 0
+    if "positioned" in out.lower():                 # "AAA is positioned on the left" 류는 학습된 어구로
+        out, n2 = re.subn(r"(?i)\b(?:is|are)?\s*positioned\s+(?:on|at)\s+the\s+(?:left|right)(?:\s+side)?\b",
+                          "positioned side-by-side, facing each other", out)
+    out = re.sub(r",\s*,", ",", out)
+    out = re.sub(r"(?m)[ \t]*,?[ \t]*$", "", out)
+    return out.strip(), n + n2
+
+
+def _anima_close_framing_text(text: str) -> tuple:
+    """사람이 있는 컷에서 머나먼 화각(wide/full body 류)을 `upper body` 로 바꾼다.
+    실측: 'wide shot'는 요구해도 가장 자주 무시되는 태그(누락 1위)인데 창은 4개나 쓴다.
+    사람 없는 배경·전경 컷은 전경이 목적치 치환하지 않는다. `ANIMA_CLOSE_FRAMING=True` 일 때만 동작."""
+    if not ANIMA_CLOSE_FRAMING or _ANIMA_NO_HUMAN_RE.search(text):
+        return text, 0
+    # ★가중치 태그는 "이것은 반드시 그려달라"는 명시적 지시다 — 페이지 템플릿의 전신 요청처럼
+    #   직접 요청한 화각은 이 정책의 대상이 아니다. 치환 전에 괄호 그룹을 보호하고 나중에 되돌린다.
+    guard = []
+
+    def _g(m):
+        guard.append(m.group(0))
+        return "\x00%d\x00" % (len(guard) - 1)
+
+    out = re.sub(r"\([^()]*?:\s*[01]?\.\d+\)", _g, text)
+    n = 0
+    for f in sorted(_ANIMA_FAR_FRAMING, key=len, reverse=True):
+        out, k = re.subn(rf"(?<![a-z0-9]){re.escape(f)}(?![a-z0-9])", "upper body", out, flags=re.I)
+        n += k
+    for i, g in enumerate(guard):
+        out = out.replace("\x00%d\x00" % i, g)
+    if n and "upper body" not in out.lower():
+        out = f"upper body, {out}"
+    return out, n
+
+
+def _anima_drop_sections(text: str) -> tuple:
+    """그래도 창이 넘으면 섹션을 버린다: style → lighting → 배경(사람 있는 컷만). 버리는 순서는
+    '이 컷의 동작·인물·화각'이 살아남는 방향이다. 한 번에 하나씩 버리고 매번 다시 잰다."""
+    notes = []
+    t = text
+    for pat, name in ((r"(?m)^\s*==\s*(?:style|lighting)\s*==[^\n]*\n?", "style/lighting"),
+                      (r"(?m)^\s*==\s*scenery\s*==[^\n]*\n?", "scenery")):
+        if _anima_est_tokens(t) <= ANIMA_TOKEN_BUDGET:
+            break
+        if name == "scenery" and _ANIMA_NO_HUMAN_RE.search(t):
+            break                      # 배경 컷의 배경은 본문이다
+        t2, k = re.subn(pat, "", t)
+        if k:
+            notes.append(f"{name} 섹션 {k}")
+            t = t2
+    # 태그와 중복되는 긴 서술문(헤더 다음에 오는 장면 요약) — 잘라낸 자리만 버린다
+    if _anima_est_tokens(t) > ANIMA_TOKEN_BUDGET:
+        lines = t.splitlines()
+        for i in range(1, len(lines)):
+            if _anima_est_tokens(t) <= ANIMA_TOKEN_BUDGET:
+                break
+            ln = lines[i]
+            if "(" not in ln and len(ln.split()) > 12 and not ln.strip().startswith("=="):
+                lines[i] = ""
+                t = "\n".join(x for x in lines if x.strip())
+                notes.append("서술문 1")
+    return t, notes
+
+
+def _anima_fit_token_window(text: str, budget: int = ANIMA_TOKEN_BUDGET) -> tuple:
+    """최종 프롬프트를 512 슬롯 창 안으로 맞춘다 → (프롬프트, 한 일). 예산 이하이면 원문을 그대로 둔다.
+
+    순서는 '돈 안 드는 정리 → 그래도 넘이면 폐기'다:
+      ① (tag:1.x) 강등·한글 정리·나이대 압축·좌/우 어구 치환·(정책 ON 일 때) 화각 치환
+      ② 예산 초과 시 style/lighting/배경 섹션과 서술문 폐기
+      ③ 그래도 넘으면 태그 순서대로 잘라낸다(헤더·맨 앞 동작 문장은 버리지 않는다)
+    OFF: 환경변수 ANIMA_NO_TOKEN_GATE=1
+    """
+    if not text or ANIMA_NO_TOKEN_GATE:
+        return text, []
+    est0 = _anima_est_tokens(text)
+    t, notes = text, []
+    t, k = _anima_demote_weak_weights(t)
+    if k:
+        notes.append(f"약한 가중치 {k}개 강등")
+    t, k = _anima_strip_hangul(t)
+    if k:
+        notes.append(f"한글 {k}곳 제거")
+    t, k = _anima_collapse_age_tokens(t)
+    if k:
+        notes.append(f"나이대 태그 {k}개 압축")
+    t, k = _anima_rewrite_layout(t)
+    if k:
+        notes.append(f"좌/우 좌표 {k}곳 치환")
+    t, k = _anima_close_framing_text(t)
+    if k:
+        notes.append(f"먼 화각 {k}개→upper body")
+
+    if _anima_est_tokens(t) > budget:
+        t, n2 = _anima_drop_sections(t)
+        notes += n2
+    if _anima_est_tokens(t) > budget:
+        # 마지막 안전판: 앞쪽(헤더·카운터·핵심 동작)을 우선해 뒤쪽 태그부터 버린다
+        lines = t.splitlines()
+        head = lines[0] if len(lines) > 1 else ""
+        body = "\n".join(lines[1:]) if len(lines) > 1 else (lines[0] if lines else "")
+        items = [x.strip() for x in re.split(r",(?![^()]*\))", body) if x.strip()]
+        def _est():
+            return _anima_est_tokens((head + ("\n" if head and items else "") + ", ".join(items)).strip())
+        while len(items) > 1 and _est() > budget:
+            items.pop()
+        notes.append("태그 말미 절삭")
+        t = (head + ("\n" if head and items else "") + ", ".join(items)).strip()
+    est1 = _anima_est_tokens(t)
+    if est1 != est0:
+        log(f"[TOKEN WINDOW] 추정 {est0} → {est1} 토큰 (예산 {budget}/창 512) · " + (" · ".join(notes) if notes else "정리만"))
+    return t, notes
+
+
+def set_close_framing(on: bool):
+    """먼 화각 → upper body 정책을 켜고 끄는다(run_comic --anima-close-framing)."""
+    global ANIMA_CLOSE_FRAMING
+    ANIMA_CLOSE_FRAMING = bool(on)
+    log(f"[CLOSE FRAMING] {'ON — 이벤트 컷의 wide/full body 를 upper body 로' if ANIMA_CLOSE_FRAMING else 'OFF'}")
+
+
 def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
                        seed=None, queue_count: int = 2, ids_out: list = None) -> str:
     """[2026-09-08⑥] 만화(comic)용 확장: seed/queue_count 지정 가능, 생성 prefix 반환
@@ -1974,6 +2201,10 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
     if _deduped != full_prompt:
         log(f"[TAG DEDUP] 가중치 태그 중복 제거: {len(full_prompt)} → {len(_deduped)}자")
         full_prompt = _deduped
+
+    # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본과 같은 자리(DEDUP 직후). 만화 프롬프트는
+    #   대부분 이미 예산 안이라 통과만 하고, 넘은 컷만 잘린다. (selftest ⑦에서 회귀 검증)
+    full_prompt, _ = _anima_fit_token_window(full_prompt, ANIMA_TOKEN_BUDGET)
     
     json_file = "data_comfyui/anima_spectrum_July11.json"
     with open(json_file) as f:

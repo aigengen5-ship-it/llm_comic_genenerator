@@ -283,6 +283,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
 | `--cut-yaml PATH` | 페이지 템플릿 DB를 바꿉니다 (예: `data/cut_new.yaml` — 실측 기반 20종, 칸별 생성 요청 `gen` 포함) |
 | `--no-cut-gen` | 템플릿의 `gen`(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 분할 비율·순서만 씁니다 |
+| `--no-token-gate` | Anima 학습 창(512 슬롯) 게이트를 끕니다 — 프롬프트를 손대지 않고 그대로 보냅니다 |
+| `--anima-close-framing` | 사람이 보이는 컷의 먼 화각(`wide shot`·`full body`)을 `upper body` 로 바꿉니다 |
 | `--no-wide` | wide(1366×1024) 컷을 금지합니다 |
 | `--angle` | action 컷에 `data_comfyui/angle.txt` 구도를 적용합니다 |
 | `--thumbs` | 페이지별 `_thumb.jpg`(1/4 축약본)를 따로 만듭니다 — **기본은 만들지 않습니다** |
@@ -637,7 +639,7 @@ venv/bin/python run_comic.py … --cut-yaml data/cut_new.yaml --no-cut-gen    # 
 
 | 요청 | 프롬프트로 풀리는 태그 |
 |---|---|
-| `shot: full_body` | `full body` |
+| `shot: full_body` | `(full body:1.5)` — 가중치 요청이라 아래의 클로즈 프레이밍 정책에서도 살아남습니다 |
 | `shot: upper_body` / `bust` | `upper body` (+ `portrait`) |
 | `shot: closeup` | `close-up` |
 | `shot: scenery` / `object` | `scenery, no humans` / `object focus, no humans` — ★인물 없는 컷으로 처리 |
@@ -911,6 +913,28 @@ venv/bin/python run_comic.py ... --balloon-style image
 `strip_duplicate_counters`가 예전에는 헤더 머리의 `1girl, solo,`를 지우고 앵글에 들러붙은 중복을
 남겨서, `… explicit, from_side` 줄과 `1girl, solo.` 줄이 갈라졌습니다. 이제 머리를 정답으로 두고
 앵글 뒤의 중복을 지웁니다 → `1girl, solo, score_9, …, explicit, from_side` 한 줄, 그 다음 줄부터 본문.
+
+### 3-8k) 프롬프트 총량은 512 슬롯 안 — 토큰 창 게이트 (2026-09-16)
+
+Anima는 조건 벡터를 **512 슬롯**으로 패드합니다. 프롬프트를 여러 섹션으로 적든 한 줄로 적든 결국
+CLIPTextEncode 하나에 통째로 들어가므로, 512을 넘기는 순간부터 태그 하나의 영향력이 균등하게 쪼그라듭니다.
+“태그를 심었는데 그림에 안 나온다”는 증상의 1차 원인이 여기 있습니다.
+
+그래서 `anima_gen`은 큐에 넣기 직전에 프롬프트를 **추정 토큰으로 재고**(가중치 태그는 자릿수를 더 먹습니다),
+**예산을 넘긴 컷만** 잘라냅니다. 우리 만화 프롬프트는 원래 짧은 편이라 대부분은 아무 일도 없이 지나갑니다.
+
+| 순서 | 하는 일 | 이유 |
+|---|---|---|
+| ① | `(tag:1.0~1.3)` 을 맨 태그로 강등 | 가중치는 한 갈래 경로에서만 먹습니다. 괄호는 자리만 차지해요 |
+| ② | 한글 잔존 제거 · 나이대 태그 압축 · 좌/우 좌표 문장 제거 | 자리만 먹는 토큰, 그리고 좌/우 서술은 화면 분할(split screen = 두 칸 착각)과 묶여 있습니다 |
+| ③ | 예산 초과 시 `style`/`lighting`(필요하면 배경) 섹션과 긴 서술문 폐기 | 컷의 동작·인물·화각이 우선입니다 |
+| ④ | 그래도 넘으면 뒤쪽 태그부터 절삭 | 머리(인원·화질·앵글)와 앞부분은 버리지 않습니다 |
+
+- 예산은 430토큰(512 대비 마진 포함)입니다. `--no-token-gate`(또는 `ANIMA_NO_TOKEN_GATE=1`)로 끄면
+  그대로 보냅니다. 무엇을 잘랐는지 로그에 남습니다 — `[TOKEN WINDOW] 추정 908 → 428 토큰 (예산 430/창 512) · style/lighting 섹션 2 · 서술문 9`.
+- `--anima-close-framing` 을 켜면 사람이 보이는 컷의 `wide shot`·`full body` 를 `upper body` 로 바꿉니다
+  (캐릭터가 작게 나오는 구도 억제). 사람 없는 배경·전경 컷은 전경이 목적이므로 건드리지 않습니다.
+  페이지 템플릿이 전신을 요청한 칸까지 함께 바뀌니, 실측 DB의 전신 요청을 살리려면 기본(OFF)을 쓰세요.
 
 ### 3-8h) 컷이 전부 나와야 페이지를 합칩니다 — ComfyUI 큐 확인
 

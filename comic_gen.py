@@ -72,7 +72,7 @@ GEN_REQ_ENABLE = True       # False면 cut.yaml 의 ★gen(이미지 생성 요�
 GEN_SHOT_KO = {"full_body": "전신(머리~발끝)", "upper_body": "상반신", "bust": "가슴 위", "closeup": "부분 클로즈업",
                "scenery": "인물 없는 배경", "object": "소품만", "crowd": "3인 이상"}
 # 실측 근거(cut_report.md 3.4): 전신·풍경 컷은 면적 중앙값이 페이지의 23~27%, 클로즈업은 14~16%.
-GEN_SHOT_TAGS = {"full_body": "full body", "upper_body": "upper body",
+GEN_SHOT_TAGS = {"full_body": "(full body:1.5)", "upper_body": "upper body",
                  "bust": "upper body, portrait", "closeup": "close-up",
                  "scenery": "scenery, no humans", "object": "object focus, no humans",
                  "crowd": "crowd, multiple people"}

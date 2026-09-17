@@ -1892,6 +1892,24 @@ def set_extra_negative(text: str):
     _extra_negative = str(text or "").strip()
 
 
+# [2026-09-15] ComfyUI negative 수위 정책 — 정본(anima_gen.py)과 동기
+NEG_SAFETY_BLOCK = "nsfw, explicit, "
+NEG_SAFETY_OPEN = ""
+
+
+def neg_safety_terms(safety_tag: str = "") -> str:
+    """[2026-09-15] 수위 모드별 ComfyUI negative 어구 (novel 측 anima_gen 과 동일 규칙).
+
+    [2026-09-15 정책 통일] safe·sensitive 공통 차단 (정본 anima_gen.py 와 같은 값/같은 규칙).
+      safe / sensitive -> NEG_SAFETY_BLOCK("nsfw, explicit, ") / nsfw·explicit -> ""
+    컷 렌더는 회차 수위 등급 config.review_safety[ep] 이 기준이므로 그것을 따라간다.
+    """
+    sf = str(safety_tag or "").lower().strip()
+    if "explicit" in sf or "nsfw" in sf:
+        return NEG_SAFETY_OPEN
+    return NEG_SAFETY_BLOCK
+
+
 def _merge_extra_negative(text: str) -> str:
     add = [t.strip() for t in re.split(r",\s*", _extra_negative) if t.strip()]
     if not add:
@@ -1996,16 +2014,24 @@ def comfyui_run_anima(json_value, episode, full_prompt, res, client=None,
     prompt["123"]["inputs"]["width"] = resol[int(res)][0]
     prompt["123"]["inputs"]["height"] = resol[int(res)][1]
 
-    # Add negative nsfw, explicit if necessary 
+    # [2026-09-15] 수위 모드별 negative — safe 회차에 nsfw/explicit 태그가 섞여도 수준 유지
+    try:
+        _arr = getattr(config, "review_safety", []) or []
+        _sf = str(_arr[episode] if 0 <= int(episode) < len(_arr) else "") 
+    except Exception:
+        _sf = ""
+    _neg_safety = neg_safety_terms(_sf)
+    if _neg_safety:
+        log(f"[NEG SAFETY] EP{int(episode)+1} 수위={(_sf or '(미설정→safe)').strip()} -> negative 에 "
+            f"{_neg_safety.strip(', ')} 추가")
+
     if anima_nametag.find("_pov_") > -1:
         # [2026-09-05] 2girls 추가: POV는 1인 피사체(헤더의 1girl/1boy + solo)가 정상이므로
         #   두 번째 소녀(관찰자 여성/주인공 복제)도 음수 처리한다.
-        prompt["87"]["inputs"]["text"] = f"""
-2girls, 2boys, 3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
+        prompt["87"]["inputs"]["text"] = f"""{_neg_safety}2girls, 2boys, 3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
 """.strip()
     else:
-        prompt["87"]["inputs"]["text"] = f"""
-3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
+        prompt["87"]["inputs"]["text"] = f"""{_neg_safety}3girls, 3boys, score_1, score_2, score_3, blurry, worst quality, low quality, jpeg artifacts, signature, watermark, username, deformed hands, bad anatomy, extra limbs, poorly drawn hands, poorly drawn face, mutation, deformed, extra eyes, extra arms, extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed, bad proportions, missing arms, missing legs, extra digit, fewer digits, cropped, normal quality, (multiple views:2.0), (split view:2.0), (collage:2.0), (grid view:2.0), (clones:2.0), smudged makeup, running makeup, smeared eyeliner
 """.strip()
 
     # [2026-09-12] 컷별 음성 태그(성별·하체 노출 보안)를 고정 템플릿 뒤에 붙인다

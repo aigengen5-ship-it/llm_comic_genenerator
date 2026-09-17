@@ -1,0 +1,599 @@
+# =====================================================================
+# cut_new.yaml — 실측 기반으로 다시 만든 페이지 컷 템플릿 20종 (범용판)
+# =====================================================================
+# 근거: 268면(일본식 만화 단행본, 1198×1681px)을 기하 계측 + 비전 LLM으로 분석한 결과
+#       → 리포트 `cut_report.md`, 데이터 `analysis_cut/pages.json`
+#
+# [그림에서 읽은 실제 습관] (268면 / 1,242컷 실측)
+#   · 페이지당 컷: 평균 4.6컷 — 4~6컷이 74%, 3단 구성이 65%(2단 24%, 4단 4%, 1컷 7%)
+#   · 최다 구조: 2/2/2(56면) · 2/2/1(40면) · 2/2(20면) · 1/2/2(18면) · 2/1/1(15면)
+#   · 3단에서 가장 높은 행: 맨 아래 82면 / 맨 위 64면 / 가운데 28면 → 가운데 행을 얇게 누른다
+#   · 2칸 행은 55/45 기준으로 62%가 폭차 ≥8%p(역할이 다른 두 컷을 한 행에)
+#   · 전폭(행에 칸 하나) 행이 716행 중 32%, 몰아치기(타치키리) 컷 79% → 컷을 면까지 밀어 쓴다
+#   · 화각: 상반신 38% · 가슴위 20% · 클로즈업 18% · 전신 14% · 풍경 6% (전신은 등장/이동/행동 전용에 가까움)
+#   · 좁은 칸(폭<35%)의 63%는 클로즈업·부분 컷, 얇은 행(높이<22%)은 무자막/효과음/부분 클로즈업 전용
+#   · 풍경(인물 없는) 컷의 60%가 첫 행 → 상황 제시 페이지(컷 3.8개, 대사 24%)는 넓고 적게
+#
+# [스키마] — 기존 data/cut.yaml 을 그대로 유지하므로 로더 수정 없이 교체할 수 있습니다.
+#   tier `shares`  : 행 안 좌→우 폭 비율(합 1.0)                      ← 기존 키
+#   tier `height`  : (선택) 페이지 높이 중 이 행 비율(행들 합 1.0)      ← 기존 키
+#   tier `center`  : (선택) true = 좌우 여백을 두고 중앙만             ← 기존 키
+#   tier `role`    : (선택) "summary" | "epilogue" 화면 문법 역할       ← 기존 키
+#   tier `gen`     : ★신규 — 이미지 생성에 **요청**하는 사항, shares 와 1:1 순서
+#                     shot  : full_body(전신,머리~발끝) | upper_body(상반신) | bust(가슴~위)
+#                             | closeup(눈·입·손 등 부분) | scenery(인물 없는 배경) | object(소품) | crowd(3인+)
+#                     angle : eye_level | low(버드업) | high(조감) | pov(1인칭)
+#                     chars : 화면 속 인물 수(0~3, 3 이상은 crowd 로)
+#                     bg    : detailed(배경 정밀) | simple(단순) | black(흑면) | tone(톤·효과선)
+#                     text  : dialog(대사풍선) | mono(독백/설명) | sfx(효과문자) | none(무자막)
+#                     ask   : (선택) 위 태그로 다 못 하는 추가 요청(한국어 한 줄)
+#   template `gen_page` : ★신규 — 페이지 단위 생성 요청(블리드·가터 색·통문법)
+#   template `observed` : ★신규 — 이 템플릿 구조에 해당하는 면이 작품에서 몇 면 관측됐는지(근거 강도).
+#                     값은 `analysis_cut/match.py` 의 구조 조건으로 계산했습니다(0 = 관측 없는 확장안).
+#                     한 템플릿이 여러 구조 서명을 허용하면 그 합계입니다.
+#
+# [코드가 읽는 방법] comic_gen.load_cut_templates() 는 아래 키들을 그대로 슬롯에 실어서
+#   컷 스크립트 LLM / anima_gen 프롬프트 조립에 넘기면 됩니다. 미지정 키를 무시하는 로더라
+#   지금 이 파일을 data/cut.yaml 자리에 두어도 동작에는 지장이 없습니다.
+# =====================================================================
+
+manga_panel_templates:
+
+  # ───────────────────────── 1) 기본 3단 6컷 (실측 56면, 최다)
+  # 행 높이 0.35/0.30/0.35 — 가운데 행을 살짝 눌러 위·아래를 크게 쓰는 이 작품의 표준 문법.
+  # 모든 대화·행동 씬의 기준 템플릿(범용).situations 를 4단계 전부 열었습니다.
+  - id: std_3tier_6panel
+    name: "표준 3단 6컷 (가운데 눌리기)"
+    situations: ["기", "승", "전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 56
+    gen_page: "컷은 면 끝까지 밀어 쓴다(타치키리). 행 높이 35/30/35, 각 행은 55:45 안팎으로 비대칭."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.35
+        description: "2컷 분할(55/45) - 상황을 여는 두 사람 / 넓이 큰 쪽에서 사건을 제시하고 좁은 쪽에서 상대를 보여줌"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: detailed, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple,   text: dialog}
+      - tier: 2
+        shares: [0.5, 0.5]
+        height: 0.30
+        description: "2컷 분할(50/50) - 받아치기와 리액션. 이 행은 높이가 가장 낮으므로 표정·상체 위주로"
+        gen:
+          - {shot: bust,     angle: eye_level, chars: 1, bg: simple,  text: dialog}
+          - {shot: closeup,  angle: eye_level, chars: 1, bg: simple,  text: dialog}
+      - tier: 3
+        shares: [0.6, 0.4]
+        height: 0.35
+        description: "2컷 분할(60/40) - 행동을 시작하거나 다음 페이지로 넘기는 마무리"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 2, bg: detailed, text: dialog, ask: "두 인물이 같은 화면, 허리 위까지"}
+          - {shot: closeup,    angle: high,      chars: 1, bg: simple,   text: none}
+
+  # ───────────────────────── 2) 3단 5컷 · 마무리 전폭 (실측 40면)
+  # 아래 행을 통째로 써서 장면 종료를 넓게 벌립니다(마지막 행이 전폭인 면이 전체의 41%).
+  - id: std_3tier_5panel_close
+    name: "3단 5컷 · 마무리 전폭"
+    situations: ["승", "전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 40
+    gen_page: "3번째 행은 페이지 폭 전체를 쓰는 한 컷. 컷이 크므로 인물을 화면 가장자리에 오려 붙이지 말고, 배경도 완전히 비우지는 말 것."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.35
+        description: "2컷 분할(55/45) - 첫 대사 교환"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: detailed, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple,   text: dialog}
+      - tier: 2
+        shares: [0.55, 0.45]
+        height: 0.30
+        description: "2컷 분할(55/45) - 텐션이 오르는 두 번째 교환(한쪽은 클로즈업)"
+        gen:
+          - {shot: bust,    angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: closeup, angle: eye_level, chars: 1, bg: tone,   text: sfx}
+      - tier: 3
+        shares: [1.0]
+        height: 0.35
+        description: "1컷 전폭(100%) - 이 페이지에서 가장 큰 컷. 행동의 결과·동반 컷"
+        gen:
+          - {shot: full_body, angle: eye_level, chars: 2, bg: detailed, text: dialog, ask: "머리부터 발끝까지, 두 인물의 전신 관계가 보이는 구도"}
+
+  # ───────────────────────── 3) 3단 5컷 · 오프닝 전폭 (실측 18면)
+  # 첫 행 전폭인 면이 29%. 풍경(인물 없음) 컷의 60%가 첫 행에 놓입니다.
+  - id: std_3tier_5panel_open
+    name: "3단 5컷 · 오프닝 전폭 (장소 제시)"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 18
+    gen_page: "첫 행은 배경 밀도를 높이고(정밀 배경) 대사 대신 설명 박스/무자막. 남은 두 행은 배경을 단순화해 대비합니다."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.35
+        description: "1컷 전폭(100%) - 시간·장소·분위기를 잡는 확립 컷"
+        gen:
+          - {shot: scenery, angle: high, chars: 0, bg: detailed, text: mono, ask: "인물 없이 배경만, 또는 뒷모습만 작게"}
+      - tier: 2
+        shares: [0.55, 0.45]
+        height: 0.30
+        description: "2컷 분할(55/45) - 인물 등장, 첫 행동"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: none}
+      - tier: 3
+        shares: [0.55, 0.45]
+        height: 0.35
+        description: "2컷 분할(55/45) - 상황 설명을 끝내고 다음 장면으로 넘김"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 2, bg: simple, text: dialog}
+          - {shot: closeup,    angle: eye_level, chars: 1, bg: simple, text: none}
+
+  # ───────────────────────── 4) 3단 4컷 · 마무리 전폭 (실측 15면)
+  # 컷 수가 적어 호흡이 느립니다. 감정 전환·대면 후 정리에 쓰입니다.
+  - id: std_3tier_4panel_close
+    name: "3단 4컷 · 아래 두 행 전폭"
+    situations: ["승", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 15
+    gen_page: "행 2·3이 각각 전폭(한 컷)입니다. 컷이 크므로 표정 변화·몸 전체 동작을 정확히 요구하고, 자막은 컷당 1개로 억제."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.38
+        description: "2컷 분할(55/45) - 두 사람의 엇갈림"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: dialog}
+      - tier: 2
+        shares: [1.0]
+        height: 0.28
+        description: "1컷 전폭 - 행동을 개시하는 컷(가벼운 로우 앵글로 힘을 줌)"
+        gen:
+          - {shot: full_body, angle: low, chars: 1, bg: simple, text: none, ask: "머리~발끝, 한 인물의 동작 시작"}
+      - tier: 3
+        shares: [1.0]
+        height: 0.34
+        description: "1컷 전폭 - 결과·여운. 말줄임표 또는 무자막"
+        gen:
+          - {shot: upper_body, angle: high, chars: 2, bg: tone, text: mono, ask: "두 사람, 위에서 본 구도, 여백 넓게"}
+
+  # ───────────────────────── 5) 3단 5컷 · 협폭 샌드위치 (실측 10면)
+  # 가운데 전폭 행을 사이에는고 위·아래를 2컷씩 — 앞뒤 대화 사이에 삽입 하나를 끼우는 문법.
+  - id: std_3tier_5panel_sandwich
+    name: "3단 5컷 · 가운데 삽입"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 10
+    gen_page: "가운데 전폭 컷은 삽입(interior/소품/배경)으로도 씁니다. 위·아래 행은 얼굴~상체 위주(행 높이가 낮음)."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.35
+        description: "2컷 분할(55/45) - 대화 두 수"
+        gen:
+          - {shot: bust,    angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,    angle: eye_level, chars: 1, bg: simple, text: dialog}
+      - tier: 2
+        shares: [1.0]
+        height: 0.32
+        description: "1컷 전폭 - 삽입 컷(장면의 핵심 사물·공간)"
+        gen:
+          - {shot: scenery, angle: eye_level, chars: 0, bg: detailed, text: none, ask: "인물 없는 배경·사물 클로즈업도 허용"}
+      - tier: 3
+        shares: [0.5, 0.5]
+        height: 0.33
+        description: "2컷 분할(50/50) - 삽입을 보고 바뀌는 반응"
+        gen:
+          - {shot: closeup,    angle: eye_level, chars: 1, bg: simple, text: none}
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+
+  # ───────────────────────── 6) 2단 4컷 비대칭 (실측 20면, 타치키리 95%)
+  # 행 0.47/0.53, 행 안 60:40. 컷 수가 줄어 속도가 붙는 구성 — 진행과 리액션을 좌우로 병렬 배치.
+  - id: asym_2tier_4panel
+    name: "2단 4컷 비대칭"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 20
+    gen_page: "2단 모두 좌우로 나뉩니다(60:40). 작은 칸은 얼굴·손 등 한 가지 정보만 담을 것."
+    tier_details:
+      - tier: 1
+        shares: [0.6, 0.4]
+        height: 0.47
+        description: "2컷 분할(60/40) - 진행(큰 칸)과 상대의 표정(작은 칸)"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 2, bg: simple, text: dialog}
+          - {shot: closeup,    angle: eye_level, chars: 1, bg: black,  text: none}
+      - tier: 2
+        shares: [0.55, 0.45]
+        height: 0.53
+        description: "2컷 분할(55/45) - 행동의 결과와 반동"
+        gen:
+          - {shot: full_body, angle: eye_level, chars: 2, bg: simple, text: sfx, ask: "몸 전체가 보이는 동작, 효과문자 자리 확보"}
+          - {shot: bust,      angle: low,       chars: 1, bg: tone,   text: dialog}
+
+  # ───────────────────────── 7) 2단 2컷 전폭 (실측 12면, 행 높이 0.58/0.42)
+  # 컷 2개로만 읽히는 페이지. 앞 행은 넓게 열어 제시, 뒤 행은 좁혀서 찍어 누릅니다.
+  - id: split_2tier_2panel
+    name: "2단 2컷 전폭 (0.58/0.42)"
+    situations: ["기", "결"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 12
+    gen_page: "컷이 두 개뿐이므로 각 컷이 페이지의 절반 이상을 차지합니다. 디테일·인물 수를 과도하게 담지 말 것."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.58
+        description: "전폭 1컷(58%) - 제시. 넓은 시야"
+        gen:
+          - {shot: full_body, angle: eye_level, chars: 2, bg: detailed, text: dialog, ask: "머리~발끝, 배경까지 포함한 상황"}
+      - tier: 2
+        shares: [1.0]
+        height: 0.42
+        description: "전폭 1컷(42%) - 받아치기. 위에서 아래로 눌러 마무리"
+        gen:
+          - {shot: bust,    angle: high, chars: 1, bg: simple, text: mono, ask: "얼굴·상체 클로즈업, 배경 단순"}
+
+  # ───────────────────────── 8) 2단 3컷 · 위 분할/아래 전폭 (실측 12면)
+  - id: top_split_bottom_full
+    name: "2단 3컷 · 위 분할/아래 전폭"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 12
+    gen_page: "위 행은 두 사람의 다른 시점, 아래 행은 그것을 한데 묶는 전폭 컷."
+    tier_details:
+      - tier: 1
+        shares: [0.58, 0.42]
+        height: 0.50
+        description: "2컷 분할(58/42) - 두 인물이 각자 하는 행동"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: detailed, text: dialog}
+          - {shot: bust,       angle: high,      chars: 1, bg: simple,   text: none}
+      - tier: 2
+        shares: [1.0]
+        height: 0.50
+        description: "1컷 전폭 - 두 동선을 하나로 합치는 장면 전환 컷"
+        gen:
+          - {shot: full_body, angle: high, chars: 2, bg: detailed, text: mono, ask: "조망 구도, 두 사람 다 머리~발끝"}
+
+  # ───────────────────────── 9) 2단 3컷 · 위 전폭/아래 분할 (실측 8면)
+  # 첫 컷을 넓게 열고 아래에서 좁혀 세부로 들어가는 도입 문법(행 높이 0.62/0.38).
+  - id: top_full_bottom_split
+    name: "2단 3컷 · 위 전폭/아래 분할"
+    situations: ["기", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 8
+    gen_page: "위 컷(62%)은 배경·공간 중심. 아래 두 칸은 배경을 단순화해 얼굴·소품으로 진입."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.62
+        description: "전폭 1컷(62%) - 공간 제시(인물 없어도 됨)"
+        gen:
+          - {shot: scenery, angle: eye_level, chars: 0, bg: detailed, text: mono, ask: "인물 없는 풍경, 설명 박스 자리 확보"}
+      - tier: 2
+        shares: [0.62, 0.38]
+        height: 0.38
+        description: "2컷 분할(62/38) - 세부 진입: 인물과 소품"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: object,     angle: high,      chars: 0, bg: simple, text: none, ask: "소품·손 클로즈업"}
+
+  # ───────────────────────── 10) 3단 7컷 가속 (실측 7면 + 협폭 3분할 계보)
+  # 마지막 행을 3등분해 리액션·파편을 동시에 놓습니다. 좁은 칸(폭<35%)의 63%가 클로즈업이라는 실측 반영.
+  - id: accel_3tier_7panel
+    name: "3단 7컷 · 아래 3분할 가속"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 12
+    gen_page: "3번째 행 세 칸은 폭이 각각 30% 안팎입니다. 한 칸에 인물 1명·정보 1개만, 배경은 단순 또는 흑면."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.32
+        description: "2컷 분할 - 상황 제시"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: dialog}
+      - tier: 2
+        shares: [0.5, 0.5]
+        height: 0.32
+        description: "2컷 분할 - 한 동작의 앞/뒤"
+        gen:
+          - {shot: bust,     angle: eye_level, chars: 1, bg: simple, text: sfx}
+          - {shot: closeup,  angle: eye_level, chars: 1, bg: simple, text: none}
+      - tier: 3
+        shares: [0.36, 0.34, 0.30]
+        height: 0.36
+        description: "3컷 분할 - 동시에 벌어지는 세 반응(또는 기억의 파편)"
+        gen:
+          - {shot: closeup, angle: eye_level, chars: 1, bg: simple, text: none}
+          - {shot: closeup, angle: high,      chars: 1, bg: black,  text: none}
+          - {shot: object,  angle: high,      chars: 0, bg: simple, text: sfx}
+
+  # ───────────────────────── 11) 3연속 세로 분할 스트립 (3칸 행 + 전폭 행)
+  # 3칸 행은 2/2/3·2/3 계보(합 20면). 같은 순간의 세 조각을 나란히 — 시간 정지 효과.
+  - id: column3_strip
+    name: "3연속 세로 스트립 + 전폭"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 29
+    gen_page: "첫 행 세 칸은 같은 장면의 연속 동작(0.5초 차이)처럼 그립니다. 인물·의상·조명은 세 칸에서 반드시 동일."
+    tier_details:
+      - tier: 1
+        shares: [0.34, 0.33, 0.33]
+        height: 0.55
+        description: "3컷 세로 분할 - 동작의 3연속(또는 세 인물의 서로 다른 반응)"
+        gen:
+          - {shot: bust,     angle: eye_level, chars: 1, bg: simple, text: none}
+          - {shot: bust,     angle: eye_level, chars: 1, bg: simple, text: sfx}
+          - {shot: closeup,  angle: eye_level, chars: 1, bg: tone,   text: none}
+      - tier: 2
+        shares: [1.0]
+        height: 0.45
+        description: "1컷 전폭 - 스트립이 모아지는 지점"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 2, bg: detailed, text: dialog}
+
+  # ───────────────────────── 12) 4단 8컷 액션 (4단 페이지 12면, 그중 2/2/2/2 3면)
+  # 행 높이가 0.25 이하로 내려가는 구성 — 컷이 작아지므로 화각도 좁게(상반신·부분) 가야 합니다.
+  - id: four_tier_action_8
+    name: "4단 8컷 액션"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 4
+    observed: 3
+    gen_page: "행당 높이가 약 25%로 짧습니다. 전신보다 상반신·부분 컷이 물리적으로 맞고, 대사풍선은 컷당 1개."
+    tier_details:
+      - tier: 1
+        shares: [0.55, 0.45]
+        height: 0.30
+        description: "2컷 분할 - 동작 개시"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: none}
+          - {shot: closeup,    angle: eye_level, chars: 1, bg: simple, text: sfx}
+      - tier: 2
+        shares: [0.55, 0.45]
+        height: 0.22
+        description: "2컷 분할 - 동작의 연속"
+        gen:
+          - {shot: bust,    angle: low,  chars: 1, bg: simple, text: none}
+          - {shot: object,  angle: eye_level, chars: 0, bg: black, text: sfx}
+      - tier: 3
+        shares: [0.5, 0.5]
+        height: 0.25
+        description: "2컷 분할 - 충돌·반동"
+        gen:
+          - {shot: closeup,    angle: high,      chars: 1, bg: tone,   text: sfx}
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: none}
+      - tier: 4
+        shares: [0.5, 0.5]
+        height: 0.23
+        description: "2컷 분할 - 결과와 경악"
+        gen:
+          - {shot: bust,     angle: low,  chars: 1, bg: simple, text: dialog}
+          - {shot: closeup,  angle: eye_level, chars: 1, bg: black, text: none}
+
+  # ───────────────────────── 13) 4단 6컷 티키타카 (4단 페이지 계보 2/1/1/2·2/2/1/1)
+  # 전폭-분할-분할-전폭으로 교차시켜 말싸움 속도를 조절합니다.
+  - id: four_tier_banter_6
+    name: "4단 6컷 교차 티키타카"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 4
+    observed: 5
+    gen_page: "화자가 행마다 바뀝니다. 각 컷의 시선 방향을 상대 쪽으로 통일할 것."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.26
+        description: "1컷 전폭 - 한 사람이 선언"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+      - tier: 2
+        shares: [0.5, 0.5]
+        height: 0.24
+        description: "2컷 분할 - 받아치기/반박"
+        gen:
+          - {shot: bust,    angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,    angle: eye_level, chars: 1, bg: simple, text: dialog}
+      - tier: 3
+        shares: [0.5, 0.5]
+        height: 0.24
+        description: "2컷 분할 - 헛기침과 정적"
+        gen:
+          - {shot: closeup,  angle: high,      chars: 1, bg: simple, text: sfx}
+          - {shot: bust,     angle: eye_level, chars: 1, bg: simple, text: none}
+      - tier: 4
+        shares: [1.0]
+        height: 0.26
+        description: "1컷 전폭 - 둘 다 얼굴이 빨개지는 동시 리액션"
+        gen:
+          - {shot: full_body, angle: eye_level, chars: 2, bg: simple, text: dialog, ask: "두 사람 전신, 데칼코마니처럼 대칭 구도"}
+
+  # ───────────────────────── 14) 얇은 효과음 행 삽입 (얇은 행(<18%) 12면)
+  # 행 하나를 높이 12~18%로 눌러 효과음·손·입 등 한 정보만 담습니다. 얇은 행의 실측 내용: 무자막 17/효과음 10/클로즈업 18.
+  - id: sfx_strip_insert
+    name: "얇은 삽입 행(효과음·부분)"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 21
+    gen_page: "두 번째 행은 세로 15%짜리 가로 띠입니다. 화면의 90%가 한 가지 피사체 — 얼굴·손·발·물건 중 하나만."
+    tier_details:
+      - tier: 1
+        shares: [0.6, 0.4]
+        height: 0.45
+        description: "2컷 분할 - 빌드업"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: none}
+      - tier: 2
+        shares: [1.0]
+        height: 0.15
+        description: "전폭 얇은 컷(세로 15%) - 효과음 또는 부분 클로즈업 전용"
+        gen:
+          - {shot: closeup, angle: eye_level, chars: 1, bg: black, text: sfx, ask: "화면 가득 한 가지 부분(손·입·발·물건), 먹면/흑면 처리 가능"}
+      - tier: 3
+        shares: [1.0]
+        height: 0.40
+        description: "전폭 1컷 - 폭발"
+        gen:
+          - {shot: full_body, angle: low, chars: 2, bg: tone, text: sfx, ask: "머리~발끝, 효과선과 기세가 화면을 채움"}
+
+  # ───────────────────────── 15) 협폭 리액션 포켓 (좁은 칸 111컷, 그중 67%가 부분 컷)
+  # 큰 컷 하나 + 폭이 좁은 칸 여러 개. 작은 칸은 '말하지 않는 리액션'을 붙이는 주머니입니다.
+  - id: narrow_reaction_pocket
+    name: "큰 컷 + 협폭 리액션 포켓"
+    situations: ["승", "전"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 57
+    gen_page: "좁은 칸(폭 25~32%)은 배경을 생략하거나 흑면으로 처리할 것. 인물 1명, 정보 1개."
+    tier_details:
+      - tier: 1
+        shares: [0.68, 0.32]
+        height: 0.55
+        description: "2컷 분할(68/32) - 큰 컷에서 본편, 좁은 컷에서 리액션"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 2, bg: detailed, text: dialog}
+          - {shot: closeup,    angle: eye_level, chars: 1, bg: black,    text: none}
+      - tier: 2
+        shares: [0.32, 0.32, 0.36]
+        height: 0.45
+        description: "3컷 분할(32/32/36) - 같은 순간의 서로 다른 시선"
+        gen:
+          - {shot: closeup, angle: eye_level, chars: 1, bg: simple, text: none}
+          - {shot: closeup, angle: high,      chars: 1, bg: simple, text: none}
+          - {shot: bust,    angle: eye_level, chars: 1, bg: tone,   text: mono}
+
+  # ───────────────────────── 16) 단일 전폭 임팩트 (1컷 면 13면 + 몰아치기 79%)
+  # 컷 하나. 단행본에서는 표지·타이틀에 많았지만, 이야기 안에서는 '정적·폭발'을 위한 장치로 확장했습니다.
+  - id: fullbleed_single_impact
+    name: "단일 전폭 임팩트 (타치키리)"
+    situations: ["전", "결"]
+    total_size: "1 Page"
+    total_tiers: 1
+    observed: 13
+    gen_page: "페이지 가득 한 컷, 여백 없음. 얼굴·손을 컷 경계에 걸지 말되, 화면 가장자리는 텍스트 자리를 위해 비워둘 것."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 1.0
+        description: "1컷 전폭(페이지 가득) - 대사보다 그림으로 눌러뜨리는 한 장면"
+        gen:
+          - {shot: full_body, angle: low, chars: 2, bg: detailed, text: sfx, ask: "머리~발끝, 로우 앵글로 무게감, 페이지 전체를 채우는 구도"}
+
+  # ───────────────────────── 17) 흑면 압박·중앙 집중 (검정 가터 페이지 40면, 흑면 컷 4%)
+  # 어둠 속에서 한 가지만 남기는 구성. 기존 pressure_focus 의 실측 기반판입니다.
+  - id: black_pressure_center
+    name: "흑면 압박 · 중앙 집중"
+    situations: ["전"]
+    total_size: "1 Page"
+    total_tiers: 3
+    observed: 27
+    gen_page: "행 1·3은 먹면/그라데이션 처리. 중앙 컷 좌우에는 텍스트를 둘 여백을 남길 것."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.28
+        description: "1컷 전폭(흑면) - 독백만 남는 암전"
+        gen:
+          - {shot: closeup, angle: eye_level, chars: 1, bg: black, text: mono, ask: "어둠 속에서 얼굴 일부만"}
+      - tier: 2
+        shares: [0.5]
+        center: true
+        height: 0.42
+        description: "중앙 1컷(좌우 흑면) - 고립된 인물"
+        gen:
+          - {shot: full_body, angle: high, chars: 1, bg: black, text: none, ask: "머리~발끝, 주위를 먹으로 처리, 고립된 구도"}
+      - tier: 3
+        shares: [0.5, 0.5]
+        height: 0.30
+        description: "2컷 분할 - 압박하는 시선과 받는 시선"
+        gen:
+          - {shot: closeup, angle: low,  chars: 1, bg: black,  text: dialog}
+          - {shot: bust,    angle: high, chars: 1, bg: simple, text: none}
+
+  # ───────────────────────── 18) 데칼코마니 대화 (2칸 행 큰 쪽: 우 160회/좌 125회)
+  # 두 행을 미러로 배치해 A/B 교차를 명시적으로 보여줍니다. 대칭 축이 있어도 폭은 55:45로 비균등.
+  - id: mirror_pair_dialogue
+    name: "미러 2단 4컷 대화"
+    situations: ["승"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 6
+    gen_page: "행 1과 행 2는 좌우 인물을 서로 바꿔(위치 교환) 그립니다. 같은 인물·반대 구도, 배경은 두 행에서 동일하게."
+    tier_details:
+      - tier: 1
+        shares: [0.45, 0.55]
+        height: 0.50
+        description: "2컷 분할(45/55) - A의 시선(큰 칸 오른쪽)"
+        gen:
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: dialog, ask: "인물 A, 화면 오른쪽을 보는 구도"}
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog, ask: "인물 B, 화면 왼쪽을 보는 구도"}
+      - tier: 2
+        shares: [0.55, 0.45]
+        height: 0.50
+        description: "2컷 분할(55/45) - 위치를 뒤집어 B의 시선"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: simple, text: dialog, ask: "인물 A, 이번엔 왼쪽 칸"}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: dialog, ask: "인물 B, 이번엔 오른쪽 칸"}
+
+  # ───────────────────────── 19) 전신 등장 (세로형 컷 — 확장안)
+  # 이 작품에서 세로형 컷(폭/행높이 <0.5)은 1%에 불과합니다. 그래서 실측이 아니라
+  # '전신 컷을 제대로 보여주려면 세로로 긴 칸이 필요하다'는 물리 제약에서 만든 확장 템플릿입니다.
+  # 전신 컷의 실측 폭 중앙값은 0.55(넓은 칸) — 세로형이 아니더라도 전신은 큰 칸에 배치해야 합니다.
+  - id: vertical_full_body_intro
+    name: "전신 등장 (세로형 칸)"
+    situations: ["기", "승"]
+    total_size: "1 Page"
+    total_tiers: 2
+    observed: 0
+    gen_page: "세로로 긴 칸(폭 약 42%, 행높이 100%)에서는 반드시 머리부터 발끝까지 — 잘린 전신 금지."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 0.50
+        description: "전폭 1컷(위 50%) - 등장 전 대기·상황"
+        gen:
+          - {shot: upper_body, angle: eye_level, chars: 1, bg: detailed, text: dialog}
+      - tier: 2
+        shares: [0.42, 0.58]
+        height: 0.50
+        description: "2컷 분할 - 왼쪽 세로형 칸에 전신 등장, 오른쪽에 반응"
+        gen:
+          - {shot: full_body,  angle: low,      chars: 1, bg: simple, text: none, ask: "머리~발끝 전부, 세로 구도, 의상 실루엣이 보이게"}
+          - {shot: bust,       angle: eye_level, chars: 1, bg: simple, text: dialog}
+
+  # ───────────────────────── 20) 에필로그 여운 (epilogue 전용 페이지)
+  # 관측에서 1컷 면은 전부 여운/타이틀 용도(13면, 무자막·설명 위주)였습니다.
+  - id: epilogue_aftermath
+    name: "에필로그 여운 1칸"
+    epilogue: true
+    situations: ["결"]
+    total_size: "1 Page"
+    total_tiers: 1
+    observed: 13
+    gen_page: "컷은 반투명 처리하고 그 위에 큰 지문을 얹습니다. 대사풍선 금지."
+    tier_details:
+      - tier: 1
+        shares: [1.0]
+        height: 1.0
+        role: "epilogue"
+        description: "전폭 1컷(페이지 가득) - 결 뒤의 여운. 인물 없이 배경만 허용"
+        gen:
+          - {shot: scenery, angle: eye_level, chars: 0, bg: detailed, text: mono, ask: "인물 없음 또는 뒷모습만, 상징적 소품 하나"}

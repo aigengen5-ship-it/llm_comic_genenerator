@@ -49,3 +49,8 @@ data/models/
 # 실행 산물 (기계별 상태 — 커밋하지 않음)
 state/last_run.json
 state/extract_cache.yaml
+
+# 컷 레이아웃 분석 산출물(로컬 이미지 세트에서 재생성 — analysis_cut/*.py 는 커밋합니다)
+analysis_cut/*.json
+analysis_cut/*.jsonl
+analysis_cut/*.log

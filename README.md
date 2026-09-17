@@ -281,6 +281,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--keep-logs` | 실행 시작에 로그를 초기화하지 않고 이어서 씁니다 |
 | `--fresh-extract` | 추출 체크포인트(`state/extract_cache.yaml`)를 무시하고 처음부터 추출합니다 |
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
+| `--cut-yaml PATH` | 페이지 템플릿 DB를 바꿉니다 (예: `data/cut_new.yaml` — 실측 기반 20종, 칸별 생성 요청 `gen` 포함) |
+| `--no-cut-gen` | 템플릿의 `gen`(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 분할 비율·순서만 씁니다 |
 | `--no-wide` | wide(1366×1024) 컷을 금지합니다 |
 | `--angle` | action 컷에 `data_comfyui/angle.txt` 구도를 적용합니다 |
 | `--thumbs` | 페이지별 `_thumb.jpg`(1/4 축약본)를 따로 만듭니다 — **기본은 만들지 않습니다** |
@@ -611,6 +613,39 @@ venv/bin/python run_comic.py --episode inputs/… --template romcom_banter   # �
 - 고정하면 기승전결별 선택지 필터 · 회차 안 재사용 금지 · 전폭 비중 상한(`--wide-share`)을 모두 내려놓습니다(의도가 통일だから). 컷 수는 `페이지 수 × 슬롯 수`가 되고, 목표 컷 수에 닿을 때까지 페이지를 늘립니다(초과가 부족보다 낫다는 기존 판단 그대로).
 - ★ 프롤로그/에필로그 페이지는 전용 규칙을 그대로 따릅니다(고정 템플릿 풀에서 제외되어 있습니다). 없는 id를 주면 `--list-templates`를 안내하며 종료합니다.
 - 직접 늘리실 때: `data/cut.yaml`에 `- id: …`로 추가하면 되고, `situations`는 `기/승/전/결` 어휘를 써 주세요. 행의 `shares` 합은 1.0(`center: true`인 중앙 슬롯만 예외)입니다.
+
+##### 대안 템플릿 DB (`data/cut_new.yaml`) — 실작품 268면에서 되살린 20종
+
+실제 만화 한 작품(268면)을 픽셀 계측과 이미지 LLM으로 읽어 **실제로 많이 쓰인 구조만** 모았습니다.
+이야기 전용 템플릿(요리 시식·우산 공유 등)을 빼고 화면 문법만 남겼으므로 어떤 소재에 재사용됩니다.
+분석 전 과정과 근거 수치는 **`cut_report.md`** 에 있습니다.
+
+| 항목 | 내용 |
+|---|---|
+| 실측 경향 | 페이지당 평균 4.6컷(4~6컷 74%), 3단 구성 65%, 전폭 행 32%, 몰아치기(타치키리) 79%, 전신 14%·상반신 38%·클로즈업 18% |
+| 키 호환 | `cut.yaml`의 모든 키를 그대로 씁니다 — 자리 교체가 아니라도 **`--cut-yaml`로 지정**해서 쓸 수 있습니다 |
+| ★추가 키 `gen` | **이미지 생성에 요청할 사항**을 칸별로 구조화: `shot`(전신/상반신/클로즈업…) · `angle` · `chars` · `bg` · `text` · `ask` |
+| ★추가 키 `gen_page` | 페이지 단위 요청(블리드·텍스트 자리) — 레이아웃 설명에 그대로 실립니다 |
+| 배선 | `--cut-yaml data/cut_new.yaml` 로 지정하면 `gen`이 슬롯 → 컷 → 프롬프트 태그까지 갑니다 (`--no-cut-gen`으로 끄기) |
+
+```bash
+venv/bin/python run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt \
+    --cut-yaml data/cut_new.yaml              # 실측 DB를 사용 (기본은 data/cut.yaml)
+venv/bin/python run_comic.py --list-templates --cut-yaml data/cut_new.yaml   # 20종 + 생성요청 칸 수
+venv/bin/python run_comic.py … --cut-yaml data/cut_new.yaml --no-cut-gen    # 요청만 끄고 비율/순서는 사용
+```
+
+| 요청 | 프롬프트로 풀리는 태그 |
+|---|---|
+| `shot: full_body` | `full body` |
+| `shot: upper_body` / `bust` | `upper body` (+ `portrait`) |
+| `shot: closeup` | `close-up` |
+| `shot: scenery` / `object` | `scenery, no humans` / `object focus, no humans` — ★인물 없는 컷으로 처리 |
+| `angle: low` / `high` / `pov` | `from below` / `from above` / `pov` |
+| `bg: detailed` / `simple` / `black` / `tone` | `detailed background` / `simple background` / `black background` / `gradient background, speed lines` |
+
+- 모순은 미리 잘라냅니다: `face` 컷은 이미 클로즈업이라 shot 태그를 붙이지 않고, 전신·상반신을 요청받은 칸에 `face`가 붙으면 `action`으로 되올립니다(머리 잘린 전신 방지). ★배경만 컷에는 배경 태그만 붙습니다.
+- 기본 DB(`data/cut.yaml` 34종)에는 `gen`이 없으므로 지금 동작이 그대로입니다.
 
 #### 화면 문법 폰트 (무료 · OFL) — `--get-fonts` 한 번
 
@@ -1216,6 +1251,7 @@ LORA.md             선택 가능한 LoRA·UNet 안내(화풍을 고르실 때�
 llm_server.py         [선택] ollama 대체 전용 LLM 서버
 selftest.py           자가 점검 — 항목 수는 실행 결과에 출력됩니다(배송되는 inputs/ 샘플만 사용)
 data/cut.yaml         페이지 템플릿 34종(기승전결, tier shares=폭, tier height=행 높이 예: climax_impact 4:6, **tier role=★서두 요약/에필로그**)
+data/cut_new.yaml     같은 포맷의 대안 20종(실작품 268면 실측 기반, 칸별 생성 요청 `gen` 포함) — 근거는 `cut_report.md`
 data/fonts/           [자동 다운로드] 화면 문법 폰트(OFL) — `--get-fonts`로 받습니다(.gitignore 대상)
 data_comfyui/         워크플로 json · actions.yaml · angle.txt · prompt_pov.md · prompt_multi.md
 data/balloons/        [자동 생성] 말풍선·속마음 자산 9종 + manifest — `--get-balloons`

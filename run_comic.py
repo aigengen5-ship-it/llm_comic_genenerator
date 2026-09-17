@@ -782,6 +782,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="컷 스크립트까지 (렌더 없음)")
     ap.add_argument("--preview", type=int, default=0, help="컷 프롬프트 N개 출력(dry-run과 함께)")
     ap.add_argument("--no-wide", action="store_true", help="wide(1366x1024) 컷 금지")
+    ap.add_argument("--cut-yaml", dest="cut_yaml", default="",
+                    help="페이지 템플릿 DB 경로를 바꿉니다 (예: data/cut_new.yaml — 실측 기반 20종, 칸별 생성 요청 gen 포함)")
+    ap.add_argument("--no-cut-gen", action="store_true",
+                    help="템플릿의 gen(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 비율/순서만 씁니다")
     ap.add_argument("--font", default="", help="한글 폰트 ttf/ttc 경로 (비우면 OS별 자동probe; 예: C:\\Windows\\Fonts\\malgunbd.ttf)")
     # [2026-09-09] 화면 문법(설명/대사/속마음/의성어) 용도별 폰트 — 우선순위: 여기 > data/fonts/ > OS
     ap.add_argument("--font-narration", dest="font_narration", default="",
@@ -899,6 +903,16 @@ def main() -> int:
                     help="[local] 로컬 설정/환경변수로 켜진 위 스위치를 이번 실행만 끕니다")
     args = ap.parse_args()
 
+    # [2026-09-16] 템플릿 DB 스위치는 **이 위치**에서 적용한다 — --list-templates/--template 검증이
+    #   이보다 먼저 DB를 읽기 때문에 한 회차 실행 준비(_run_episode)에서 넘기면 늦다.
+    if str(getattr(args, "cut_yaml", "") or "").strip():
+        import comic_gen as _CG0
+        _CG0.CUT_YAML_FILE = os.path.abspath(str(args.cut_yaml).strip())
+        _CG0._CUT_TMPL_CACHE = None
+    if getattr(args, "no_cut_gen", False):
+        import comic_gen as _CG0
+        _CG0.GEN_REQ_ENABLE = False
+
     # [2026-09-10] 실행 시작에 본 로그를 비웁니다(전부 append라 어제 실패와 섞였습니다).
     #   에러·경고는 지우지 않는 log/error.log에 따로 남깁니다.
     runlog.start_run(keep=bool(getattr(args, "keep_logs", False)))
@@ -957,12 +971,14 @@ def main() -> int:
     if getattr(args, "list_templates", False):
         import comic_gen as _CG
         _tm = _CG.load_cut_templates()
-        p(f"사용 가능한 페이지 템플릿 {len(_tm)}종 (data/cut.yaml) — --template 에 id나 이름 일부를 넣으세요")
+        p(f"사용 가능한 페이지 템플릿 {len(_tm)}종 ({_CG.CUT_YAML_FILE}) — --template 에 id나 이름 일부를 넣으세요")
         for _tid in sorted(_tm):
             _t = _tm[_tid]
             _n = sum(len(x["shares"]) for x in _t["tiers"])
+            _g = sum(1 for x in _t["tiers"] for gx in (x.get("gen") or []) if gx)
             p(f"  {_tid:<32} {len(_t['tiers'])}단 {_n:>2}컷/페이지 [{'/'.join(_t['situations']) or '—'}]"
-              f"{' ★에필로그 전용' if _t.get('epilogue') else ''}  {_t['name']}")
+              f"{' ★에필로그 전용' if _t.get('epilogue') else ''}"
+              f"{' 생성요청 ' + str(_g) + '칸' if _g else ''}  {_t['name']}")
         return 0
     if not args.episode:
         ap.error("--episode 필수 (--stop-llm/--llm-plan/--get-fonts/--list-templates/--get-face-model 모드에서는 생략 가능)")
@@ -1028,7 +1044,7 @@ def main() -> int:
             _m = [k for k in sorted(_tm) if k.lower() == _wl or _wl in k.lower() or _wl in (_tm[k].get("name") or "").lower()]
             (_hit if _m else _miss).extend(_m or [_w])
         if _miss:
-            p(f"[오류] 템플릿을 찾을 수 없습니다: {_miss} — `--list-templates`로 34종을 확인하세요")
+            p(f"[오류] 템플릿을 찾을 수 없습니다: {_miss} — `--list-templates`로 {len(_tm)}종을 확인하세요")
             return 2
         config.comic_templates_pin = sorted(set(_hit))
     if getattr(args, "item_cuts", None) is not None:

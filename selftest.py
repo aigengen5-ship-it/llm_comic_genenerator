@@ -1169,6 +1169,48 @@ def main() -> int:
     check("전폭 가로 슬롯 face → action 강제",
           all(not (s["wide"] and p["type"] == "face") for p, s in zip(rep_fw, slots)))
 
+    # ── [2026-09-16] cut_new.yaml 의 ★gen(칸별 이미지 생성 요청) 배선: 로더 → 슬롯 → 컷 → 태그
+    _cyf, _cyc = CG.CUT_YAML_FILE, CG._CUT_TMPL_CACHE
+    try:
+        CG.CUT_YAML_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cut_new.yaml")
+        CG._CUT_TMPL_CACHE = None
+        tn = CG.load_cut_templates()
+        ng = sum(1 for t in tn.values() for td in t["tiers"] for gx in (td.get("gen") or []) if gx)
+        check("data/cut_new.yaml 20종 + 칸별 gen 이 shares 와 같은 개수로 로드된다",
+              len(tn) == 20 and ng >= 60 and all(len(td.get("gen") or []) == len(td["shares"])
+                                                for t in tn.values() for td in t["tiers"]),
+              f"{len(tn)}종 gen {ng}칸")
+        pln, sln = CG.plan_pages(3, 2), None
+        sln = CG.spec_slots(pln)
+        check("gen 이 plan_pages 슬롯(→ 컷)까지 실린다", any(s.get("gen") for s in sln),
+              str(sum(1 for s in sln if s.get("gen"))))
+        _blk = CG._layout_block(pln)
+        check("컷 스크립트 프롬프트에 페이지/칸 생성 요청이 보인다",
+              "생성 요청:" in _blk and any(p1.get("gen_page") for p1 in pln))
+        _p1 = [{"no": 1, "type": "face", "pose": "She smiles.", "camera": "close_up", "position": "NONE",
+                "climax": "", "caption_ko": "x", "dialog": [], "wide": False}]
+        _s1 = [{"page": 1, "tier": 1, "share": 1.0, "center": False, "h": 1.0, "role": "", "wide": False,
+                "desc": "", "gen": {"shot": "full_body", "angle": "low", "bg": "simple", "text": "none"}}]
+        CG._apply_slot_meta(_p1, _s1, [])
+        check("전신 요청을 받은 face 슬롯 → action 으로 되올리고(머리 잘린 전신 방지) gen 이 컷에 실린다",
+              _p1[0]["type"] == "action" and _p1[0]["gen"]["shot"] == "full_body"
+              and "full body" in CG._gen_tags(_p1[0]) and "from below" in CG._gen_tags(_p1[0]),
+              f"{_p1[0]['type']} | {CG._gen_tags(_p1[0])}")
+        _p1[0]["type"], _p1[0]["bg_only"] = "face", True
+        check("face·배경만 컷은 shot/angle 태그를 건너뛴다(클로즈업 중복·인물 모순 방지)",
+              "full body" not in CG._gen_tags(_p1[0]) and "from below" not in CG._gen_tags(_p1[0]))
+        _keep = CG.GEN_REQ_ENABLE
+        CG.GEN_REQ_ENABLE = False
+        check("gen OFF(--no-cut-gen) 면 요청 문구·태그만 사라지고 레이아웃은 그대로다",
+              CG._gen_tags(_p1[0]) == "" and CG._gen_brief(_s1[0]["gen"]) == ""
+              and len(CG.spec_slots(CG.plan_pages(3, 2))) == len(sln))
+        CG.GEN_REQ_ENABLE = _keep
+    finally:
+        CG.CUT_YAML_FILE, CG._CUT_TMPL_CACHE = _cyf, _cyc
+    _rc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_comic.py"), encoding="utf-8").read()
+    check("run_comic 에 템플릿 DB 교체(--cut-yaml)·요청 OFF(--no-cut-gen) 스위치가 있다",
+          "--cut-yaml" in _rc and "--no-cut-gen" in _rc)
+
     print("\n== ⑦ 에피소드 전체 반영 (본문→컷 수→페이지 수, 장면 분할 호출) ==")
     body = "\n\n".join(f"장면{i}입니다. 유즈키는 걸어서 도착한다." for i in range(1, 61))   # ≈2.6k자
     check("episode_char_budget: num_ctx에서 본문 예산 산출(0보다 크게)",

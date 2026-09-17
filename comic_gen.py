@@ -64,6 +64,75 @@ DIALOG_PER_CUT = 2                               # 컷당 발화 상한(넘으�
                                                 #   (2026-09-11 사용자 지시 2→3, 예전은 여기서 2로 잘라 렌더 상한과 어긋났다)
 SFX_MAX_LEN = 10                                # 의성어/의태어 최대 길이
 WIDE_ENABLE = True          # False면 wide 컷을 전부 portrait로 강등 (런너 --no-wide 스위치)
+GEN_REQ_ENABLE = True       # False면 cut.yaml 의 ★gen(이미지 생성 요청)을 무시 (런너 --no-cut-gen)
+
+# [2026-09-16] cut_new.yaml 의 `gen` 키 — 이미지 생성에 **요청**하는 사항을 여기서 태그로 풀는다.
+#   기존에는 "전신 샷" 같은 요구가 description 문장 안에 있어 생성 프롬프트로 뽑아 쓸 수 없었다.
+#   값 어휘는 data/cut_new.yaml 머리말의 스키마와 1:1 이다.
+GEN_SHOT_KO = {"full_body": "전신(머리~발끝)", "upper_body": "상반신", "bust": "가슴 위", "closeup": "부분 클로즈업",
+               "scenery": "인물 없는 배경", "object": "소품만", "crowd": "3인 이상"}
+# 실측 근거(cut_report.md 3.4): 전신·풍경 컷은 면적 중앙값이 페이지의 23~27%, 클로즈업은 14~16%.
+GEN_SHOT_TAGS = {"full_body": "full body", "upper_body": "upper body",
+                 "bust": "upper body, portrait", "closeup": "close-up",
+                 "scenery": "scenery, no humans", "object": "object focus, no humans",
+                 "crowd": "crowd, multiple people"}
+GEN_ANGLE_TAGS = {"eye_level": "", "low": "from below", "high": "from above", "pov": "pov"}
+GEN_BG_TAGS = {"detailed": "detailed background", "simple": "simple background",
+               "black": "black background", "tone": "gradient background, speed lines"}
+GEN_BG_KO = {"detailed": "배경 정밀", "simple": "배경 단순", "black": "흑면", "tone": "톤/효과선"}
+GEN_ANGLE_KO = {"low": "로우 앵글", "high": "하이 앵글", "pov": "1인칭"}
+GEN_TEXT_KO = {"dialog": "대사", "mono": "독백/설명", "sfx": "효과문자", "none": "무자막"}
+# 전신·상반신을 요구받은 face 슬롯은 클로즈업 문법으로 그릴 수 없다 → action으로 되올린다
+GEN_WIDE_SHOTS = ("full_body", "upper_body", "scenery", "object", "crowd")
+
+
+def _gen_of(s) -> dict:
+    """슬롯/컷에서 gen 조각을 안전하게 꺼낸다(스위치 OFF면 빈 값)."""
+    if not GEN_REQ_ENABLE or not isinstance(s, dict):
+        return {}
+    g = s.get("gen")
+    return g if isinstance(g, dict) else {}
+
+
+def _gen_brief(gen: dict) -> str:
+    """컷 스크립트 LLM 에게 보여줄 한 줄 요청문 ('' 이면 생략). --no-cut-gen 이면 항상 '' 다."""
+    g = _gen_of({"gen": gen if isinstance(gen, dict) else {}})
+    bits = [GEN_SHOT_KO.get(str(g.get("shot") or ""), ""),
+            GEN_ANGLE_KO.get(str(g.get("angle") or ""), ""),
+            GEN_BG_KO.get(str(g.get("bg") or ""), ""),
+            GEN_TEXT_KO.get(str(g.get("text") or ""), "")]
+    bits = [b for b in bits if b]
+    if str(g.get("ask") or "").strip():
+        bits.append(str(g["ask"]).strip())
+    return (" 【생성 요청: " + " · ".join(bits) + "】") if bits else ""
+
+
+def _gen_tags(panel) -> str:
+    """컷의 gen 요청 → 최종 프롬프트에 얹을 태그(없으면 '').
+
+    · face 컷은 이미 close-up 계열 → shot 태그를 건너뛴다(클로즈업을 두 번 시키지 않는다)
+    · ★배경만(bg_only) 컷은 인물이 없다 → shot/angle을 붙이지 않고 배경 태그만 따른다
+    · 앵글은 컷의 camera가 이미 가진 값을 우선한다(camera=pov에 pov를 두 번 넣지 않는다)
+    """
+    g = _gen_of(panel)
+    if not g:
+        return ""
+    out = []
+    shot = str(g.get("shot") or "")
+    bg_only = bool(panel.get("bg_only"))
+    if shot and not bg_only and str(panel.get("type") or "") != "face":
+        t = GEN_SHOT_TAGS.get(shot)
+        if t:
+            out.append(t)
+    ang = str(g.get("angle") or "")
+    if ang and not bg_only and ang != str(panel.get("camera") or ""):
+        t = GEN_ANGLE_TAGS.get(ang)
+        if t:
+            out.append(t)
+    t = GEN_BG_TAGS.get(str(g.get("bg") or ""))
+    if t:
+        out.append(t)
+    return ", ".join(dict.fromkeys(out))          # 중복 제거(순서 유지)
 
 # [2026-09-07] 시선/구도 정책 (사용자 지시): portrait 컷은 반드시 둘 중 하나
 #   front → 인물이 정면(카메라/독자 정면)
@@ -129,11 +198,15 @@ def load_cut_templates():
                               # ★화면 문법 역할("summary"=서두 요약 배경컷 / "epilogue"=반투명 에필로그)
                               "role": str(td.get("role") or ("summary" if td.get("summary") else "")).strip(),
                               # 행 높이 비율(미지정/0 이하 → 자연 높이 사용)
-                              "height": _h if isinstance(_h := _num(td.get("height")), float) and _h > 0 else 0.0})
+                              "height": _h if isinstance(_h := _num(td.get("height")), float) and _h > 0 else 0.0,
+                              # ★칸별 이미지 생성 요청(shares 와 같은 순서, 없는 칸은 {})
+                              "gen": [gx if isinstance(gx, dict) else {} for gx in (td.get("gen") or [])]})
             if tiers and t.get("id"):
                 out[str(t["id"])] = {"id": str(t["id"]), "name": str(t.get("name") or ""),
                                      "situations": [str(s) for s in (t.get("situations") or [])],
                                      "epilogue": bool(t.get("epilogue")),      # ★에필로그 전용 페이지
+                                     # ★페이지 단위 생성 요청(블리드·가터 등) — 컷 스크립트에만 보인다
+                                     "gen_page": str(t.get("gen_page") or "").strip(),
                                      "tiers": tiers}
     except Exception as e:
         _clog(f"cut.yaml 로드 실패(자동 레이아웃으로 계속): {e}")
@@ -173,14 +246,17 @@ def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
         single = len(t["tiers"]) == 1
         sl = []
         for tier in t["tiers"]:
-            for share in tier["shares"]:
+            for gi, share in enumerate(tier["shares"]):
                 full_row = len(tier["shares"]) == 1 and share >= 0.99 and not tier.get("center")
+                gens = tier.get("gen") or []
                 sl.append({"page": 0, "tier": tier["tier"], "share": round(float(share), 3),
                            "center": bool(tier.get("center")),
                            # 행 높이 비율(cut.yaml tier.height) — 0이면 행 자연 높이
                            "h": round(float(tier.get("height") or 0.0), 3),
                            # ★서두 요약/에필로그 같은 화면 문법 역할(cut.yaml tier.role)
                            "role": str(tier.get("role") or ""),
+                           # ★이 칸의 이미지 생성 요청(cut_new.yaml tier.gen[gi]) — 없으면 {}
+                           "gen": (dict(gens[gi]) if gi < len(gens) else {}),
                            # 전폭+다단 페이지 → 가로 스플래시(1366x1024), 단티어 페이지 → 세로 풀페이지
                            "wide": bool(full_row and not single and WIDE_ENABLE),
                            "desc": tier["description"]})
@@ -274,7 +350,8 @@ def plan_pages(ep_num_1based: int, pages: int = 2, salt: int = 0):
         for si, s in enumerate(slots):
             s["page"] = pi + 1 + prologue_pages
         plans.append({"page": pi + 1 + prologue_pages, "situation": sit, "template_id": t["id"],
-                      "template_name": t["name"], "single_tier": len(t["tiers"]) == 1, "slots": slots})
+                      "template_name": t["name"], "single_tier": len(t["tiers"]) == 1,
+                      "gen_page": t.get("gen_page") or "", "slots": slots})
     # [2026-09-09] ★프롤로그: 회차집의 **첫 회차**에만 맨 앞 1컷(배경만 + 큰 지문)을 둔다.
     #   10회 기준 ★ = 프롤로그 1 + 회차 앞 10 + 마지막 회차 에필로그 1 = 12개(사용자 지정 계산)
     if prologue_pages:
@@ -380,7 +457,8 @@ def _layout_block(page_plans, slot_range=None):
         if not shown:
             continue
         lines.append(f" 페이지 {pl['page']}: {pl['template_name']} ({pl['template_id']}) "
-                     f"[{pl['situation']}]")
+                     f"[{pl['situation']}]"
+                     + (f" 【페이지 생성 요청: {pl['gen_page']}】" if pl.get("gen_page") else ""))
         for gn, s in shown:
             w = int(round(s["share"] * 100))
             kind = ("가로 전폭(1366x1024)" if s["wide"] else
@@ -400,7 +478,7 @@ def _layout_block(page_plans, slot_range=None):
                              "일상 복귀, 서로를 의식하는 거리)을 쓴다")}.get(
                     str(s.get("role") or ""), "")
             lines.append(f"  - 슬롯{gn} p{pl['page']}t{s['tier']}: {kind}{cen}{hnt} — "
-                         f"{s['desc'][:70]}{star}")
+                         f"{s['desc'][:70]}{_gen_brief(s.get('gen'))}{star}")
     # [2026-09-09] 템플릿이 34종으로 늘었다 — 그중엔 우산·음식·벽치기처럼 소품이 구체적인 것이 있다.
     #   본문에 그 소품이 없으면 컷이 딴 이야기가 되므로 '지킬 것은 비율·순서'라고 못 박는다.
     lines.append("슬롯 설명의 소품·장소는 **예시**입니다. 반드시 지킬 것은 분할 비율·컷 크기·순서뿐 — "
@@ -1738,6 +1816,8 @@ def _apply_slot_meta(panels: list, slots: list, notes: list):
         p["page"], p["tier"], p["share"] = s["page"], s["tier"], s["share"]
         p["center"] = s["center"]
         p["h"] = s.get("h") or 0.0
+        # ★cut_new.yaml 의 생성 요청(shots/angle/bg/text)을 컷에 실는다 — 프롬프트 빌더가 쓴다
+        p["gen"] = dict(s.get("gen") or {})
         _apply_text_role(p, s.get("role") or "", notes)
         if bool(p["wide"]) != bool(s["wide"]):
             p["wide"] = bool(s["wide"])
@@ -1747,6 +1827,23 @@ def _apply_slot_meta(panels: list, slots: list, notes: list):
             notes.append(f"컷 {p['no']}: 전폭 가로 슬롯 → type action")
         if (not s["wide"]) and s["share"] <= 0.35 and p["type"] == "action":
             p["camera"] = "close_up" if p["camera"] not in ("close_up", "pov") else p["camera"]
+        # [2026-09-16] 템플릿이 **전신/상반신/배경만**을 요청한 칸에 클로즈업 문법을 씌우면
+        #   머리가 잘린 전신이 나온다(cut_report.md 3.4 — 전신 컷의 면적 중앙값이 가장 크다).
+        #   요청이 있는 칸만 조정하므로 gen 없는 템플릿은 동작이 그대로다.
+        _g = _gen_of(s)
+        _shot = str(_g.get("shot") or "")
+        if _shot in GEN_WIDE_SHOTS and p["type"] == "face" and not s["wide"]:
+            p["type"] = "action"
+            p["camera"] = "pov" if str(_g.get("angle")) == "pov" else "front_view"
+            notes.append(f"컷 {p['no']}: 생성 요청 {_gen_brief(_g).strip(' 【】')} → type action")
+        elif _shot in ("closeup", "bust") and p["type"] != "face" and s["share"] <= 0.4:
+            p["type"] = "face"
+            p["camera"] = "close_up"
+            notes.append(f"컷 {p['no']}: 생성 요청 {_gen_brief(_g).strip(' 【】')} → face/close_up")
+        if _shot in ("scenery", "object") and int(_g.get("chars") or 0) == 0 \
+                and not p.get("bg_only") and str(p.get("text_role") or "") == "":
+            p["bg_only"] = True                     # 인물 없는 컷(배경/소품만)
+            notes.append(f"컷 {p['no']}: 생성 요청(인물 0명) → 배경만(bg_only)")
 
 
 # [2026-09-15] 컷 지문에 상대방이 분명히 있는데 LLM이 multi를 안 붙이면, 상대방 태그가 아예 없이
@@ -3327,7 +3424,8 @@ def _build_bg_only_prompt(ep_idx: int, panel, safety_tag: str) -> str:
             f"amazing quality, newest, highres, absurdres, colorful, detailed, detailed background, "
             f"scenery, empty scene, no humans, no people, {safety_tag}, ")
     angle = anima_gen.CAMERA_TAG_CANONICAL.get(camera_view, camera_view) or "front_view"
-    body = f"{pose_text}, {BG_ONLY_TAGS}"
+    _gbg = GEN_BG_TAGS.get(str(_gen_of(panel).get("bg") or ""))     # 배경만 컷은 배경 태그만 따른다
+    body = f"{pose_text}, {BG_ONLY_TAGS}{(', ' + _gbg) if _gbg else ''}"
     body, _dropped = dedupe_flat(body)
     return _tidy_prompt(f"{head}{angle}\n{body}")
 
@@ -3454,6 +3552,12 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         body = f"{body}, {_x_tags}"
     panel["_neg_extra"] = _x_neg
     body = mm_anal_fix(body)
+    # [2026-09-16] cut_new.yaml 의 ★생성 요청(샷/앵글/배경)을 마지막에 얹는다 — 정제·인물태그
+    #   단계를 다 지난 뒤라 태그가 잘리지 않고, gen 없는 템플릿(cut.yaml 34종)은 빈 문자열이라 동작 그대로.
+    _gt = _gen_tags(panel)
+    if _gt:
+        body = f"{body}, {_gt}"
+        panel["_gen_applied"] = _gt
 
     joined = f"{header.rstrip()} {' ' if header.rstrip().endswith('.') else ', '}{body}"
     joined = fix_pronoun_gender(joined)          # A1) 주인공이 남자면 she/her → he/his

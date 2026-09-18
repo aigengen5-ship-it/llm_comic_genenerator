@@ -130,6 +130,9 @@ def _gen_tags(panel) -> str:
         t = GEN_ANGLE_TAGS.get(ang)
         if t:
             out.append(t)
+    if shot == "object" and _panel_has_person(panel):
+        # 소품 클로즈업도 사람이 보인다(손/액세서리 등) — 'no humans'는 사람 없는 컷 전용
+        out = [o.replace(", no humans", "").replace("no humans, ", "") for o in out]
     t = GEN_BG_TAGS.get(str(g.get("bg") or ""))
     if t:
         out.append(t)
@@ -796,6 +799,8 @@ def _apply_special_bg(panels, plan, notes):
         if not isinstance(p, dict) or str(p.get("text_role") or "") or p.get("bg_only"):
             continue
         cap = str(p.get("caption_ko") or "")
+        if _panel_has_person(p):
+            continue        # 지문에 사람이면 확립 컷이어도 배경만으로 취급하지 않는다(실측 모순 6/7)
         for i, w in enumerate(want):
             head = _state_one_line("", w)[:20]
             if i in seen or not head or not cap.startswith(head[:12]):
@@ -3369,8 +3374,29 @@ def _tidy_prompt(text: str) -> str:
     # [2026-09-17] 캐릭터 정체 태그를 속성으로 취급하면("the girl1 has zero two (…)") 그림이 두
     #   사람으로 갈라진다(실측 16건). 정체 태그는 "is" 자리에 놓는다.
     id_tags = [str(t).strip() for t in (getattr(config, "char_tags", []) or []) if str(t).strip()]
+    # [2026-09-17] 정체 태그는 프롬프트 **앞머리**에 있어야 합니다(정본 규칙: 0~80자). 실측では LLM이
+    #   태그를 목록 맨 뒤에 붙여 512 토큰 창에서 잘리기 일쑤였다(컷6 실측) — 위치는 우리가 고친다.
+    _lines0 = str(text).split("\n")
+    for _t in id_tags:
+        _pat = re.compile(r"(?i)(?:the girl1 is |\bhas |\bwith )?" + re.escape(_t) + r"(?![\w])")
+        _bi = next((k for k, l in enumerate(_lines0)
+                    if l.strip() and "score_" not in l and not l.lstrip().startswith(("[", "="))), None)
+        if _bi is None:
+            break
+        _mv = _pat.search(_lines0[_bi])
+        if not _mv or _mv.start() <= 8:
+            break                                  # 이미 앞머리, 또는 없음(ensure_char_tags 가 나중에 넣는다)
+        _lines0[_bi] = _pat.sub("", _lines0[_bi], count=1)
+        _lines0[_bi] = re.sub(r",\s*,", ", ", _lines0[_bi]).strip(", ").lstrip(", ")
+        # 헤더 문장("A detailed anime illustration of a girl at the center.")은 앞에 둔다 — 태그는 그 다음 문장 머리
+        _cut = _lines0[_bi].find(". ")
+        if 0 <= _cut <= 90:
+            _cut += 2
+            _lines0[_bi] = (_lines0[_bi][:_cut] + " the girl1 is " + _t + "," + _lines0[_bi][_cut:])
+        else:
+            _lines0[_bi] = _t + ", " + _lines0[_bi]
     out = []
-    for line in str(text).split("\n"):
+    for line in _lines0:
         for _t in id_tags:
             # 줄 맨 앞에 벌거벗으로 놓인 정체 태그("zero two (…) and the girl1 has …")도 주어를 붙인다
             line = re.sub(r"(?i)^\s*" + re.escape(_t) + r"\s*(?:and\s+)?", "the girl1 is " + _t + ", ", line)
@@ -3432,7 +3458,10 @@ _PERSON_WORDS = re.compile(
     r"\b(she|her|hers|herself|he|his|him|girl1|boy1|man1|woman1|haruka|face|eyes|brow|hand|hands|"
     r"wrist|fingers|breasts|thighs|shoulder|smile|expression|figure|silhouette|standing|walking|"
     r"sitting|turning|reaching|looking)\b", re.I)
-_KO_PERSON = re.compile(r"그녀|그는|소녀|주인공|손|얼굴|눈|어깨|허벅지|서|걷|앉|돌아|바라")
+# 다음절만 쓴다: "서", "손" 같은 한 글자는 "서랍/다른/정보손실"까지 잡는다(실셀프테스트에서 확립 컷이 걸렸다).
+_KO_PERSON = re.compile(
+    r"그녀|그는|그녀가|소녀|소년|주인공|얼굴|눈동자|미간|뺨|어깨|허벅지|손가락|손등|"
+    r"손(?=[ ,.이을의])|발(?=[ ,.이을의])|서 있|서서|걷|앉|걸어|돌아서|바라보|눈을|입을|웃음|한숨")
 
 
 def _panel_has_person(panel) -> bool:

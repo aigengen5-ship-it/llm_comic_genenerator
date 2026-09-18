@@ -2515,6 +2515,11 @@ _PARTNER_APPEARANCE_BAN_RE = re.compile(
     r'underwear|boxers|briefs|pants unbuttoned|open shirt|bare chest|bare shoulders|tanned|tan skin|'
     r'olive skin|\btan\b|masculine|feminine|male features|flat chest|handsome|ugly|average face|tall male|'
     r'silhouett\w*|featureless|backlit|rim lighting|out of focus|'
+    # [2026-09-17] 실루엣에 옷 절이 남으면 회색 천 덩어리가 렌더된다(실측 잔해: "and is wearing sportswear").
+    #   의류 어휘를 일일이 나열하는 대신 '입었다' 서술과 옷 이름은 모조리 금지한다(행동 동사는 위에서 구제된다).
+    r'sportswear|jersey|hoodie|sweater|cardigan|vest|jeans|shorts|belt|scarf|hat|cap|beanie|'
+    r'gloves|mitten|boots|sandals|slippers|swimwear|bikini|apron|cloak|poncho|cape|attire|outfit|'
+    r'wearing|worn|attired|t-shirt|tee|tank top|'
     r'short male)',
     re.IGNORECASE,
 )

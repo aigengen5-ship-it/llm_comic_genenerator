@@ -4457,6 +4457,52 @@ def main() -> int:
     check("지문에 사람이면 배경만(bg_only) 판정을 취소한다(실측 7컷 중 6컷이 모순)",
           CG._panel_has_person({"caption": "Close-up of Haruka's face, sweat on her brow"})
           and not CG._panel_has_person({"caption": "wide establishing of the empty gym"}))
+    check("한 글자 어휘로 배경 컷을 사람 있는 컷으로 착각하지 않는다(서랍/다른)",
+          not CG._panel_has_person({"caption_ko": "책상 옆 서랍과 서류 뭉치, 형광등이 깜빡인다"})
+          and CG._panel_has_person({"caption_ko": "그녀는 어두운 체육관 한가운데 서 있다"})
+          and CG._panel_has_person({"caption_ko": "땀에 젖은 손이 난간을 움켜쥔다"}))
+    _nt = []
+    _pn = [{"no": 3, "caption_ko": "체육관 한가운데 하루카가 머리부터 발끝까지 서 있다", "pose": "She stands",
+            "text_role": ""}]
+    CG._apply_special_bg(_pn, [{"spec": {"kind": "establish", "text": "체육관 한가운데"}}], _nt)
+    check("확립 컷이어도 지문에 사람이면 배경만으로 취급하지 않는다", not _pn[0].get("bg_only"), str(_nt))
+    _pn2 = [{"no": 4, "caption_ko": "어두운 체육관 전경", "pose": "wide shot of the empty gym", "text_role": ""}]
+    CG._apply_special_bg(_pn2, [{"spec": {"kind": "establish", "text": "어두운 체육관 전경"}}], _nt)
+    check("사람이 정말 없는 확립 컷은 배경만으로 남는다", _pn2[0].get("bg_only") is True, str(_nt))
+    _pobj = {"no": 5, "type": "action", "pose": "Her hand grips his wrist", "camera": "close_up",
+             "gen": {"shot": "object", "chars": 0}}
+    check("소품 클로즈업에서 'no humans'는 사람 없는 컷에만 붙는다(손은 사람의 일부)",
+          "object focus" in CG._gen_tags(_pobj) and "no humans" not in CG._gen_tags(_pobj),
+          CG._gen_tags(_pobj))
+    _bk_ct2 = list(config.char_tags)
+    config.char_tags = ["zero two (darling in the franxx)"]
+    _p6 = ("1girl, 1boy, score_9, masterpiece, close-up, from_front\n"
+           "A detailed anime illustration of a girl at the center. she is facing viewer, her cheeks are "
+           "blushing, eyes half-closed, lost in thought, zero two (darling in the franxx), long, messy, "
+           "natural makeup, sitting, leaning")
+    _h6 = CG._tidy_prompt(_p6)
+    _body6 = next(l for l in _h6.splitlines() if "A detailed anime" in l)
+    check("정체 태그를 목록 맨 뒤에서 앞머리로 끌어올린다(컷6 실측: 태그가 끝으로 밀렸다)",
+          0 < _body6.lower().find("zero two") <= 90, str(_body6.lower().find("zero two")))
+    check("끌어올린 자리에 주어를 붙인다", "the girl1 is zero two" in _body6, _body6[:90])
+    check("태그가 두 번 들어가지 않는다", _h6.lower().count("zero two") == 1)
+    check("정리 단계를 두 번 돌려도 같다(멱등)", CG._tidy_prompt(_h6) == _h6)
+    config.char_tags = _bk_ct2
+    _gm = open(os.path.join("data_comfyui", "prompt_multi.md"), encoding="utf-8").read()
+    check("가이드 규칙 번호에 끊긴 참조가 없다",
+          not [r for r in set(int(x) for x in re.findall(r"규칙 (\d+)", _gm))
+               if r not in [int(n) for n in re.findall(r"(?m)^(\d+)\.", _gm)]],
+          str(re.findall(r"(?m)^(\d+)\.", _gm)))
+    import re as _re_g
+    check("2인 가이드에 'and'로 시작하는 템플릿 줄이 없다(실측 122줄의 원인)",
+          not _re_g.search(r"(?m)^and ", _gm))
+    check("2인 가이드는 Subject 를 한 줄로 묶라고 가르친다", "한 줄" in _gm and "and'로 시작" in _gm)
+    check("2인 가이드은 구분선을 출력하지 말라고 한다", "구분선" in _gm and "'---' 를 한 번도" in _gm)
+    check("2인 가이드는 캐릭터 태그를 is 자리에, 몸 일부는 사람으로 취급한다",
+          "is' 자리" in _gm and "몸 일부" in _gm)
+    check("2인 가이드는 상대방에게 옷 절을 금지한다", "is wearing" in _gm and "sportswear" in _gm)
+    check("1인칭 가이드는 원래 형태(쉼표 태그+BREAK)를 지킨다",
+          "BREAK" in open(os.path.join("data_comfyui", "prompt_pov.md"), encoding="utf-8").read())
     check("README 에 최고점 채택이 적혀 있다", "--variants" in _rd2)
     check("README 에 눈동자 색 절이 적혀 있다", "[AAA EYES]" in _rd2 and "--no-eye-tag" in _rd2)
     # ── 배너가 실제로 로드된 DB를 말한다(하드코딩된 "34종" 재발 방지) ──

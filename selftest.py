@@ -4376,6 +4376,10 @@ def main() -> int:
     check("눈 색이 머리 바로 아래 순서다(정체 읽는 순서)",
           _blk.find("[AAA EYES]") > _blk.find("[AAA HAIR]") and _blk.find("[AAA EYES]") < _blk.find("[AAA FACE]"))
     check("기본은 가중치 1.4(게이트 강등선 위)", "(brown eyes:1.4)" in _eyes_line, _eyes_line)
+    config.eye_color = "green eyes,"          # 실런 시트에 쉼표 꼬리표가 붙은_case
+    check("시트 눈 색에 쉼표 꼬리표가 붙어도 태그 하나로 정리된다",
+          anima_gen._eye_tags() == "(green eyes:1.4)", anima_gen._eye_tags())
+    config.eye_color = "brown eyes"
     anima_gen.set_eye_voice(weight=0)
     check("--eye-weight 1 이하면 무가중 태그",
           "[AAA EYES] brown eyes" in anima_gen._build_tag_block(0, "x", "front_view", "tall", "NONE", "", False))

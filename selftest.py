@@ -4411,11 +4411,20 @@ def main() -> int:
     check("배너에 템플릿 수 하드코딩이 없다", "34종 자동" not in _rc3)
     check("배너가 로드된 수와 DB 경로를 함께 찍는다",
           "load_cut_templates())}종" in _rc3 and "CUT_YAML_FILE" in _rc3)
+    _bad = [k for k, v in anima_gen.ANIMA_LORA_CONFIG.items()
+            if str(v[2] or "").strip() and not str(v[2]).strip().endswith(".safetensors")]
+    check("LoRA 설정의 보조 슬롯에 파일 이름만 있다(trigger가 파일 칸에 들어가지 않았다)",
+          not _bad, str(_bad))
+    check("LoRA 슬롯 강도가 0~2 사이", all(0.0 <= float(v[1]) <= 2.0 and 0.0 <= float(v[3]) <= 2.0
+                                       for v in anima_gen.ANIMA_LORA_CONFIG.values()))
     check("README 에 한 방 명령어가 있다", "3-0) 오늘 기준 한 방 명령어" in _rd2
           and "--cut-yaml data/cut_new.yaml" in _rd2)
     if os.path.isfile("run_local.sh"):      # 로컬 전용 엔트리(배송 대상 아님) — 있으면 모양만 본다
         _rl = open("run_local.sh", encoding="utf-8").read()
         check("로컬 엔트리에 go 가 있고 env로 고른다", "  go)" in _rl and "CUT:-new" in _rl)
+        check("로컬 엔트리에서 LoRA 는 키로 고른다", "LORA1" in _rl and "--lora1" in _rl
+              and "LORA_CHG" in _rl and "--detailer" in _rl)
+        check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:

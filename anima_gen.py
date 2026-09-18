@@ -383,7 +383,9 @@ ANIMA_LORA_CONFIG = {
     "lora_yzsss":          ("yzsss_anima1.0_v0.2.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"(@yzsss), "),
     "lora_nanashi":        ("나나시2(@nanash1).safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"(@nanashi1), "),
     "lora_sex":            ("sex_style.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r""),
-    "lora_gptimg2":        ("GPT_Image_2_Anime_Illustration_Style12138_c1-st6000.safetensors", 1.0, r"@gptimage2", 0.0, "anima_aestheticV11.safetensors", r""),
+    # [2026-09-17] 3번째 칸(보조 LoRA **파일**)에 trigger 문자열이 들어 있었다(`bash run_local.sh loras`가
+#   "파일 없음"으로 잡아냄). 강도가 0.0이라 실제로는 안 쓰였지만, 슬롯 의미가 어긋나 있으면 안 된다.
+    "lora_gptimg2":        ("GPT_Image_2_Anime_Illustration_Style12138_c1-st6000.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"@gptimage2, "),
     "lora_xipa_solo":      ("xipa2026late03-05_AnimaB_v01.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"@xipa2026late03-05, "),
     "lora_takamichi_solo": ("TAKAMICHI2010_202881.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"TakamichiStyle, "),
     "lora_alp_solo":       ("ALPAnima2.safetensors", 1.0, "", 0.0, "anima_aestheticV11.safetensors", r"ALPAnima, "),

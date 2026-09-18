@@ -794,6 +794,12 @@ def main() -> int:
                          "(캐릭터가 작게 나오는 구도 억제 — 전신 요청 칸·배경 컷은 건드리지 않음)")
     ap.add_argument("--no-age-voice", action="store_true", dest="no_age_voice",
                     help="시트의 나이대를 프롬프트 문장에서 말하는 정책을 끕니다 (기본 ON)")
+    ap.add_argument("--no-eye-tag", action="store_true", dest="no_eye_tag",
+                    help="시트의 눈 색을 이미지 프롬프트에 넣지 않습니다(기본은 넣습니다 — 넣기 전엔 0회였습니다)")
+    ap.add_argument("--eye-weight", type=float, default=1.4, dest="eye_weight",
+                    help="눈 색 태그 가중치 (기본 1.4; 1 이하이면 무가중)")
+    ap.add_argument("--eye-prose", action="store_true", dest="eye_prose",
+                    help="눈 색을 태그뿐 아니라 헤더 문장에도 말합니다 ('a woman with brown eyes')")
     ap.add_argument("--age-voice-tag", action="store_true", dest="age_voice_tag",
                     help="나이대를 문장 대신 헤더 가중 태그로 말합니다 (실측상 단독으로는 효과가 없었음)")
     ap.add_argument("--char-tag", default="auto", dest="char_tag", choices=["auto", "off"],
@@ -931,6 +937,11 @@ def main() -> int:
     import anima_gen as _AG_AGE
     _AG_AGE.set_age_voice(prose=not bool(getattr(args, "no_age_voice", False)),
                           tag=bool(getattr(args, "age_voice_tag", False)))
+    # [2026-09-16] 눈 색 —政策 도입 전에는 프롬프트에 한 번도 들어가지 않았습니다(실측 0회)
+    import anima_gen as _AG_EYE
+    _AG_EYE.set_eye_voice(weight=float(getattr(args, "eye_weight", 1.4)),
+                          prose=bool(getattr(args, "eye_prose", False)),
+                          enable=not bool(getattr(args, "no_eye_tag", False)))
     config.char_match = (str(getattr(args, "char_tag", "auto")).lower() != "off")
     config.char_match_series = bool(getattr(args, "char_series", False))
     # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한

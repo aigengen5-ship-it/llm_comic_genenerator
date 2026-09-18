@@ -19,6 +19,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -81,6 +82,13 @@ SHEET_HARD = {
 # 30대 중반을 30대로 뽑자는 기준이 아니라, 20대 중반 이하로 밀리면政策이 죽었다고 본다.
 AGE_FLOOR = {"plain": 0, "milf": 25, "hard": 25}
 
+EYE_ASK = """각 그림에서 주인공의 **눈동자 색**만 보세요. 그림 {n}장을 순서대로 봅니다.
+조명·음영이 아니라 문양 자체의 색을 봅니다.
+모두 같은 색이면 그 색을 하나만 쓰세요. 다르면 순서대로 쉼표로 {n}개 쓰세요.
+색은 갈색/파랑/초록/보라/주황/빨강/회색/검은 중 하나로 답합니다.
+답은 반드시:
+EYES: 색[, 색…]"""
+
 AGE_ASK = """각 그림의 주인공 여성이 몇 살로 보이는지 추정하세요. 그림 {n}장을 순서대로 봅니다.
 나이는 실제 나이대보다 젊게 그려지기 쉬우니, 화풍이 어려 보여도 얼굴·몸·차림새의 나이대를 보세요.
 답은 반드시 이 형식만:
@@ -136,7 +144,8 @@ def main() -> int:
     ap.add_argument("--milf", action="store_true", help="성숙/미시 시트로 돌린다")
     ap.add_argument("--hard", action="store_true", help="흑발·안경·성숙(속성으로 덜 잡히는 생김새)으로 돌린다")
     ap.add_argument("--arms", default="off,voice,auto",
-                    help="off(기준선) / voice(나이대 발화만) / voice_prose / voice_tag / auto(캐릭터 태그) / auto_series")
+                    help="off(기준선) / voice(나이대 발화만) / voice_prose / voice_tag / auto(캐릭터 태그) /"
+                         " auto_series / eye(눈 색 태그 기본) / eye_plain(무가중) / eye_w18 / eye_w25 / eye_prose")
     ap.add_argument("--render-only", action="store_true")
     ap.add_argument("--keep", action="store_true", help="image/ 에 두고 복사하지 않음")
     ap.add_argument("--wait", type=int, default=300, help="ComfyUI 기동 대기 초")
@@ -188,13 +197,24 @@ def main() -> int:
             log("ComfyUI를 켤 수 없어 렌더만 건너뜁니다 (--render-only 로 프롬프트 확인은 가능)")
             return 2
     # 팔 = (캐릭터 태그 목록, 나이대 발화 정책 (산문, 태그))
+    eyes = {}
     arms, voice = {}, {}
     for a in str(args.arms).split(","):
         a = a.strip()
         if not a:
             continue
         if a == "off":
-            arms[a], voice[a] = [], (False, False)
+            arms[a], voice[a], eyes[a] = [], (False, False), dict(enable=False)
+        elif a.startswith("eye"):
+            arms[a], voice[a] = ([picked] if picked else []), (True, True)
+            if a == "eye_plain":
+                eyes[a] = dict(weight=0, prose=False, enable=True)
+            elif a == "eye_w18":
+                eyes[a] = dict(weight=1.8, prose=False, enable=True)
+            elif a == "eye_w25":
+                eyes[a] = dict(weight=2.5, prose=False, enable=True)
+            else:                                    # eye(기본 1.4) / eye_prose
+                eyes[a] = dict(weight=1.4, prose=(a == "eye_prose"), enable=True)
         elif a == "voice":
             arms[a], voice[a] = [], (True, True)
         elif a == "voice_prose":
@@ -221,6 +241,7 @@ def main() -> int:
             continue
         config.char_tags = list(tags)
         anima_gen.set_age_voice(*(voice.get(arm) or (True, True)))
+        anima_gen.set_eye_voice(**(eyes.get(arm) or dict(weight=1.4, prose=False, enable=True)))
         rows = []
         for i, base in enumerate(PANELS):
             panel = dict(base)
@@ -257,6 +278,7 @@ def main() -> int:
         for arm, tags in arms.items():
             config.char_tags = list(tags)
             anima_gen.set_age_voice(*(voice.get(arm) or (True, True)))
+            anima_gen.set_eye_voice(**(eyes.get(arm) or dict(weight=1.4, prose=False, enable=True)))
             votes = []
             for rep in range(max(1, args.reps)):
               pair = []
@@ -320,6 +342,33 @@ def main() -> int:
         ages = [int(x) for x in _re2.findall(r"\d+", m.group(1))][:len(imgs)] if m else []
         ages = [a for a in ages if 8 <= a <= 90]
         return ages, (round(sum(ages) / len(ages), 1) if ages else None)
+
+    # 눈 색: 시트가 요구한 색과 컷마다 같은 색이 나왔는지 (이 항목은政策 도입 전 아예 미주입이었다)
+    want_eye = str((SHEET_MILF if args.milf else (SHEET_HARD if args.hard else SHEET))
+                   ["protagonist"].get("eye_color") or "").split()[0]
+    KO = {"brown": "갈색", "blue": "파랑", "green": "초록", "purple": "보라", "red": "빨강",
+          "grey": "회색", "gray": "회색", "black": "검은", "amber": "주황", "yellow": "주황"}
+    want_ko = KO.get(want_eye.lower(), want_eye)
+    for arm, rows in manifest.get("arms", {}).items():
+        imgs = [r["png"] for r in rows if os.path.isfile(r.get("png", ""))]
+        if len(imgs) < 2:
+            continue
+        msg = [{"role": "user", "content": [{"type": "text", "text": EYE_ASK.format(n=len(imgs))}]}]
+        for p_ in imgs:
+            msg[0]["content"].append({"type": "image_url", "image_url": {"url": IE.image_data_url(p_)}})
+        try:
+            ans = IE.ask_image_raw(msg) or ""
+        except Exception as e:
+            ans = ""
+        m2 = re.search(r"EYES[^\n]*[:\s]+(.*)", ans, flags=re.I)
+        seen = [x.strip() for x in re.split(r"[,，]", m2.group(1)) if x.strip()][:len(imgs)] if m2 else []
+        seen = [s_ for s_ in seen if s_][:len(imgs)]
+        if len(seen) == 1:                       # "모두 같으면 하나만" 이라고 했으므로 전부로 간주
+            seen = seen * len(imgs)
+        hit = sum(1 for x in seen if want_ko in x)
+        manifest.setdefault("eye_color", {})[arm] = {"asked": want_eye, "want_ko": want_ko,
+                                                   "seen": seen, "hit": hit, "of": len(imgs)}
+        log(f"  눈 색 {arm:12s} 요구 {want_eye}({want_ko}) → 본 것 {seen} 적중 {hit}/{len(imgs)}")
 
     floor = AGE_FLOOR.get(band, 0)
     for arm, rows in manifest.get("arms", {}).items():

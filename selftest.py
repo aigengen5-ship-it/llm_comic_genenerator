@@ -4366,6 +4366,42 @@ def main() -> int:
     check("프로브는 렌더 없이 판정만 다시 할 수 있다(--judge-only)", "--judge-only" in _pb)
     _rd2 = open("README.md", encoding="utf-8").read()
     check("README 에 나이대 발화 정책이 적혀 있다", "나이대 발화 정책" in _rd2 and "a mature woman" in _rd2)
+    # ── 눈동자 색: 도입 전엔 프롬프트에 0회였다 ──
+    _bk_eye = (anima_gen.EYE_ENABLE, anima_gen.EYE_TAG_WEIGHT, anima_gen.EYE_VOICE_PROSE)
+    config.eye_color = "brown eyes"
+    _blk = anima_gen._build_tag_block(0, "She stands.", "front_view", "tall", "NONE", "", False)
+    check("정체 절에 [AAA EYES] 가 생긴다", "[AAA EYES]" in _blk,
+          [l for l in _blk.splitlines() if "EYES" in l][:1] and "" or "없음")
+    _eyes_line = next((l for l in _blk.splitlines() if l.startswith("[AAA EYES]")), "")
+    check("눈 색이 머리 바로 아래 순서다(정체 읽는 순서)",
+          _blk.find("[AAA EYES]") > _blk.find("[AAA HAIR]") and _blk.find("[AAA EYES]") < _blk.find("[AAA FACE]"))
+    check("기본은 가중치 1.4(게이트 강등선 위)", "(brown eyes:1.4)" in _eyes_line, _eyes_line)
+    anima_gen.set_eye_voice(weight=0)
+    check("--eye-weight 1 이하면 무가중 태그",
+          "[AAA EYES] brown eyes" in anima_gen._build_tag_block(0, "x", "front_view", "tall", "NONE", "", False))
+    anima_gen.set_eye_voice(weight=1.4, prose=True)
+    check("--eye-prose 는 헤더 문장에 눈 색을 넣는다(나이대 요구와 무관)",
+          "with brown eyes" in anima_gen._eye_prose(), repr(anima_gen._eye_prose()))
+    _hdr2 = anima_gen._build_simple_prompt_header("female", "safe")
+    check("병기하면 실제 헤더에 눈 색이 두 번 들어간다", _hdr2.count("brown eyes") >= 1 and "with brown eyes" in _hdr2,
+          _hdr2[-90:].replace("\n", " / "))
+    anima_gen.set_eye_voice(enable=False)
+    check("--no-eye-tag 는 절 자체를 지운다(도입 전 동작)",
+          "[AAA EYES]" not in anima_gen._build_tag_block(0, "x", "front_view", "tall", "NONE", "", False))
+    anima_gen.set_eye_voice(enable=_bk_eye[0], weight=_bk_eye[1], prose=_bk_eye[2])
+    check("CLI에 --no-eye-tag 가 있다", '"--no-eye-tag"' in _rc2[1])
+    check("CLI에 --eye-weight 가 있다(실측상 가중치는 무관해서 스위치로만 남김)", '"--eye-weight"' in _rc2[1])
+    anima_gen.set_eye_voice(weight=1.4, prose=True)
+    _bk_sex2 = config.sex2
+    config.sex2 = "male"          # 남녀 2인 컷의 주어 문장 경로
+    _hdr3 = anima_gen._build_simple_prompt_header("female", "safe", is_side=True,
+                                                  position_sentence="standing next to a bald silhouette")
+    config.sex2 = _bk_sex2
+    check("2인(남녀) 컷 문장에서도 눈 색이 빠지지 않는다", "brown eyes" in _hdr3,
+          _hdr3[-90:].replace("\n", " / "))
+    anima_gen.set_eye_voice(weight=1.4, prose=False)
+    check("프로브에 눈 색 판정이 있다", "EYE_ASK" in _pb and "eye_color" in _pb)
+    check("README 에 눈동자 색 절이 적혀 있다", "[AAA EYES]" in _rd2 and "--no-eye-tag" in _rd2)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:

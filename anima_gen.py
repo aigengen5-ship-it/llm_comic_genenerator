@@ -2015,6 +2015,53 @@ def _age_voice(look_text: str = "") -> tuple:
             tag if AGE_VOICE_TAG else "")
 
 
+# ── 눈 색 발화 (2026-09-16) ───────────────────────────────────────────────────
+#   실측: 주인공 눈 색은 [AAA] 어느 절에도 들지 않아 프롬프트에 0회 등장했다. 시트가 갈색 눈을
+#   시켜도 보라/주황이 나온 이유다. 머리 바로 아래 [AAA EYES] 로 넣되, 영향력(가중치·문장)은
+#   프로브로 비교해 정합니다(눈 색은 캐릭터 태그와 제일 먼저 싸우는 항목입니다).
+EYE_ENABLE = True         # False 면 [AAA EYES] 절 자체를 안 만든다(정책 도입 전 동작)
+EYE_TAG_WEIGHT = 1.4      # 0 이면 무가중 태그
+EYE_VOICE_PROSE = False   # 헤더 문장에 "with brown eyes" 를 덧붙이는가
+
+
+def _eye_tags(look_text: str = "") -> str:
+    """시트/상태의 눈 색 → 태그 문자열(가중치 포함). 없으면 ""."""
+    if not EYE_ENABLE:
+        return ""
+    eye = str(_eye_raw(look_text) or "").strip()
+    if not eye:
+        return ""
+    parts = [t.strip() for t in re.split(r"[,;]", eye) if t.strip()]
+    if not parts or EYE_TAG_WEIGHT <= 1.0:
+        return ", ".join(parts)
+    return ", ".join(f"({t}:{EYE_TAG_WEIGHT:g})" for t in parts)
+
+
+def _eye_raw(look_text: str = "") -> str:
+    return (look_text or "").strip() or str(getattr(config, "eye_color", "") or "").strip()
+
+
+def _eye_prose(look_text: str = "") -> str:
+    """헤더 문장에 눈 색을 한 번 더 말할 때의 어구 (' with brown eyes'). 나이대와 무관하게 걸린다."""
+    if not (EYE_ENABLE and EYE_VOICE_PROSE):
+        return ""
+    raw = _eye_raw(look_text)
+    col = " , ".join(t.strip() for t in re.split(r"[,;]", raw) if t.strip())
+    col = re.sub(r"\beyes?\b", "", col, flags=re.I).strip()
+    return f" with {col} eyes" if col else ""
+
+
+def set_eye_voice(weight: float = None, prose: bool = None, enable: bool = None):
+    """프로브/A/B용 스위치 (None = 건드리지 않음)."""
+    global EYE_TAG_WEIGHT, EYE_VOICE_PROSE, EYE_ENABLE
+    if weight is not None:
+        EYE_TAG_WEIGHT = float(weight)
+    if prose is not None:
+        EYE_VOICE_PROSE = bool(prose)
+    if enable is not None:
+        EYE_ENABLE = bool(enable)
+
+
 def set_age_voice(prose: bool = None, tag: bool = None):
     """프로브/A/B용 스위치 (None = 건드리지 않음)."""
     global AGE_VOICE_PROSE, AGE_VOICE_TAG
@@ -3246,6 +3293,11 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if is_side and (getattr(config, 'glasses2', '') or '').strip() == '안경' and not _protagonist_has_glasses():
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
+    # [2026-09-16] 눈 색은 여기서 처음 프롬프트에 enters 된다 — 실측 전까지는 0회였다.
+    #   머리 바로 아래 두는 이유: 정체 태그는 머리→눈 순서로 읽힐 때 가장 덜 새기 때문.
+    _ey = str(_st.get("eyes") or "").strip() or _eye_tags()
+    if _ey:
+        lines_block.append(f"[AAA EYES] {_ey}")
     # [2026-09-09] 조건이 거꾸로였다(calm을 클라이맥스에만 적용) — 일상 컷에 극단 표정(실측
     #   [AAA FACE] crying, blushing, ahegao)이 그대로 들어가 모든 컷이 같은 표정으로 찍혔다.
     #   회차 후반 표정(*_late)은 **클라이맥스 컷에만** 붙인다(회차가 시작하는 표정은 face_style).
@@ -3398,7 +3450,7 @@ def _build_simple_prompt_header(sex: str, safety_tag: str, is_side: bool = False
                 header += f" {he_position_desc}"
             header += "\n"
         else:
-            pronoun = (_age_voice()[0] if sex in ("female", "여자", "여성") else "a boy")
+            pronoun = ((_age_voice()[0] + _eye_prose()) if sex in ("female", "여자", "여성") else "a boy")
             pronoun2 = "a boy" if sex2 in ("male", "남자", "남성") else "a girl"
             # [2026-09-08⑤] 군중 포즈(난교/군무 등)는 기본 카운터 '1 boy'와 충돌한다.
             # pose_text에 군중 태그가 detection되면 카운터를 승격시켜 1boy 강제를 푼다.
@@ -3426,7 +3478,7 @@ def _build_simple_prompt_header(sex: str, safety_tag: str, is_side: bool = False
             # [2026-09-16] 나이대가 시트에 있으면 "girl" 대신 그 말을 씁니다(실측 −14세 방지)
             noun, age_tag = _age_voice()
             header += (f",1girl,solo" + (f", {age_tag}" if age_tag else "") +
-                       f".\nA detailed anime illustration of {noun} at the center.")
+                       f".\nA detailed anime illustration of {noun}{_eye_prose()} at the center.")
         return header
 
 

@@ -541,9 +541,42 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
              " (이 회차를 건너뛰고 다음 회차는 계속합니다)")
         return 5
     _cards = list(inp.get("cards") or [])       # --special 장면 카드([LOCATION]…) — 원작 지정값
+    # [컷 시트] 원작 생성기의 구조화 컷 시트가 있으면 **그 의도를 정시로** 씁니다(컷 분할을 다시 정하지 않음).
+    #   여기서 하는 일 두 가지: ①행 모양을 컷 사양으로 옮긴다 ②목표 면수로 자르고 감사 리포트를 남긴다.
+    _hdr = list(inp.get("header_items") or [])
+    if str(getattr(config, "comic_cutsheet", "auto") or "auto") != "off":
+        try:
+            import cutsheet as _CS
+            _names = {}
+            try:
+                import json as _json
+                with open(sheet_path, encoding="utf-8") as _f:
+                    _sh = _json.load(_f)
+                _names = {"partner": str((_sh.get("partner") or {}).get("name") or "")}
+            except Exception:
+                pass
+            _cs = _CS.load(os.path.dirname(os.path.abspath(ep_path)) or ".", ep_num, names=_names,
+                           mode=str(getattr(config, "comic_headers_mode", "rec") or "rec"),
+                           target_pages=int(getattr(config, "comic_target_pages", 12) or 12),
+                           per_page=float(getattr(config, "comic_cuts_per_page", 5.0) or 5.0))
+        except Exception as _e:
+            p(f"  ○ 컷 시트 수신 실패({type(_e).__name__}: {_e}) — 본문으로 컷을 나눕니다")
+            _cs = None
+        if _cs:
+            _au = _cs["audit"]
+            _hdr = _cs["items"]
+            _cc = [c for c in _CS.cards_for_extract(_cs["items"]) if c]
+            _cards = _cards + _cc
+            import comic_gen as _CG_CS
+            _ap = _CS.write_audit(_au, _CG_CS.comic_out_dir(), ep_num)
+            p(f"  ◆ 컷 시트[{_au['source']}]: {_au['sheet_total']}컷 → 강등 {_au['after_compat']}컷"
+              f" → 예산 {_au['after_budget']}컷(목표 {int(getattr(config, 'comic_target_pages', 12))}면)"
+              f" · 장면 카드 {len(_cc)}장(시작 {len([c for c in _cc if not c.get('act')])}장)"
+              f" · 발화 조각 {_au.get('speech_splits', 0)}개"
+              + (f" · 감사 {os.path.basename(_ap)}" if _ap else ""))
     # [2026-09-13] --special 헤더 → 컷 1:1 배분의 재료 (comic_gen._special_specs)
     config.ep_header_items = {**(getattr(config, "ep_header_items", {}) or {}),
-                              ep_num: list(inp.get("header_items") or [])}
+                              ep_num: _hdr}
     data = CI.extract(ep_text, sheet_text, ep_num=ep_num,
                       need_segments=not inp["segments"], scene_cards=_cards)   # 막 앵커를 파서가 확보했으면 LLM에게 시키지 않는다
     if not data and args.start_llm:
@@ -791,6 +824,14 @@ def main() -> int:
                     help="후보 전원을 image/ 에 보존합니다(채택본만 남기지 않음 — 합성은 마지막 장을 씁니다)")
     ap.add_argument("--no-cut-gen", action="store_true",
                     help="템플릿의 gen(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 비율/순서만 씁니다")
+    ap.add_argument("--cutsheet", dest="cutsheet", default="", choices=["", "auto", "off"],
+                    help="원작 생성기가 만든 구조화 컷 시트(episode_NN_cuts.json) 사용 (기본 auto = 있으면 사용)")
+    ap.add_argument("--target-pages", type=int, default=0, dest="target_pages",
+                    help="한 회차 목표 면수(기본 12) — 컷 시트가 이보다 많으면 서술 컷부터 자릅니다")
+    ap.add_argument("--cuts-per-page", type=float, default=0.0, dest="cuts_per_page",
+                    help="면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율")
+    ap.add_argument("--headers-mode", default="", dest="headers_mode", choices=["", "min", "rec", "full"],
+                    help="컷 시트 태그를 오늘짜리 형태로 내리는 폭(기본 rec: PAGE_TURN/STANDING2 버림)")
     ap.add_argument("--no-token-gate", action="store_true", dest="no_token_gate",
                     help="Anima 학습 창(512 슬롯) 게이트를 끕니다 — 긴 프롬프트를 그대로 보냅니다")
     ap.add_argument("--anima-close-framing", action="store_true", dest="anima_close_framing",
@@ -942,6 +983,15 @@ def main() -> int:
     if getattr(args, "no_cut_gen", False):
         import comic_gen as _CG0
         _CG0.GEN_REQ_ENABLE = False
+    # [컷 시트] 컷 분할은 원작 생성기가 이미 끝내 놓았습니다 — 우리는 그 의도를 읽고 면수만 맞춥니다
+    if str(getattr(args, "cutsheet", "") or ""):
+        config.comic_cutsheet = str(args.cutsheet)
+    if int(getattr(args, "target_pages", 0) or 0) > 0:
+        config.comic_target_pages = max(1, int(args.target_pages))
+    if float(getattr(args, "cuts_per_page", 0.0) or 0.0) > 0:
+        config.comic_cuts_per_page = float(args.cuts_per_page)
+    if str(getattr(args, "headers_mode", "") or ""):
+        config.comic_headers_mode = str(args.headers_mode)
     # [2026-09-16] 닮은 캐릭터 태그 자동 선택 (chara_match) — 시트에 #태그#가 없는 회차의 얼굴 고정
     # [2026-09-16] 나이대 발화 정책 — 헤더가 "a girl"이면 서른여덟이 23세로 나온다(프로브 실측)
     import anima_gen as _AG_AGE
@@ -1114,6 +1164,11 @@ def main() -> int:
          else f'{len(CG.load_cut_templates())}종 자동 (회차 안 재사용)')
       + f' · DB {_cutdb}'
       + ('' if getattr(CG, 'GEN_REQ_ENABLE', True) else ' · 칸별 gen 요청 OFF'))
+    _cs_on = str(getattr(config, 'comic_cutsheet', 'auto') or 'auto') != 'off'
+    _cpp = float(getattr(config, 'comic_cuts_per_page', 5.0) or 5.0)
+    p("  컷 시트 수신   : " + ("꺼짐(본문에서 컷을 나눕니다)" if not _cs_on else
+      f"있으면 사용 · 목표 {int(getattr(config, 'comic_target_pages', 12))}면 × 면당 {_cpp:g}컷"
+      f" · 태그 {getattr(config, 'comic_headers_mode', 'rec')}"))
     p(f"  컷 배분 단위   : {'본문 항목 1 = 컷 1 (행동/대사/속마음)' if config.comic_item_cuts else '사건 단위(LLM이 컷 1~2개 지정)'}")
     if getattr(args, "wide_share", None) is not None:
         config.comic_wide_share_max = min(1.0, max(0.0, float(args.wide_share)))

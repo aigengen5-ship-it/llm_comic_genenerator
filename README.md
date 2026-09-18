@@ -305,6 +305,10 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
 | `--cut-yaml PATH` | 페이지 템플릿 DB를 바꿉니다 (예: `data/cut_new.yaml` — 실측 기반 20종, 칸별 생성 요청 `gen` 포함) |
 | `--no-cut-gen` | 템플릿의 `gen`(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 분할 비율·순서만 씁니다 |
+| `--cutsheet auto\|off` | 원작 생성기가 만든 **구조화 컷 시트**(`episode_NN_cuts.json`)를 정시로 씁니다(기본 auto = 있으면 사용) — 3-9b절 |
+| `--target-pages 12` | 한 회차 **목표 면수**(기본 12). 컷 시트가 이를 넘으면 서술 컷부터 자릅니다 |
+| `--cuts-per-page 5.0` | 면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율 |
+| `--headers-mode min\|rec\|full` | 컷 시트 태그를 우리 형태으로 내리는 폭(기본 rec) — 쓰지 않는 태그를 버리거나 강등합니다 |
 | `--no-token-gate` | Anima 학습 창(512 슬롯) 게이트를 끕니다 — 프롬프트를 손대지 않고 그대로 보냅니다 |
 | `--anima-close-framing` | 사람이 보이는 컷의 먼 화각(`wide shot`·`full body`)을 `upper body` 로 바꿉니다 |
 | `--char-tag off` | 시트에 `#태그#`가 없을 때 닮은 캐릭터 태그를 자동으로 고르는 일을 끕니다(3-8l절) — 속성 태그만 사용합니다 |
@@ -1165,6 +1169,48 @@ python3 run_comic.py --special --all-eps --episode ~/progress \
 python3 run_comic.py --special --episode inputs --plot-hash deadbeef --all-eps --book 999 --dry-run
 python3 selftest.py            # ⑨ 항목이 이 포맷을 검사합니다
 ```
+
+### 3-9b) 컷 시트를 받습니다 — 원작이 정한 컷을 그대로 씁니다
+
+원작 생성기는 이미 **“어느 장면을 몇 컷으로”**를 정해 둡니다. 우리는 그 **컷 시트(구조화)**를 정시로 읽고
+컷 분할을 다시 정하지 않습니다. 산출물 세 가지를 한 디렉터리에 모아 주시면 그것만으로 만화가 됩니다.
+
+```
+inbox/<책>_<해시>/
+  character_sheet_ep01_<해시>.json    ① 캐릭터 시트
+  episode_01_cuts.json                ② 컷 시트(구조화) — 정본
+  ep01_<해시>.txt                     ② 사본(헤더 계약 텍스트) — 구조화가 없을 때의 폴백
+  episode_01_reviewed.md              ③ 전체 에피소드 본문(감사·재현용)
+  prologue_<해시>.txt · epilogue_<해시>.txt   (작품 단위 ★지문 근거)
+```
+
+원작 생성이 끝난 뒤에는 이 한 줄입니다(두 저장소는 **파일 계약만** 공유하고 코드를 공유하지 않습니다).
+
+```bash
+python3 run_comic.py --special --episode inbox/book7_ae7853edbd894547 --ep 1 --book 7 --target-pages 12
+#   ◆ 컷 시트[episode_01_cuts.json]: 198컷 → 강등 198컷 → 예산 60컷(목표 12면) · 장면 카드 8장 · 발화 조각 24개 · 감사 audit_ep01.json
+```
+
+컷 시트의 한 행이 우리 화면에 가는 길입니다(`cutsheet.py`가 `comic_gen`이 이미 읽는 행 모양으로만 바꿉니다 —
+매핑 로직은 한 곳에 하나만 있습니다).
+
+| 컷 시트의 것 | 우리 화면 |
+|---|---|
+| `kind:"card"` (`LOCATION`/`SITUATION`/`TIME`) | 배경 확립 컷 한 장. 회차 맨 앞 카드는 추출 프롬프트의 **1순위 근거**로 올라가고(카드가 본문 서술과 어긋나면 카드가 정답), 나머지는 그 막 컷의 `place`·`time`·`background` 상태로 갑니다 |
+| `CLOTHES` / `CLOTHES2` · `CLOTHES3` | 전신 스탠딩 한 장(다음 카드까지 승계) / 옆 인물의 갈아입은 옷 — 컷을 늘리지 않고 상태만 승계합니다 |
+| `STANDING` | 전신 스탠딩 자리로 강등합니다(`standing` 깃발로 남김) — **스탠딩 이미지는 우리가 새로 그려** 같은 복장 컷에 재사용할 자리입니다 |
+| `TALK` / `TALK2` · `INNER` / `INNER2` | 말풍선·속마음 컷. `TALK2`(상대방 발화)는 화자 이름을 본문에 붙여 `TALK`로 내립니다 |
+| `split_part` | 이미 두 컷으로 나뉜 발화의 조각입니다 — 우리가 **다시 쪼개지 않습니다**(말풍선은 컷 폭의 25%·글자 하한이 있어 더 줄일 수 없습니다) |
+| `inherited: true` | 안 바뀐 장면 카드 — 확립/스탠딩 컷이 중복되므로 버립니다 |
+| `PAGE_TURN` · `STANDING2` | 렌더 대상이 아니므로 기본(rec)에서는 버리고 사연을 남깁니다 |
+
+**목표 면수를 넘으면 서술 컷부터 자릅니다.** 원작 대사는 그 자체가 원본이고 말풍선 글자 하한(≈11px)으로
+더 줄일 수도 없기 때문입니다. 장면 전환 카드는 거의 전부, 발화는 대부분, 서술은 남은 자리만큼 살리고,
+자리는 균등 간격으로 고릅니다(한 막이 통째로 사라지지 않습니다). 왜 줄었는지 원작 쪽에서 볼 수 있도록
+`comic/bookNNN/audit_epNN.json`에 강등·예산 사연을 남깁니다.
+
+컷 시트가 없으면 지금처럼 본문에서 컷을 나눕니다(경고는 없습니다). 컷 시트가 있어도 컷 스크립트(그림·
+구도·풍선)는 회차별로 LLM이 씁니다 — 컷 시트는 **의도**만 정하고, 그림은 우리가 정합니다.
 
 ### 3-10) 산출물
 

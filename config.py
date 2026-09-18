@@ -188,6 +188,12 @@ comic_star_frame = "full"
 #   LOCATION+SITUATION+TIME = 그림 한 장 / CLOTHES = 전신 스탠딩 한 장(다음 CLOTHES까지 승계)
 #   ACTION = 큰 장면 하나 / INNER·TALK = 인물 클로즈업(portrait)을 **무조건** 하나씩
 comic_header_map = True
+# [컷 시트] 원작 생성기가 만든 구조화 컷 시트(episode_NN_cuts.json)를 정시로 쓴다 (cutsheet.py)
+#   auto = 원고 디렉토리에 있으면 쓰고, 없으면 본문에서 컷을 나눕니다(off = 항상 본문 경로)
+comic_cutsheet = "auto"
+comic_headers_mode = "rec"        # 컷 시트 태그 강등 사다리 폭: min | rec | full
+comic_target_pages = 12           # 한 회차 목표 면수 — 컷 시트가 이보다 많으면 여기서 자릅니다
+comic_cuts_per_page = 5.0         # 면당 컷 수(실측 평균 ~5: 한 면 2~6컷) — 목표 면수의 환율
 # [2026-09-09] 컷 배분의 저울을 '본문 글자 수'에서 '일어난 사건(액션)'으로 옮겼다 (run_comic --no-action-cuts)
 # [2026-09-09] 컷 배분 변동(랜덤성) — 같은 본문でも 레이아웃/장면당 컷 수가 매번 같아 지루했다.
 #   0 = 예전과 같은 완전 재현, N>0 = 그 값마다 다른 배분 (--vary 는 시계값을 뽑고 로그에 남긴다)

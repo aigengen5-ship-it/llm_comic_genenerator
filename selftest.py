@@ -4565,7 +4565,67 @@ def main() -> int:
         check("로컬 엔트리에 go 가 있고 env로 고른다", "  go)" in _rl and "CUT:-new" in _rl)
         check("로컬 엔트리에서 LoRA 는 키로 고른다", "LORA1" in _rl and "--lora1" in _rl
               and "LORA_CHG" in _rl and "--detailer" in _rl)
-        check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
+        # [컷 시트 수신기] 원작 생성기의 구조화 컷 시트(episode_NN_cuts.json)를 우리 컷 사양으로 옮긴다
+    import cutsheet as _CS
+    _cst = tempfile.mkdtemp(prefix="cutsheet_")
+    _rows = {"ep": 1, "cut_total": 6, "cuts": [
+        {"cut": 1, "act": "기", "kind": "card", "tag": "LOCATION", "speaker": "-",
+         "text": "야근 중인 회사", "chars": 8, "inherited": False, "split_part": None},
+        {"cut": 2, "act": "기", "kind": "card", "tag": "CLOTHES", "speaker": "protagonist",
+         "text": "셔츠에 슬랙스", "chars": 8, "inherited": False, "split_part": None},
+        {"cut": 3, "act": "기", "kind": "card", "tag": "CLOTHES2", "speaker": "partner",
+         "text": "회색 양복", "chars": 4, "inherited": True, "split_part": None},
+        {"cut": 4, "act": "기", "kind": "cut", "tag": "TALK2", "speaker": "partner",
+         "text": "아직이었나", "chars": 5, "inherited": False, "split_part": None},
+        {"cut": 5, "act": "기", "kind": "cut", "tag": "INNER", "speaker": "protagonist",
+         "text": "심장이 뛴다", "chars": 5, "inherited": False, "split_part": "2/2"},
+        {"cut": 6, "act": "기", "kind": "cut", "tag": "STANDING", "speaker": "protagonist",
+         "text": "전신", "chars": 2, "inherited": False, "split_part": None},
+        {"cut": 7, "act": "승", "kind": "cut", "tag": "PAGE_TURN", "speaker": "-",
+         "text": "다음 날", "chars": 3, "inherited": False, "split_part": None}]}
+    with open(os.path.join(_cst, "episode_01_cuts.json"), "w", encoding="utf-8") as _f:
+        json.dump(_rows, _f, ensure_ascii=False)
+    _got = _CS.load(_cst, 1, names={"partner": "과장"}, mode="rec", target_pages=12)
+    _tg = [r["tag"] for r in (_got or {}).get("items", [])]
+    check("컷 시트: TALK2는 화자 이름을 붙여 TALK 로 내린다",
+          "TALK2" not in _tg and any(r["tag"] == "TALK" and r["line"].startswith("과장:")
+                                    for r in _got["items"]))
+    check("컷 시트: STANDING 은 전신 스탠딩 자리([CLOTHES])로 강등하고 깃발을 남긴다",
+          "STANDING" not in _tg and any("standing" in (r.get("flags") or []) for r in _got["items"]))
+    check("컷 시트: 안 바뀐 카드(inherited)는 버린다(확립/스탠딩 중복 방지)",
+          sum(1 for r in _got["items"] if r.get("card")) == 2
+          and any("안 바뀐" in d["why"] for d in _got["audit"]["dropped"]))
+    check("컷 시트: PAGE_TURN 은 rec 모드에서 버리고 사연에 남긴다",
+          "PAGE_TURN" not in _tg and any(d["tag"] == "PAGE_TURN" for d in _got["audit"]["dropped"]))
+    check("컷 시트: 분리된 발화 조각은 그대로 둔다(우리가 다시 쪼개지 않는다)",
+          _got["audit"]["speech_splits"] == 1)
+    _cd = _CS.cards_for_extract(_got["items"])
+    check("컷 시트: 카드 행을 추출 프롬프트의 장면 카드로 묶는다(맨 앞 = 회차 시작 카드)",
+          len(_cd) == 1 and _cd[0].get("장소") == "야근 중인 회사"
+          and _cd[0].get("복장") == "셔츠에 슬랙스" and not _cd[0].get("act"))
+    _many = [{"tag": "ACTION", "text": f"행동{i}", "act": ("기" if i < 30 else "승"), "card": False}
+             for i in range(40)] + [{"tag": "TALK", "text": f"대사{i}", "act": ("기" if i < 20 else "승"),
+                                     "card": False, "line": f"그: 대사{i}"} for i in range(40)]
+    _kept, _drop = _CS.budget(_many, target_pages=6, per_page=5.0)      # 예산 30컷
+    check("컷 시트: 페이지 예산은 발화를 서술보다 많이 살린다(대사는 원작 그 자체)",
+          len(_kept) == 30 and sum(1 for r in _kept if r["tag"] == "TALK") >= 15
+          and len(_drop) == 50)
+    check("컷 시트: 예산 잘라도 막이 통째로 사라지지 않는다",
+          len({r["act"] for r in _kept}) == 2)
+    check("컷 시트: 컷 시트가 없으면 None(본문 경로가 그대로 돈다)", _CS.load(_cst, 9) is None)
+    check("컷 시트: 강등/예산 사연을 감사 리포트로 남긴다",
+          bool(_CS.write_audit(_got["audit"], _cst, 1))
+          and os.path.isfile(os.path.join(_cst, "audit_ep01.json")))
+    check("실행 배선에 컷 시트 스위치가 있다",
+          all(k in open("run_comic.py", encoding="utf-8").read()
+              for k in ("--cutsheet", "--target-pages", "--cuts-per-page", "--headers-mode", "cutsheet as _CS")))
+    check("설정 기본값: 컷 시트 auto · 목표 12면 · 면당 5컷",
+          getattr(config, "comic_cutsheet", "") == "auto" and int(config.comic_target_pages) == 12
+          and abs(float(config.comic_cuts_per_page) - 5.0) < 1e-9)
+    check("원고 정규화가 한 곳에 있다(컷 분할 사본을 늘리지 않는다)",
+          not os.path.isfile("comic_cut_gen.py"))
+    shutil.rmtree(_cst, ignore_errors=True)
+    check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:

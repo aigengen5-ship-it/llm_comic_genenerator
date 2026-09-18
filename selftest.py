@@ -4682,6 +4682,58 @@ def main() -> int:
     check("컷 시트 감사는 섞인 실행분을 잡는다(디렉토리의 해시 두 개면 경고감)",
           len(_got["audit"].get("hashes") or []) == 2
           and {"deadbeefcafe1234", "7c0d2b13e3d44b3f"} <= set(_got["audit"]["hashes"]))
+    # [컷 시트 만들기] 입력 폴더의 세 가지(ep 캐리어 · reviewed 본문 · 시트 JSON)로 만든다
+    _bdir = tempfile.mkdtemp(prefix="cuts_build_")
+    with open(os.path.join(_bdir, "character_sheet_ep04_aaaaaaaaaaaaaaaa.json"), "w", encoding="utf-8") as _f:
+        json.dump({"protagonist": {"name": "하루카"}, "partner": {"name": "과장"}}, _f, ensure_ascii=False)
+    with open(os.path.join(_bdir, "ep04_aaaaaaaaaaaaaaaa.txt"), "w", encoding="utf-8") as _f:
+        _f.write("=== Episode 4 ===\n\n--- 에피소드 내용 ---\n\n"
+                 "[LOCATION]: 체육창고\n[TIME]: 밤\n#####\n기:\n"
+                 "[ACTION]: 품 안에서 정적을 즐기다가 밀어낸다\n"
+                 "[TALK]: 계속 이렇게 있을 수는 없어요. 어떻게든 나갈 방법을 찾겠어요\n"
+                 "[INNER]: (이대로 있으면 이상해질 것 같아)\n")
+    with open(os.path.join(_bdir, "episode_04_reviewed.md"), "w", encoding="utf-8") as _f:
+        _f.write("# Episode 4\n\n그녀는 창고 문을 찾았다.\n")
+    _made = _CS.build(_bdir, 4)                       # ask=None → 전사만(LLM 없이)
+    check("컷 시트를 입력 폴더에 만든다(정본 comic/ 참고 없음)",
+          bool(_made) and os.path.basename(_made["path"]).startswith("cuts_ep04_")
+          and _made["path"].startswith(_bdir) and _made["meta"]["rows"] >= 4)
+    check("만든 컷 시트 파일명이 실행 해시를 갖는다(섞임 검사와 맞물린다)",
+          _CS.plot_hash(_bdir, 4) == "aaaaaaaaaaaaaaaa"
+          and "aaaaaaaaaaaaaaaa" in os.path.basename(_made["path"]))
+    check("만든 컷 시트가 정시로 발견된다(원장 행이 그대로 남는다)",
+          _CS.find(_bdir, 4) == _made["path"]
+          and any(r["tag"] == "LOCATION" and r.get("card") for r in _CS.load(_bdir, 4)["items"]))
+    _sha = _CS.source_sha(_bdir, 4)
+    check("원고가 그대로면 컷 시트는 재생성 대상이 아니다(재사용)", _CS.stale(_made["path"], _bdir, 4) is False)
+    with open(os.path.join(_bdir, "episode_04_reviewed.md"), "a", encoding="utf-8") as _f:
+        _f.write("\n그때 창고 문이 열렸다.\n")
+    check("본문이 바뀌면 컷 시트는 녹슨다(자동 재생성 대상)",
+          _CS.source_sha(_bdir, 4) != _sha and _CS.stale(_made["path"], _bdir, 4) is True)
+    _ops = _CS._ops_of('前置 설명. ```json\n{"split":[{"cut":2,"parts":["A. ","B."]}],'
+                       ' "insert":[{"after":1,"tag":"ACTION","act":"기","text":"문을 본다."}]}\n``` 후문')
+    _rw = [{"cut": 1, "act": "기", "tag": "LOCATION", "kind": "card", "speaker": "-", "text": "창고",
+            "chars": 2, "caption": False, "balloon": False, "asset": None, "inherited": False,
+            "split_part": None},
+           {"cut": 2, "act": "기", "tag": "TALK", "kind": "cut", "speaker": "protagonist",
+            "text": "A. B.", "chars": 4, "caption": False, "balloon": True, "asset": None,
+            "inherited": False, "split_part": None}]
+    _o2, _n2 = _CS.apply_ops([dict(r) for r in _rw], _ops, max_cuts=40)
+    check("정제는 조정만 입힌다(원작 텍스트는 건드리지 않는다)",
+          _n2["splits"] == 1 and _n2["inserts"] == 1
+          and [r["text"] for r in _o2 if r.get("balloon")] == ["A.", "B."]
+          and [r["split_part"] for r in _o2 if r.get("balloon")] == ["1/2", "2/2"])
+    _o3, _n3 = _CS.apply_ops([dict(r) for r in _rw],
+                             {"split": [{"cut": 2, "parts": ["A.", "C."]}],
+                              "insert": [{"after": 1, "tag": "TALK", "act": "기", "text": "\"지어낸 대사\""}]})
+    check("원작 대사와 다른 분리·지어낸 대사는 거절한다(대사는 원작 그 자체)",
+          _n3["splits"] == 0 and _n3["inserts"] == 0 and _n3["rejected"] == 2)
+    check("실행 배선에 --rebuild-cutsheet 가 있다(있으면 입력 폴더에서 재생성)",
+          "--rebuild-cutsheet" in open("run_comic.py", encoding="utf-8").read()
+          and "_CS.build(_cs_dir, ep_num" in open("run_comic.py", encoding="utf-8").read())
+    check("실행이 만든 컷 시트는 저장소에 들어가지 않는다(.gitignore)",
+          "cuts_ep" in open(".gitignore", encoding="utf-8").read())
+    shutil.rmtree(_bdir, ignore_errors=True)
     check("실행 배선에 컷 시트 스위치가 있다",
           all(k in open("run_comic.py", encoding="utf-8").read()
               for k in ("--cutsheet", "--target-pages", "--cuts-per-page", "--headers-mode", "cutsheet as _CS")))

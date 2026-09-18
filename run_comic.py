@@ -547,6 +547,30 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     if str(getattr(config, "comic_cutsheet", "auto") or "auto") != "off":
         try:
             import cutsheet as _CS
+            _cs_dir = os.path.dirname(os.path.abspath(ep_path)) or "."
+            # 컷 시트가 없거나(첫 실행), 원고가 바뀌었거나, --rebuild-cutsheet 이면 **입력 폴더에서** 만듭니다.
+            #   참고하는 것은 같은 폴더의 세 가지뿐입니다: ep 캐리어 · reviewed 본문 · 시트 JSON.
+            _p = _CS.find(_cs_dir, ep_num)
+            if _p and not bool(getattr(args, "rebuild_cutsheet", False)) and not _CS.stale(_p, _cs_dir, ep_num):
+                pass                                   # 재사용 (정제도 다시 하지 않습니다)
+            else:
+                try:
+                    from openAPI_control import call_openai_for_text as _ask0
+
+                    def _ask(_prompt):
+                        _raw, _ = _ask0(_prompt, messages=None, log_fn=perr, temperature=0.2,
+                                        repeat_penalty=1.05, enable_thinking=False)
+                        return _raw
+                except Exception:
+                    _ask = None
+                _made = _CS.build(_cs_dir, ep_num, ask=_ask, log=perr)
+                if _made:
+                    _m = _made["meta"]
+                    p(f"  ◆ 컷 시트 생성[{os.path.basename(_made['path'])}]: 컷 {_m['rows']}개"
+                      f" · 원고 해시 {_m['source_sha']} · 정제 분리 {_m['polished']['splits']} /"
+                      f" 추가 {_m['polished']['inserts']} / 화자 {_m['polished']['speakers']} /"
+                      f" 카드 생략 {_m['polished']['card_skips']}"
+                      + (f" / 거절 {_m['polished']['rejected']}" if _m["polished"]["rejected"] else ""))
             _names = {}
             try:
                 import json as _json
@@ -833,6 +857,8 @@ def main() -> int:
                     help="한 회차 목표 면수(기본 12) — 컷 시트가 이보다 많으면 서술 컷부터 자릅니다")
     ap.add_argument("--cuts-per-page", type=float, default=0.0, dest="cuts_per_page",
                     help="면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율")
+    ap.add_argument("--rebuild-cutsheet", action="store_true", dest="rebuild_cutsheet",
+                    help="컷 시트(cuts_epNN_<해시>.json)를 입력 폴더에서 다시 만듭니다(원고가 바뀌면 자동 재생성)")
     ap.add_argument("--standing-reuse", action="store_true", dest="standing_reuse",
                     help="전신 스탠딩 컷을 흰 배경 스프라이트 1장으로 뽑아 배경 컷 위에 얹습니다(렌더 1장으로 컷 1장)")
     ap.add_argument("--headers-mode", default="", dest="headers_mode", choices=["", "min", "rec", "full"],

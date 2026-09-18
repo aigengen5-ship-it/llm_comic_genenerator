@@ -33,6 +33,7 @@ import os
 import re
 
 # ── 카드/발화 계약 ────────────────────────────────────────────────────────────────
+CUTS_PREFIX = "cuts_ep"          # 우리가 만들어 입력 폴더에 두는 컷 시트(정본과 같은 스키마)
 CARD_TAGS = ("LOCATION", "SITUATION", "TIME", "CLOTHES", "CLOTHES2", "CLOTHES3")
 # 카드 행 → 추출 프롬프트의 장면 카드 키 (novel_progress 와 같은 말)
 CARD_KEY = {"LOCATION": "장소", "SITUATION": "상황", "TIME": "시간",
@@ -179,18 +180,82 @@ def budget(items: list, target_pages: int = 12, per_page: float = 5.0) -> tuple:
     return kept, dropped
 
 
+def _hash_of(name: str) -> str:
+    m = re.search(r"_([0-9a-f]{12,32})(?:\.[a-z0-9]+)?$", str(name))
+    return m.group(1) if m else ""
+
+
+def plot_hash(dir_path: str, ep_num: int) -> str:
+    """이 회차가 속한 실행의 해시를 **옆에 있는 파일명**에서 얻습니다(manifest 없이)."""
+    for pat in (f"ep{int(ep_num):02d}_*.txt", f"character_sheet_ep{int(ep_num):02d}_*.json",
+                f"prologue_*.txt", "ep*_*.txt", "character_sheet_ep*_*.json"):
+        for p in sorted(glob.glob(os.path.join(dir_path or "", pat))):
+            h = _hash_of(os.path.basename(p))
+            if h:
+                return h
+    return ""
+
+
+def sources(dir_path: str, ep_num: int) -> dict:
+    """컷 시트를 만드는 데 쓰는 입력 세 가지(ep 캐리어 · reviewed 본문 · 시트 JSON)."""
+    ep = int(ep_num)
+    out = {"ep": "", "md": "", "sheet": ""}
+    for pat, k in ((f"ep{ep:02d}_*.txt", "ep"), (f"episode_{ep:02d}_reviewed.md", "md"),
+                   (f"episode_{ep:02d}.md", "md"), (f"character_sheet_ep{ep:02d}_*.json", "sheet")):
+        for p in sorted(glob.glob(os.path.join(dir_path or "", pat))):
+            if not out[k] or "reviewed" in os.path.basename(p):
+                out[k] = p
+    return out
+
+
+def source_sha(dir_path: str, ep_num: int) -> str:
+    """입력 세 가지의 내용 해시 — 본문이 바뀌면 컷 시트를 다시 만들어야 합니다."""
+    import hashlib
+    h = hashlib.sha256()
+    for p in sources(dir_path, ep_num).values():
+        if p and os.path.isfile(p):
+            try:
+                with open(p, "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                pass
+    return h.hexdigest()[:16]
+
+
+def generated_path(dir_path: str, ep_num: int) -> str:
+    h = plot_hash(dir_path, ep_num) or "nohash"
+    return os.path.join(dir_path, f"{CUTS_PREFIX}{int(ep_num):02d}_{h}.json")
+
+
 def find(dir_path: str, ep_num: int) -> str:
-    """회차의 구조화 컷 시트를 찾습니다 (episode_NN_cuts.json, 없으면 *_cuts.json 중 회차 번호로)."""
+    """회차의 구조화 컷 시트를 찾습니다. 우리가 만든 것(cuts_epNN_<해시>.json)을 우선합니다."""
     if not dir_path or not os.path.isdir(dir_path):
         return ""
+    own = generated_path(dir_path, ep_num)
+    if os.path.isfile(own):
+        return own
     want = os.path.join(dir_path, f"episode_{int(ep_num):02d}_cuts.json")
     if os.path.isfile(want):
         return want
-    for p in sorted(glob.glob(os.path.join(dir_path, "*_cuts.json"))):
-        m = re.search(r"(\d{1,3})", os.path.basename(p))
+    for p in sorted(glob.glob(os.path.join(dir_path, "*cuts_ep*_*.json"))) + \
+            sorted(glob.glob(os.path.join(dir_path, "*_cuts.json"))):
+        m = re.search(r"ep(?:isode_)?(\d{1,3})", os.path.basename(p))
         if m and int(m.group(1)) == int(ep_num):
             return p
     return ""
+
+
+def stale(path: str, dir_path: str, ep_num: int) -> bool:
+    """컷 시트가 지금 원고의 것이 아닌가(원고 해시가 바뀌었거나 회차가 다르거나)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            meta = (json.load(f) or {}).get("meta") or {}
+    except Exception:
+        return True
+    if int(meta.get("ep") or -1) != int(ep_num):
+        return True
+    sha = str(meta.get("source_sha") or "")
+    return bool(sha) and sha != source_sha(dir_path, ep_num)
 
 
 def load(dir_path: str, ep_num: int, names: dict = None, mode: str = "rec",
@@ -265,6 +330,188 @@ def write_audit(audit: dict, out_dir: str, ep_num: int) -> str:
         return p
     except OSError:
         return ""
+
+
+# ==================================================================== 컷 시트 만들기 (로컬 정본 경로)
+#   원작 생성기의 comic/ 를 참고하지 않습니다. 입력 폴더에 있는 세 가지(ep 캐리어 · reviewed 본문 ·
+#   시트 JSON)만으로 컷 시트를 만들어 **그 폴더에** 둡니다. 다음 실행부터는 그것을 정시로 씁니다.
+POLISH_PROMPT = """You build a manga cut sheet from the author's own headers. The rows below are already
+transcribed from the manuscript headers, so **never rewrite dialogue or narration** — propose only
+adjustments, and only where the manuscript prose justifies them.
+
+Adjustments you may propose (JSON only, no prose):
+  split     : a line is too long for one balloon (balloon is 25% of the panel, glyphs cannot go below ~11px).
+              Give the two parts. The two parts joined MUST equal the original text.
+  insert    : the prose describes a beat that deserves its own panel. Place it after a cut number.
+              tag is one of ACTION, NARR, SFX. Text is Korean, one sentence, no dialogue quotes.
+  speaker   : the prose makes it clear who speaks. who is "protagonist" or "partner".
+  card_skip : a scene card repeats a scene that is already current (same place/time). Skip it.
+If nothing is justified, return empty lists. Never invent dialogue. Never add a cut between two cards.
+{"split":[{"cut":12,"parts":["…","…"]}], "insert":[{"after":14,"tag":"ACTION","act":"승","text":"…"}],
+ "speaker":[{"cut":9,"who":"partner"}], "card_skip":[{"cut":4}]}
+
+CUT SHEET (cut | act | tag | speaker | text):
+{rows}
+
+MANUSCRIPT PROSE (reference only — do not copy it into the sheet):
+{prose}
+"""
+
+
+def rows_from_headers(items: list) -> list:
+    """헤더 계약 행 → 컷 시트 행(정본과 같은 키). 원문은 그대로 전사합니다."""
+    rows = []
+    for it in items or []:
+        tag = str((it or {}).get("tag") or "").strip().upper()
+        txt = str((it or {}).get("text") or "").strip()
+        if not tag or not txt:
+            continue
+        who = str((it or {}).get("who") or "")
+        rows.append({"cut": len(rows) + 1, "act": str((it or {}).get("act") or ""), "tag": tag,
+                     "kind": "card" if tag in CARD_TAGS else "cut",
+                     "speaker": ("-" if tag not in SPEECH_TAGS else
+                                 ("partner" if who == "partner" else "protagonist")),
+                     "text": txt, "chars": len(txt),
+                     "caption": tag in ("NARR", "SFX"), "balloon": tag in SPEECH_TAGS,
+                     "asset": None, "inherited": False, "split_part": None})
+    return rows
+
+
+def _row_lines(rows: list) -> str:
+    return "\n".join(f"{r['cut']} | {r['act'] or '-'} | {r['tag']} | {r['speaker']} | {r['text']}"
+                      for r in rows)
+
+
+def _ops_of(raw: str) -> dict:
+    """LLM 응답에서 JSON 객체 하나만 꺼냅니다(따옴표 안의 중괄호는 세지 않습니다)."""
+    import comic_input as CI
+    t = str(raw or "")
+    a = t.find("{")
+    if a < 0:
+        return {}
+    depth, in_s, esc, body = 0, False, False, ""
+    for i in range(a, len(t)):
+        c = t[i]
+        if in_s:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_s = False
+            continue
+        if c == '"':
+            in_s = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                body = t[a:i + 1]
+                break
+    for cand in filter(None, (body, CI.json_soft_fix(body) if body else "")):
+        try:
+            d = json.loads(cand)
+            if isinstance(d, dict):
+                return d
+        except Exception:
+            continue
+    return {}
+
+
+def apply_ops(rows: list, ops: dict, max_cuts: int = 0) -> tuple:
+    """조정(ops)을 입힙니다 — 원작 텍스트는 split 검증이 통과할 때만 손댑니다."""
+    out, note = list(rows), {"splits": 0, "inserts": 0, "speakers": 0, "card_skips": 0, "rejected": 0}
+    by_no = {int(r["cut"]): r for r in out}
+    for op in ops.get("speaker") or []:
+        r = by_no.get(int(op.get("cut") or -1))
+        who = str(op.get("who") or "").strip()
+        if r is not None and who in ("protagonist", "partner") and r["kind"] == "cut":
+            r["speaker"] = who
+            note["speakers"] += 1
+    for op in ops.get("card_skip") or []:
+        r = by_no.get(int(op.get("cut") or -1))
+        if r is not None and r["kind"] == "card":
+            r["inherited"] = True
+            note["card_skips"] += 1
+    for op in ops.get("split") or []:
+        r = by_no.get(int(op.get("cut") or -1))
+        parts = [str(x).strip() for x in (op.get("parts") or []) if str(x).strip()]
+        if r is None or len(parts) < 2 or not r.get("balloon"):
+            note["rejected"] += 1
+            continue
+        if "".join(parts).replace(" ", "") != r["text"].replace(" ", ""):
+            note["rejected"] += 1          # 원작 대사와 달라지면 분리 자체를 하지 않습니다
+            continue
+        for i, part in enumerate(parts[:2]):
+            if i == 0:
+                r.update(text=part, chars=len(part), split_part="1/2")
+            else:
+                out.append(dict(r, text=part, chars=len(part), split_part="2/2"))
+        note["splits"] += 1
+    ins = []
+    for op in ops.get("insert") or []:
+        try:
+            after = int(op.get("after") or 0)
+        except (TypeError, ValueError):
+            continue
+        tag = str(op.get("tag") or "ACTION").strip().upper()
+        txt = str(op.get("text") or "").strip()
+        if tag in CARD_TAGS or not txt or '"' in txt or "'" in txt:
+            note["rejected"] += 1          # 대사를 지어내는 삽입은 받지 않습니다
+            continue
+        ins.append((after, {"cut": 0, "act": str(op.get("act") or ""), "tag": tag, "kind": "cut",
+                            "speaker": "-", "text": txt, "chars": len(txt),
+                            "caption": tag in ("NARR", "SFX"), "balloon": False,
+                            "asset": None, "inherited": False, "split_part": None}))
+    if ins:
+        cut_max = int(max_cuts or 0)
+        room = len(out)
+        if cut_max:
+            ins = ins[:max(0, cut_max - room)]
+        merged = []
+        for r in sorted(out, key=lambda r: int(r["cut"])):
+            merged.append(r)
+            for after, row in ins:
+                if after == int(r["cut"]):
+                    merged.append(row)
+        note["inserts"] = len(ins)
+        out = merged
+    for i, r in enumerate(out, 1):
+        r["cut"] = i
+    return out, note
+
+
+def build(dir_path: str, ep_num: int, ask=None, log=None, max_cuts: int = 0,
+          prose_chars: int = 7000) -> dict:
+    """입력 폴더의 세 가지로 컷 시트를 만들어 그 폴더에 둡니다. ask=None 이면 전사만 합니다."""
+    src = sources(dir_path, ep_num)
+    path = src["ep"] or src["md"]
+    if not path:
+        return {}
+    import novel_progress as NP
+    info = NP.load(path, src["sheet"])
+    rows = rows_from_headers(info.get("header_items") or [])
+    prose = str(info.get("episode_text") or "")[:int(prose_chars)]
+    note = {"splits": 0, "inserts": 0, "speakers": 0, "card_skips": 0, "rejected": 0}
+    if ask and rows:
+        try:
+            raw = ask(POLISH_PROMPT.replace("{rows}", _row_lines(rows)).replace("{prose}", prose))
+            rows, note = apply_ops(rows, _ops_of(raw or ""), max_cuts=max_cuts)
+        except Exception as e:
+            if log:
+                log(f"컷 시트 정제 실패({type(e).__name__}: {e}) — 전사본만 저장합니다")
+    meta = {"ep": int(ep_num), "plot_hash": plot_hash(dir_path, ep_num),
+            "source_sha": source_sha(dir_path, ep_num), "generator": "cutsheet@1",
+            "polished": note, "source": {k: os.path.basename(v) for k, v in src.items() if v},
+            "rows": len(rows)}
+    out = generated_path(dir_path, ep_num)
+    tmp = out + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"meta": meta, "cut_total": len(rows), "cuts": rows}, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, out)
+    return {"path": out, "rows": rows, "meta": meta}
+
 
 
 def main(argv=None) -> int:

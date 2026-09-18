@@ -64,3 +64,5 @@ analysis_chara/*.json
 analysis_chara/probe/
 # 로컬 전용 문서(머신 고유포트·경로를 그대로 적는다) — README_local.md와 같은 취급
 FLOW_LOCAL.md
+# 실행이 입력 폴더에 만들어 두는 컷 시트(원고 해시 포함, 재생성 가능)
+inputs/**/cuts_ep*_*.json

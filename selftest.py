@@ -4406,6 +4406,16 @@ def main() -> int:
     anima_gen.set_eye_voice(weight=1.4, prose=False)
     check("프로브에 눈 색 판정이 있다", "EYE_ASK" in _pb and "eye_color" in _pb)
     check("README 에 눈동자 색 절이 적혀 있다", "[AAA EYES]" in _rd2 and "--no-eye-tag" in _rd2)
+    # ── 배너가 실제로 로드된 DB를 말한다(하드코딩된 "34종" 재발 방지) ──
+    _rc3 = open("run_comic.py", encoding="utf-8").read()
+    check("배너에 템플릿 수 하드코딩이 없다", "34종 자동" not in _rc3)
+    check("배너가 로드된 수와 DB 경로를 함께 찍는다",
+          "load_cut_templates())}종" in _rc3 and "CUT_YAML_FILE" in _rc3)
+    check("README 에 한 방 명령어가 있다", "3-0) 오늘 기준 한 방 명령어" in _rd2
+          and "--cut-yaml data/cut_new.yaml" in _rd2)
+    if os.path.isfile("run_local.sh"):      # 로컬 전용 엔트리(배송 대상 아님) — 있으면 모양만 본다
+        _rl = open("run_local.sh", encoding="utf-8").read()
+        check("로컬 엔트리에 go 가 있고 env로 고른다", "  go)" in _rl and "CUT:-new" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:

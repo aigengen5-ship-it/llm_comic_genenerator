@@ -1088,7 +1088,13 @@ def main() -> int:
         config.comic_templates_pin = sorted(set(_hit))
     if getattr(args, "item_cuts", None) is not None:
         config.comic_item_cuts = bool(args.item_cuts)
-    p(f"  컷 템플릿      : {('고정 ' + ', '.join(config.comic_templates_pin)) if getattr(config, 'comic_templates_pin', []) else '34종 자동 (회차 안 재사용)'}")
+    # 템플릿 수를 하드코딩하면("34종") 다른 DB를 얹은 실행에서 배너가 거짓말을 한다(실측).
+    _cutdb = os.path.relpath(CG.CUT_YAML_FILE, os.path.dirname(os.path.abspath(__file__)))
+    p("  컷 템플릿      : "
+      + (('고정 ' + ', '.join(config.comic_templates_pin)) if getattr(config, 'comic_templates_pin', [])
+         else f'{len(CG.load_cut_templates())}종 자동 (회차 안 재사용)')
+      + f' · DB {_cutdb}'
+      + ('' if getattr(CG, 'GEN_REQ_ENABLE', True) else ' · 칸별 gen 요청 OFF'))
     p(f"  컷 배분 단위   : {'본문 항목 1 = 컷 1 (행동/대사/속마음)' if config.comic_item_cuts else '사건 단위(LLM이 컷 1~2개 지정)'}")
     if getattr(args, "wide_share", None) is not None:
         config.comic_wide_share_max = min(1.0, max(0.0, float(args.wide_share)))

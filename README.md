@@ -159,6 +159,27 @@ LLM 호출은 **`ollama_enb == "yes"` 일 때 예외 없이 아래 ollama 설정
 
 ## 3. 사용법
 
+### 3-0) 오늘 기준 한 방 명령어 (설치가 끝난 상태에서)
+
+```bash
+# 컷 스크립트만(렌더 없음, 3분 안쪽) — 컷 배분·프롬프트만先看합니다
+./run_ollama.sh --episode inputs/ep01.txt --sheet inputs/sheet01.txt \
+  --cut-yaml data/cut_new.yaml --dry-run --preview 3
+
+# 본 실행 — 268면에서 배운 컷 DB + 닮은 캐릭터 태그 + ComfyUI 자동 기동
+./run_ollama.sh --episode inputs/ep01.txt --sheet inputs/ep01.sheet.txt \
+  --cut-yaml data/cut_new.yaml --start-comfy
+
+# 진행기 progress/ 사본을 통째로 한 권으로
+./run_ollama.sh --special --all-eps --episode ~/progress \
+  --cut-yaml data/cut_new.yaml --start-comfy
+```
+
+지정하지 않으면 컷 DB는 배송본 `data/cut.yaml`(34종)입니다. `--cut-yaml data/cut_new.yaml` 로
+268면에서 배운 20종을 얹을 수 있고, 실행 배너가 실제로 무엇이 로드됐는지 찍어 줍니다
+(`컷 템플릿 : 20종 자동 · DB data/cut_new.yaml`). 지난번에 만든 것 중 **캐릭터 태그 · 나이대 발화 ·
+눈 색 태그 · 512 토큰 창 게이트**는 코드 기본 ON 이라 명령어에 붙일 것이 없습니다(끄는 법은 아래 표).
+
 ### 3-1) 자가 점검 (LLM·ComfyUI 없이)
 
 먼저 아래 명령부터 실행해 주시면 문제를 미리 막을 수 있습니다.

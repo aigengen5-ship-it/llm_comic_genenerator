@@ -47,6 +47,7 @@
 """
 import math
 import os
+import re
 from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- 기본 파라미터
@@ -212,6 +213,11 @@ THOUGHT_W_RELIEF = 0.45                  # 단, 세로가 아래 비율을 넘�
 
 THOUGHT_H_CAP = 0.36                     # 속마음 세로가 컷 높이의 이 비율을 넘지 않게 한다
 FONT_FLOOR = 11                          # 화면 글자의 최소 크기 — 이 아래로 안 줄인다
+# [2026-09-19] 대화·속마음은 **한 줄로 넓게** 나가지 않게 합니다(사용자 지시). 말풍선은 폭이 컷의
+#   25%까지인데 한 줄로 길면 글자를 FONT_FLOOR까지 줄여야 하고, 그러면 화면에서 안 보입니다.
+#   그래서 한글 단어가 2개 이상이거나, 한글 1단어라도 5자 이상이면 반드시 두 줄 이상으로 눕힙니다.
+_KO_SYL = re.compile(r"[\uac00-\ud7a3]")
+_BALLOON_LAST: dict = {}        # 마지막 풍선 계산 결과(테스트·디버깅용): lines/fs/box_w/box_h/xy
 ELLIPSE_FIT = 1.45                       # (폴백) 타원 ⇄ 사각 글자 블록의 대각 배율(√2≈1.414 + 안전)
 BALLOON_PAD = 8                          # 풍선 안쪽 여백 [2026-09-10] 폭 절반(10%)에 맞춰 12→8 — 글자 자리를 남긴다
 NARR_W_RATIO = 0.80                      # 설명 박스 폭 상한(컷 폭 대비) — 글자 수에 맞춰 다시 줄어든다
@@ -607,6 +613,44 @@ def _rect_hit(a, b, gap: int = 4) -> bool:
                 or a[3] + gap <= b[1] or b[3] + gap <= a[1])
 
 
+def must_wrap(text: str) -> bool:
+    """이 발화는 반드시 두 줄 이상으로 눕혀야 하나(한글 기준)."""
+    toks = [t for t in re.split(r"[\s,.!?…~·\-]+", str(text or "")) if t]
+    ko = [t for t in toks if _KO_SYL.search(t)]
+    if len(ko) >= 2:
+        return True
+    if len(ko) == 1:
+        return len(_KO_SYL.findall(ko[0])) >= 5
+    return False
+
+
+def _wrap_balloon_lines(text: str, font, avail_w: int, draw, cap_lines: int) -> list:
+    """풍선 줄바꿈 — `must_wrap`이면 폭을 더 좁혀서라도 두 줄 이상으로 만듭니다(결정론)."""
+    ls = wrap_text(text, font, max(24, int(avail_w)), draw, max_lines=cap_lines)
+    if not ls or len(ls) >= 2 or not must_wrap(text):
+        return ls
+    for shrink in (0.85, 0.7, 0.55, 0.42):
+        alt = wrap_text(text, font, max(20, int(int(avail_w) * shrink)), draw, max_lines=cap_lines)
+        if alt and len(alt) >= 2:
+            return alt
+    mid = max(1, len(str(text)) // 2)          # 띄어쓰기 없는 한 단어는 음절 경계 절반에서 자른다
+    a, b = str(text)[:mid].strip(), str(text)[mid:].strip()
+    return [a, b] if a and b else ls
+
+
+def _raise_up(xy, ix: int, iy: int, iw: int, ih: int, w: int, h: int, avoid=(), margin: int = 8):
+    """x는 두고 **위까지** 올려봅니다 — 같은 열 안에서 풍선을 최대한 천장에 붙입니다."""
+    x, y = xy
+    top = iy + margin
+    yy = top
+    while yy < y:
+        r = (x, yy, x + w, yy + h)
+        if r[3] <= iy + ih and not any(_rect_hit(r, a) for a in (avoid or ())):
+            return (x, yy)
+        yy += 2
+    return xy
+
+
 def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
                     avoid=(), prefer=("tr", "tl", "br", "mr", "center"), margin: int = 8):
     """컷 안에서 w×h 상자를 둘 위치 — 회피 박스와 안 겹치는 첫 후보(결정론, 랜덤 없음)."""
@@ -627,7 +671,7 @@ def _place_in_panel(ix: int, iy: int, iw: int, ih: int, w: int, h: int,
             continue
         if any(_rect_hit(r, a) for a in (avoid or ())):
             continue
-        return xy
+        return _raise_up(xy, ix, iy, iw, ih, w, h, avoid=avoid, margin=margin)
     return None
 
 
@@ -1629,7 +1673,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         bw_target = max(48, int(iw * wr * bst))
         avail_w = int(bw_target / (fit if kind == "thought" else 1.0)) - 2 * pad_h
         cap_lines = max(2, int((ih - 2 * pad_v - 12) // lh))          # 줄 수 상한은 컷 높이에서 계산한다
-        ls = wrap_text(text, fnt, max(24, avail_w), probe, max_lines=cap_lines)
+        ls = _wrap_balloon_lines(text, fnt, max(24, avail_w), probe, cap_lines)
         if not ls:
             return None
         tw = 0
@@ -1687,6 +1731,9 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         return None                       # 자리가 없으면 겹쳐 쓰지 않고 생략한다
     x0, y0 = xy
     x1, y1 = x0 + box_w, y0 + box_h
+    _BALLOON_LAST.clear()
+    _BALLOON_LAST.update({"lines": list(lines), "fs": int(fs), "box_w": int(box_w), "box_h": int(box_h),
+                          "line_h": int(line_h), "xy": (int(x0), int(y0)), "kind": kind, "text": text})
     # 말풍선은 **직사각형**, 속마음은 **타원**. 형태 그 자체로 화자를 구분한다(꼬리·물방울은 폐지).
     art = ""
     if art_id:

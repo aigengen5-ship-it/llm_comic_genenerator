@@ -4743,6 +4743,28 @@ def main() -> int:
     check("원고 정규화가 한 곳에 있다(컷 분할 사본을 늘리지 않는다)",
           not os.path.isfile("comic_cut_gen.py"))
     shutil.rmtree(_cst, ignore_errors=True)
+    # [풍선 3칙] 강제 줄바꿈 · 박스는 글자 크기대로 · 최대한 위로
+    check("발화 줄바꿈 규칙: 한글 2단어이거나 5자 이상 1단어면 반드시 두 줄 이상",
+          CPM.must_wrap("나 좋아?") and CPM.must_wrap("이대로 있으면 이상할 것 같아")
+          and CPM.must_wrap("좋았어나요") and not CPM.must_wrap("좋아")
+          and not CPM.must_wrap("좋아해요") and not CPM.must_wrap(""))
+    _ci = Image.new("RGB", (700, 460), (250, 250, 250))
+    _cd = ImageDraw.Draw(_ci)
+    CPM.set_balloon_style("vector")
+    _ok_wrap = _ok_size = _ok_top = True
+    for _i, (_k, _t, _who) in enumerate([("speech", "계속 이렇게 있을 수는 없어요. 어떻게든 찾겠어요", "other"),
+                                         ("speech", "나 좋아?", "me"),
+                                         ("thought", "이대로 있으면 정말 이상해질 것 같아", "me")]):
+        CPM._draw_balloon(_cd, 8, 8, 684, 444, CPM._balloon(_k, _t, speaker=_who), canvas=_ci, idx=_i)
+        _L = dict(CPM._BALLOON_LAST)
+        _ok_wrap &= len(_L["lines"]) >= 2
+        _ok_size &= (_L["box_h"] >= len(_L["lines"]) * _L["line_h"] and _L["fs"] >= CPM.FONT_FLOOR)
+        _ok_top &= _L["xy"][1] <= 8 + 444 * 0.34
+    check("긴 발화·짧은 2단어·속마음은 모두 두 줄 이상으로 눕는다", bool(_ok_wrap))
+    check("박스는 글자 크기 그대로 준다(박스 ≥ 글자 블록, 최소 글자 아래로 안 내려간다)", bool(_ok_size))
+    check("말풍선·속마음은 컷 위쪽 칸에 자리한다", bool(_ok_top))
+    _xy = CPM._place_in_panel(8, 8, 684, 444, 170, 60, avoid=(), prefer=("ml",), margin=8)
+    check("같은 열에서는 풍선을 맨 위까지 올린다", bool(_xy) and _xy[1] == 8 + 8)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

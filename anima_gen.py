@@ -1986,6 +1986,42 @@ ANIMA_CLOSE_FRAMING = False              # 먼 화각(wide/full body)을 upper b
 _ANIMA_HANGUL_RE = re.compile(r"[\uac00-\ud7a3][\uac00-\ud7a3\s\u00b7]*[\uac00-\ud7a3]")
 _ANIMA_AGE_TOKENS = ("loli", "child", "aged down", "loli body")
 _ANIMA_ADULT_RE = re.compile(r"large breasts|huge breasts|wide hips|cleavage|mature female", re.I)
+
+# ── 나이대 발화 정책 (2026-09-16) ─────────────────────────────────────────────
+#   실측: 시트에 mature female 을 분명히 적어도 헤더가 "1girl" + 산문 "a girl"이면
+#   서른여덟이 23.2세로 나왔다(프로브 — 인지 나이 10~14세 손실). 헤더의 자연어는 태그보다
+#   앞에 서서 화풍을 결정하므로, 나이대를 **헤더에서** 말하게 합니다.
+#   ① AGE_VOICE_PROSE: "a girl" → "a mature woman" (학습 캡션은 자연어를 함께 봅니다)
+#   ② AGE_VOICE_TAG  : 헤더에 (mature female:1.4) — 가중치 1.4는 창 게이트의 강등선(1.3) 위
+AGE_VOICE_PROSE = True
+AGE_VOICE_TAG = False        # 실측: 헤더 가중 태그만으로는 인지 나이가 오히려 −1.6세. 산문이 레버다.
+#   문구는 프로브로 비교해 고릅니다 (실측: "a mature woman" +2.4~+6.3세).
+AGE_VOICE_NOUN = {"mature": "a mature woman", "elder": "an elderly woman"}
+_AGE_ELDER_WORDS = ("old_woman", "old woman", "grandmother", "obasan", "baking", "senior woman")
+_AGE_MATURE_WORDS = ("mature female", "mature_female", "milf", "aged up", "adult woman",
+                     "housewife", "onee-san")
+
+
+def _age_voice(look_text: str = "") -> tuple:
+    """시트 속성(몸/얼굴 태그) → (산문에 쓸 명사, 헤더에 붙일 나이대 태그). 안 물으면 ("a girl","")."""
+    t = " , ".join([look_text or "", str(config.body_shape or ""), str(config.face_style or "")]).lower()
+    if any(w in t for w in _AGE_ELDER_WORDS) or re.search(r"(6[0-9]|[7-9][0-9])\s*세", t):
+        band, tag = "elder", "(old woman:1.5)"
+    elif any(w in t for w in _AGE_MATURE_WORDS) or re.search(r"(3[5-9]|[4-9][0-9])\s*세", t):
+        band, tag = "mature", "(mature female:1.4)"
+    else:
+        return "a girl", ""
+    return (AGE_VOICE_NOUN.get(band, "a girl") if AGE_VOICE_PROSE else "a girl",
+            tag if AGE_VOICE_TAG else "")
+
+
+def set_age_voice(prose: bool = None, tag: bool = None):
+    """프로브/A/B용 스위치 (None = 건드리지 않음)."""
+    global AGE_VOICE_PROSE, AGE_VOICE_TAG
+    if prose is not None:
+        AGE_VOICE_PROSE = bool(prose)
+    if tag is not None:
+        AGE_VOICE_TAG = bool(tag)
 _ANIMA_FAR_FRAMING = ("extreme long shot", "establishing shot", "wide angle shot", "distant shot",
                       "panorama", "long shot", "wide shot", "full shot", "full body view",
                       "full body visible", "full-body view", "whole body", "full body", "full-body",
@@ -3362,7 +3398,7 @@ def _build_simple_prompt_header(sex: str, safety_tag: str, is_side: bool = False
                 header += f" {he_position_desc}"
             header += "\n"
         else:
-            pronoun = "a girl" if sex in ("female", "여자", "여성") else "a boy"
+            pronoun = (_age_voice()[0] if sex in ("female", "여자", "여성") else "a boy")
             pronoun2 = "a boy" if sex2 in ("male", "남자", "남성") else "a girl"
             # [2026-09-08⑤] 군중 포즈(난교/군무 등)는 기본 카운터 '1 boy'와 충돌한다.
             # pose_text에 군중 태그가 detection되면 카운터를 승격시켜 1boy 강제를 푼다.
@@ -3387,7 +3423,10 @@ def _build_simple_prompt_header(sex: str, safety_tag: str, is_side: bool = False
         if sex in ("male", "남자", "남성"):
             header += ",1boy,solo.\nA detailed anime illustration of a boy at the center."
         else:
-            header += ",1girl,solo.\nA detailed anime illustration of a girl at the center."
+            # [2026-09-16] 나이대가 시트에 있으면 "girl" 대신 그 말을 씁니다(실측 −14세 방지)
+            noun, age_tag = _age_voice()
+            header += (f",1girl,solo" + (f", {age_tag}" if age_tag else "") +
+                       f".\nA detailed anime illustration of {noun} at the center.")
         return header
 
 

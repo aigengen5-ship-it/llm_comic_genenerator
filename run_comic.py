@@ -792,6 +792,10 @@ def main() -> int:
     ap.add_argument("--anima-close-framing", action="store_true", dest="anima_close_framing",
                     help="사람이 있는 컷의 먼 화각(wide shot·full body)을 upper body 로 바꿉니다 "
                          "(캐릭터가 작게 나오는 구도 억제 — 전신 요청 칸·배경 컷은 건드리지 않음)")
+    ap.add_argument("--no-age-voice", action="store_true", dest="no_age_voice",
+                    help="시트의 나이대를 프롬프트 문장에서 말하는 정책을 끕니다 (기본 ON)")
+    ap.add_argument("--age-voice-tag", action="store_true", dest="age_voice_tag",
+                    help="나이대를 문장 대신 헤더 가중 태그로 말합니다 (실측상 단독으로는 효과가 없었음)")
     ap.add_argument("--char-tag", default="auto", dest="char_tag", choices=["auto", "off"],
                     help="시트에 #태그#가 없을 때 닮은 캐릭터 태그를 자동으로 골라 넣는가 (기본 auto; off = 속성 태그만)")
     ap.add_argument("--char-series", action="store_true", dest="char_series",
@@ -923,6 +927,10 @@ def main() -> int:
         import comic_gen as _CG0
         _CG0.GEN_REQ_ENABLE = False
     # [2026-09-16] 닮은 캐릭터 태그 자동 선택 (chara_match) — 시트에 #태그#가 없는 회차의 얼굴 고정
+    # [2026-09-16] 나이대 발화 정책 — 헤더가 "a girl"이면 서른여덟이 23세로 나온다(프로브 실측)
+    import anima_gen as _AG_AGE
+    _AG_AGE.set_age_voice(prose=not bool(getattr(args, "no_age_voice", False)),
+                          tag=bool(getattr(args, "age_voice_tag", False)))
     config.char_match = (str(getattr(args, "char_tag", "auto")).lower() != "off")
     config.char_match_series = bool(getattr(args, "char_series", False))
     # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한

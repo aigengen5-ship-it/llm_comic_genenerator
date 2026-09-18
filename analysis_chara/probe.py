@@ -125,12 +125,14 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=118800)
     ap.add_argument("--milf", action="store_true", help="성숙/미시 시트로 돌린다")
     ap.add_argument("--hard", action="store_true", help="흑발·안경·성숙(속성으로 덜 잡히는 생김새)으로 돌린다")
-    ap.add_argument("--arms", default="off,auto,auto_series")
+    ap.add_argument("--arms", default="off,voice,auto",
+                    help="off(기준선) / voice(나이대 발화만) / voice_prose / voice_tag / auto(캐릭터 태그) / auto_series")
     ap.add_argument("--render-only", action="store_true")
     ap.add_argument("--keep", action="store_true", help="image/ 에 두고 복사하지 않음")
     ap.add_argument("--wait", type=int, default=300, help="ComfyUI 기동 대기 초")
     ap.add_argument("--prefix", default="", help="결과 파일 접두어(예: milf_) — 두 시트를 한 폴더에 둘 때")
     ap.add_argument("--reps", type=int, default=1, help="교차-시드 쌍을 여러 번 만들어 평균냅니다")
+    ap.add_argument("--noun", default="", help="나이대 산문 문구를 덮어씁니다(A/B용): 'mature=문구,elder=문구'")
     ap.add_argument("--no-cross", action="store_true",
                     help="교차-시드 검사(같은 컷을 시드 두 번)를 건너뜁니다 — 회차를 넘어 얼굴이 유지되는지의 대리 시험")
     args = ap.parse_args()
@@ -160,6 +162,12 @@ def main() -> int:
         pass
     series = str(db.get("series") or "")
     log(f"시트 → 자동 선택: {picked or '(없음)'}  작품 태그: {series or '(없음)'}")
+    if args.noun:
+        for kv in args.noun.split(","):
+            k, _, v = kv.partition("=")
+            if k.strip() and v:
+                anima_gen.AGE_VOICE_NOUN[k.strip()] = v.strip()
+        log(f"문구 덮어쓰기: {anima_gen.AGE_VOICE_NOUN}")
 
     json_value = config.get_json_value()          # plot.json + 로컬 오버레이가 다 반영된 값
     if not args.render_only:
@@ -167,21 +175,31 @@ def main() -> int:
         if not run_comic.start_comfyui(wait_seconds=int(args.wait)):
             log("ComfyUI를 켤 수 없어 렌더만 건너뜁니다 (--render-only 로 프롬프트 확인은 가능)")
             return 2
-    arms = {}
+    # 팔 = (캐릭터 태그 목록, 나이대 발화 정책 (산문, 태그))
+    arms, voice = {}, {}
     for a in str(args.arms).split(","):
         a = a.strip()
+        if not a:
+            continue
         if a == "off":
-            arms[a] = []
+            arms[a], voice[a] = [], (False, False)
+        elif a == "voice":
+            arms[a], voice[a] = [], (True, True)
+        elif a == "voice_prose":
+            arms[a], voice[a] = [], (True, False)
+        elif a == "voice_tag":
+            arms[a], voice[a] = [], (False, True)
         elif a == "auto":
-            arms[a] = [picked] if picked else []
+            arms[a], voice[a] = ([picked] if picked else []), (True, True)
         elif a == "auto_series":
-            arms[a] = ([picked] if picked else []) + ([series] if series else [])
+            arms[a], voice[a] = (([picked] if picked else []) + ([series] if series else [])), (True, True)
 
     mf = os.path.join(OUT, "manifest" + (("_" + args.prefix.rstrip("_")) if args.prefix else "") + ".json")
     manifest = {"generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
                 "seed": args.seed, "picked": picked, "series": series, "arms": {}}
     for arm, tags in arms.items():
         config.char_tags = list(tags)
+        anima_gen.set_age_voice(*(voice.get(arm) or (True, True)))
         rows = []
         for i, base in enumerate(PANELS):
             panel = dict(base)
@@ -217,6 +235,7 @@ def main() -> int:
         import image_eval as IE0
         for arm, tags in arms.items():
             config.char_tags = list(tags)
+            anima_gen.set_age_voice(*(voice.get(arm) or (True, True)))
             votes = []
             for rep in range(max(1, args.reps)):
               pair = []

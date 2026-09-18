@@ -4329,6 +4329,41 @@ def main() -> int:
     check("README 에 닮은 캐릭터 태그 기능이 적혀 있다", "닮은 캐릭터 태그" in rd and "--char-tag" in rd)
     check("README 가 로컬 경로를 노출하지 않는다", "danbooru.donmai.us" not in rd)
 
+    # ══════════════════════ 나이대 발화 정책 (헤더가 "a girl"이면 나이가 묻는다) ══════════════
+    import anima_gen as _AGV
+    _bk_body, _bk_face = config.body_shape, config.face_style
+    _AGV.set_age_voice(prose=True, tag=False)
+    config.face_style = ""
+    config.body_shape = "mature female"
+    _v_mat = _AGV._age_voice()
+    check("시트가 성숙을 요구하면 헤더 명사가 'a mature woman' 이 된다",
+          _v_mat[0] == "a mature woman", str(_v_mat))
+    check("헤더 가중 태그는 기본 OFF(실측 단독 −1.6세)", _v_mat[1] == "", str(_v_mat))
+    config.body_shape = "old woman"
+    check("노년을 요구하면 'an elderly woman'", _AGV._age_voice()[0] == "an elderly woman")
+    config.body_shape = "slim"
+    check("나이대 요구가 없으면 손대지 않는다('a girl')", _AGV._age_voice()[0] == "a girl")
+    config.body_shape = "slim"
+    _v_age = _AGV._age_voice("40세")
+    check("시트 나이가 40세면 그것만으로도 성숙 발화", _v_age[0] == "a mature woman", str(_v_age))
+    config.body_shape = "mature female"
+    _hdr = _AGV._build_simple_prompt_header("female", "safe")
+    check("실제 헤더에 문장 교대가 반영된다", "a mature woman" in _hdr and "of a girl" not in _hdr,
+          _hdr[-90:].replace("\n", " / "))
+    check("성숙 헤더는 1girl 카운터를 지킨다(화자 수 태그는 Age 와 별개)", "1girl,solo" in _hdr.replace(" ", ""))
+    _AGV.set_age_voice(prose=False)
+    check("정책 OFF 를 복원한다", _AGV._age_voice()[0] == "a girl")
+    _AGV.set_age_voice(prose=True, tag=True)
+    check("--age-voice-tag 실험용 스위치가 동작한다", _AGV._age_voice()[1].startswith("(mature female:"))
+    config.body_shape, config.face_style = _bk_body, _bk_face
+    _rc2 = ("run_comic.py", open("run_comic.py", encoding="utf-8").read())
+    check("CLI에 --no-age-voice 가 있다", '"--no-age-voice"' in _rc2[1])
+    check("CLI에 --age-voice-tag 가 있다", '"--age-voice-tag"' in _rc2[1])
+    check("CLI 플래그가 set_age_voice 로 이어진다", "set_age_voice(" in _rc2[1])
+    check("프로브 스크립트가 커밋 대상이다", os.path.isfile(os.path.join("analysis_chara", "probe.py")))
+    _rd2 = open("README.md", encoding="utf-8").read()
+    check("README 에 나이대 발화 정책이 적혀 있다", "나이대 발화 정책" in _rd2 and "a mature woman" in _rd2)
+
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")
     for f in FAILED:
         print(" -", f)

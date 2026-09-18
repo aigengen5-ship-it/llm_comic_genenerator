@@ -4365,6 +4365,7 @@ def main() -> int:
     check("프로브에 인지 나이 마지노선이 있다(너무 어리면 FAIL)", "AGE_FLOOR" in _pb and "perceived_age" in _pb)
     check("프로브는 렌더 없이 판정만 다시 할 수 있다(--judge-only)", "--judge-only" in _pb)
     _rd2 = open("README.md", encoding="utf-8").read()
+
     check("README 에 나이대 발화 정책이 적혀 있다", "나이대 발화 정책" in _rd2 and "a mature woman" in _rd2)
     # ── 눈동자 색: 도입 전엔 프롬프트에 0회였다 ──
     _bk_eye = (anima_gen.EYE_ENABLE, anima_gen.EYE_TAG_WEIGHT, anima_gen.EYE_VOICE_PROSE)
@@ -4405,6 +4406,58 @@ def main() -> int:
           _hdr3[-90:].replace("\n", " / "))
     anima_gen.set_eye_voice(weight=1.4, prose=False)
     check("프로브에 눈 색 판정이 있다", "EYE_ASK" in _pb and "eye_color" in _pb)
+    # ══════════════════════ 최고점 채택(같은 컷 N장 → VLM 점수 → 1장) ══════════════════════
+    check("기본은 1장(기존 동작과 동일)", config.comic_variants == 1 and config.comic_variants_keep is False)
+    check("CLI에 --variants / --variants-keep 가 있다",
+          '"--variants"' in _rc2[1] and '"--variants-keep"' in _rc2[1])
+    import tempfile as _tf
+    from PIL import Image as _PIL
+    _fake_dir = _tf.mkdtemp(prefix="shots_")
+    _sh = []
+    for _i in range(3):
+        _pth = os.path.join(_fake_dir, f"zz_test_shot{_i}.png")
+        _PIL.new("RGB", (8, 8), (_i * 80, 0, 0)).save(_pth)
+        _sh.append(_pth)
+    import image_eval as _IE_B
+    _bk_si = _IE_B.score_images
+    _IE_B.score_images = lambda paths, **kw: [{"score": sc, "reason": "r"} for sc in (61, 88, 74)]
+    _win, _los = CG._pick_best_shot(_sh, {"no": 99}, "1girl, solo")
+    check("3장 중 최고점(88)을 채택한다", _win == _sh[1], os.path.basename(_win or ""))
+    check("채택되지 않은 두 장이 탈락 목록에 남는다", sorted(_los) == sorted([_sh[0], _sh[2]]), str(_los))
+    CG._reject_shots(list(_los))
+    check("탈락 후보는 image/rejected/ 로 옮겨져 합성 glob 을 오염시키지 않는다",
+          not os.path.exists(_sh[0]) and not os.path.exists(_sh[2]))
+    _IE_B.score_images = lambda paths, **kw: [{"score": None, "error": "no vision"} for _ in paths]
+    _win2, _los2 = CG._pick_best_shot(_sh[:2], {"no": 99}, "1girl")
+    check("평가 불가(비전 미지원)면 1번 안을 채택하고 막지 않는다", _win2 == _sh[1] or _win2 == _sh[0])
+    _IE_B.score_images = lambda paths, **kw: (_ for _ in ()).throw(RuntimeError("boom"))
+    _win3, _ = CG._pick_best_shot(_sh[:2], {"no": 99}, "1girl")
+    check("평가기가 죽어도 렌더는 진행한다(1번 안)", _win3 in _sh[:2])
+    _IE_B.score_images = _bk_si
+    import shutil as _SH
+    _SH.rmtree(_fake_dir, ignore_errors=True)
+    _rd = os.path.join("image", "rejected")
+    for _n in (os.listdir(_rd) if os.path.isdir(_rd) else []):
+        if _n.startswith("zz_test_shot"):
+            os.remove(os.path.join(_rd, _n))
+    # ── log/tag_out.txt 실측 결함 3종 ──
+    check("가이드 구분선 '---' 가 프롬프트에서 지워진다(실측 40건)",
+          "---" not in CG._tidy_prompt("the girl1 is posing in sitting, ---\n---\nart: anime style, ---"))
+    _bk_ct = list(config.char_tags)
+    config.char_tags = ["zero two (darling in the franxx)"]
+    check("정체 태그를 속성으로 두지 않는다 — has → is (실측 16건)",
+          "the girl1 is zero two" in CG._tidy_prompt("the girl1 has zero two (darling in the franxx) and pink hair"))
+    check("줄 앞단에 벌거벗으로 놓인 정체 태그도 주어를 붙인다",
+          CG._tidy_prompt("zero two (darling in the franxx) and the girl1 has pink hair")
+          .startswith("the girl1 is zero two"))
+    config.char_tags = _bk_ct
+    _and = CG._tidy_prompt("the girl1 has pink hair\nand doing pushing\nand looking at the boy1")
+    check("and 로 시작하는 줄을 앞줄에 쉼표로 잇는다(실측 122줄)",
+          not any(l.startswith("and ") for l in _and.splitlines()) and "doing pushing" in _and, _and)
+    check("지문에 사람이면 배경만(bg_only) 판정을 취소한다(실측 7컷 중 6컷이 모순)",
+          CG._panel_has_person({"caption": "Close-up of Haruka's face, sweat on her brow"})
+          and not CG._panel_has_person({"caption": "wide establishing of the empty gym"}))
+    check("README 에 최고점 채택이 적혀 있다", "--variants" in _rd2)
     check("README 에 눈동자 색 절이 적혀 있다", "[AAA EYES]" in _rd2 and "--no-eye-tag" in _rd2)
     # ── 배너가 실제로 로드된 DB를 말한다(하드코딩된 "34종" 재발 방지) ──
     _rc3 = open("run_comic.py", encoding="utf-8").read()

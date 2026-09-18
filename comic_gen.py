@@ -33,6 +33,7 @@ import json
 import os
 import random
 import re
+import shutil
 import sys
 import time
 import zlib
@@ -1842,8 +1843,11 @@ def _apply_slot_meta(panels: list, slots: list, notes: list):
             notes.append(f"컷 {p['no']}: 생성 요청 {_gen_brief(_g).strip(' 【】')} → face/close_up")
         if _shot in ("scenery", "object") and int(_g.get("chars") or 0) == 0 \
                 and not p.get("bg_only") and str(p.get("text_role") or "") == "":
-            p["bg_only"] = True                     # 인물 없는 컷(배경/소품만)
-            notes.append(f"컷 {p['no']}: 생성 요청(인물 0명) → 배경만(bg_only)")
+            if _panel_has_person(p):
+                notes.append(f"컷 {p['no']}: 생성 요청은 인물 0명이나 지문에 사람이 있다 → 배경만 취소")
+            else:
+                p["bg_only"] = True                     # 인물 없는 컷(배경/소품만)
+                notes.append(f"컷 {p['no']}: 생성 요청(인물 0명) → 배경만(bg_only)")
 
 
 # [2026-09-15] 컷 지문에 상대방이 분명히 있는데 LLM이 multi를 안 붙이면, 상대방 태그가 아예 없이
@@ -1958,7 +1962,8 @@ def _repair_panels(raw_list, dollar_actions=None, page_plans=None, max_panels: i
              "lines": lns,                                                   # [2026-09-09] 풍선 ≤DIALOG_LINES
              "dialog": [f"{b['who']}: {b['text']}" if b["who"] else b["text"] for b in lns],
              "sfx": sfx, "text_role": "", "narr_large": False,
-             "bg_only": _norm_bool(it.get("bg_only") or it.get("_bg_only")), "fade": 0.0,
+             "bg_only": _norm_bool(it.get("bg_only") or it.get("_bg_only"))
+                                  and not _panel_has_person(it), "fade": 0.0,
              #   ↑ ★요약/에필로그 슬롯용 + [2026-09-14] special [LOCATION] 확립 컷(사람 없는 배경)
              "wide": wide, "pose": pose, "camera": cam, "position": pos, "climax": clim,
              "facing": str(it.get("facing") or "").strip().lower(), "clothes": cl,
@@ -3361,11 +3366,21 @@ def _tidy_prompt(text: str) -> str:
     """
     if not text:
         return text
+    # [2026-09-17] 캐릭터 정체 태그를 속성으로 취급하면("the girl1 has zero two (…)") 그림이 두
+    #   사람으로 갈라진다(실측 16건). 정체 태그는 "is" 자리에 놓는다.
+    id_tags = [str(t).strip() for t in (getattr(config, "char_tags", []) or []) if str(t).strip()]
     out = []
     for line in str(text).split("\n"):
+        for _t in id_tags:
+            # 줄 맨 앞에 벌거벗으로 놓인 정체 태그("zero two (…) and the girl1 has …")도 주어를 붙인다
+            line = re.sub(r"(?i)^\s*" + re.escape(_t) + r"\s*(?:and\s+)?", "the girl1 is " + _t + ", ", line)
+            line = re.sub(r"(?i)\b(has|with)\s+" + re.escape(_t) + r"(?![\w])", "is " + _t, line)
         s = line
         for junk in _JUNK_PHRASES:
             s = re.sub(rf"(?i),?\s*{re.escape(junk)}\s*(?=,|$)", "", s)
+        # [2026-09-17] prompt_pov/multi 가이드의 단락 구분선 "---"가 그대로 따라온다(실측 40건).
+        s = re.sub(r"(?i)[,;]?\s*-{2,}\s*(?=[,.]|$)", "", s)
+        s = re.sub(r"(?i)^\s*-{2,}\s*", "", s)
         s = re.sub(r"\.{2,}", ".", s)                        # "right..subject"
         s = re.sub(r"\s*\.\s*,", ",", s)                    # "him., He" → "him, He"
         s = re.sub(r",\s*\.", ",", s)                        # "him, ." → "him,"
@@ -3399,7 +3414,32 @@ def _tidy_prompt(text: str) -> str:
             else:
                 joined += ", " + pt.strip(", ")
         kept.append(joined)
-    return "\n".join(kept).strip()
+    # [2026-09-17] "and doing X / and looking at Y" 처럼 and로 시작하는 줄을 앞줄에 쉼표로 잇는다.
+    #   태그 모델에게 접속사는 의미가 없고 토큰만 먹는다(실측 한 회차에 122줄).
+    merged = []
+    for ln in kept:
+        st = ln.strip()
+        if merged and re.match(r"(?i)^and\b", st) and not merged[-1].lstrip().startswith(("[", "=")):
+            merged[-1] = merged[-1].rstrip().rstrip(",") + ", " + re.sub(r"(?i)^and\s+", "", st)
+        else:
+            merged.append(ln)
+    return "\n".join(merged).strip()
+
+
+# [2026-09-17] 컷 지문에 사람이는데 배경만 태그를 박으면(실측 7컷 중 6컷) 모델이 사람을 지운다.
+#   손/얼굴 같은 부분 클로즈업도 "no humans"는 틀린다 — 손은 사람의 일부다.
+_PERSON_WORDS = re.compile(
+    r"\b(she|her|hers|herself|he|his|him|girl1|boy1|man1|woman1|haruka|face|eyes|brow|hand|hands|"
+    r"wrist|fingers|breasts|thighs|shoulder|smile|expression|figure|silhouette|standing|walking|"
+    r"sitting|turning|reaching|looking)\b", re.I)
+_KO_PERSON = re.compile(r"그녀|그는|소녀|주인공|손|얼굴|눈|어깨|허벅지|서|걷|앉|돌아|바라")
+
+
+def _panel_has_person(panel) -> bool:
+    """컷 지문·자세·대사에 사람이 등장하는가(배경만 판정의 안전망)."""
+    txt = " ".join(str(panel.get(k) or "") for k in
+                   ("caption", "caption_ko", "pose", "text", "dialogue", "narration", "position"))
+    return bool(_PERSON_WORDS.search(txt) or _KO_PERSON.search(txt))
 
 
 BG_ONLY_TAGS = ("detailed background, scenery, landscape, no humans, no people, empty scene, "
@@ -3636,13 +3676,55 @@ def _apply_slot_aspects(panels, page_specs):
         off += k
 
 
+def _pick_best_shot(shots, panel, prompt):
+    """N장 후보 → VLM 점수로 최고점 1장 채택 → (채택본, 탈락 목록).
+
+    평가가 안 되면(서버 비전 미지원/응답 파싱 실패) 점수 없이 1번 안을 채택합니다 —
+    평가 실패가 렌더를 막아선 안 됩니다(image_eval 규칙과 동일).
+    """
+    if len(shots) < 2:
+        return (shots[0] if shots else None), []
+    ctx = str(panel.get("caption_ko") or panel.get("caption") or panel.get("pose") or "")
+    try:
+        import image_eval as IE
+        got = IE.score_images(shots, tags=[prompt] * len(shots), contexts=[ctx] * len(shots))
+    except Exception as e:
+        _clog(f"컷 {panel['no']}: 평가기를 돌리지 못했습니다({e}) — 1번 안 채택")
+        return shots[0], shots[1:]
+    rows = [(int(r["score"]), i, str(r.get("reason") or "")[:60])
+            for i, r in enumerate(got) if isinstance(r, dict) and r.get("score") is not None]
+    if not rows:
+        _clog(f"컷 {panel['no']}: 평가 불가(비전 미지원 응답) — 1번 안 채택")
+        return shots[0], shots[1:]
+    rows.sort(key=lambda x: (-x[0], x[1]))
+    win = rows[0]
+    _clog(f"컷 {panel['no']} 최고점 채택: {os.path.basename(shots[win[1]])} {win[0]}점 "
+          f"(후보 {', '.join(str(r[0]) for r in rows)}) — {win[2]}")
+    return shots[win[1]], [shots[i] for _, i, _ in rows[1:]]
+
+
+def _reject_shots(paths):
+    """탈락 후보를 image/rejected/ 로 옮깁니다(같은 이름 glob 이 합성을 오염시키지 않게)."""
+    if not paths:
+        return
+    dst = os.path.join("image", "rejected")
+    os.makedirs(dst, exist_ok=True)
+    for pth in paths:
+        try:
+            shutil.move(pth, os.path.join(dst, os.path.basename(pth)))
+        except OSError:
+            pass
+
+
 def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dict,
                  wait_seconds: int = 120, gloss: dict = None, angle_preset=None,
-                 prompt: str = None):
+                 prompt: str = None, variants: int = None):
     """컷 1개 렌더 → 생성 PNG 경로 (실패 시 None)
 
     prompt: 미리 조립해 둔 프롬프트. 주면 그대로 쓴다(재조립 안 함) — pov/multi 가이드는
             LLM 호출이라 렌더 루프 안에서 돌리면 모델이 VRAM에 다시 올라온다.
+    variants: 같은 컷을 시드만 바꿔 N장 뽑아 최고점을 채택한다(기본 config.comic_variants=1 = 기존 동작).
+              후보는 image/rejected/ 로 옮겨져 합성이 오염되지 않는다.
     """
     full_prompt = prompt if prompt else build_panel_prompt(ep_idx, panel, safety_tag,
                                                           gloss=gloss, angle_preset=angle_preset)
@@ -3657,41 +3739,59 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
     res = _res_for_aspect(panel.get("slot_aspect"))
     if res is None:
         res = WIDE_RES if panel.get("wide") else PANEL_RES        # wide 컷 = 1366x1024
-    t_queue = time.time() - 2        # 이 시각 이후에 만들어진 파일만 '이번 컷의 결과'로 인정
-    ids = []
-    try:
-        prefix = anima_gen.comfyui_run_anima(json_value, ep_idx, full_prompt, res,
-                                             seed=seed, queue_count=1, ids_out=ids) or ""
-        # [2026-09-12] prompt_id를 넘긴다 — 큐가 진짜 끝났는지 ComfyUI에 확인받고 파일명도 받는다
-        anima_gen._wait_and_copy_image(prefix, json_value, min_mtime=t_queue,
-                                       wait_seconds=wait_seconds, prompt_ids=ids)
-    except Exception as e:
-        _clog(f"EP{ep_idx+1} 컷{panel['no']} 렌더 실패: {e}")
-        return None
-    finally:
-        anima_gen.anima_nametag = old_nametag
-        config.episode_num = old_epnum
+    n = max(1, int(variants if variants is not None else getattr(config, "comic_variants", 1) or 1))
+    shots = []
+    for i in range(n):
+        seed_i = int(seed) + i * 1009          # 회차 기준 고정 + 컷 오프셋 (+ 후보 오프셋) — 재현 가능
+        t_queue = time.time() - 2              # 이 시각 이후에 만들어진 파일만 '이번 컷의 결과'로 인정
+        ids = []
+        try:
+            prefix = anima_gen.comfyui_run_anima(json_value, ep_idx, full_prompt, res,
+                                                 seed=seed_i, queue_count=1, ids_out=ids) or ""
+            # [2026-09-12] prompt_id를 넘긴다 — 큐가 진짜 끝났는지 ComfyUI에 확인받고 파일명도 받는다
+            anima_gen._wait_and_copy_image(prefix, json_value, min_mtime=t_queue,
+                                           wait_seconds=wait_seconds, prompt_ids=ids)
+        except Exception as e:
+            _clog(f"EP{ep_idx+1} 컷{panel['no']} 렌더 실패(seed={seed_i}): {e}")
+            continue
+        finally:
+            anima_gen.anima_nametag = old_nametag
+            config.episode_num = old_epnum
 
-    keys = [prefix] + ([prefix[:50]] if len(prefix) > 50 else [])   # SaveImage 50자 절단 대응
-    hits = []
-    for k in keys:
-        hits = sorted(glob.glob(os.path.join("image", f"{k}*.png")))
-        if hits:
-            break
-    if not hits:
-        for _outd in anima_gen._comfyui_output_dirs(json_value):
-            for k in keys:
-                hits = sorted(glob.glob(os.path.join(_outd, f"{k}*.png")))
-                if hits:
-                    break
+        keys = [prefix] + ([prefix[:50]] if len(prefix) > 50 else [])   # SaveImage 50자 절단 대응
+        hits = []
+        for k in keys:
+            hits = sorted(glob.glob(os.path.join("image", f"{k}*.png")))
             if hits:
                 break
-    fresh = [h for h in hits if os.path.getmtime(h) >= t_queue]
-    if fresh:
-        hits = fresh
-    _clog(f"EP{ep_idx+1} 컷{panel['no']} ({panel['type']}{'/wide' if panel.get('wide') else ''}) "
-          f"res={res} seed={seed} → {os.path.basename(hits[-1]) if hits else '실패'}")
-    return hits[-1] if hits else None
+        if not hits:
+            for _outd in anima_gen._comfyui_output_dirs(json_value):
+                for k in keys:
+                    hits = sorted(glob.glob(os.path.join(_outd, f"{k}*.png")))
+                    if hits:
+                        break
+                if hits:
+                    break
+        fresh = [h for h in hits if os.path.getmtime(h) >= t_queue]
+        if fresh:
+            hits = fresh
+        _clog(f"EP{ep_idx+1} 컷{panel['no']} ({panel['type']}{'/wide' if panel.get('wide') else ''}) "
+              f"res={res} seed={seed_i}"
+              + (f" [{i + 1}/{n}]" if n > 1 else "")
+              + f" → {os.path.basename(hits[-1]) if hits else '실패'}")
+        if hits:
+            shots.append(hits[-1])
+    anima_gen.anima_nametag = old_nametag
+    config.episode_num = old_epnum
+    if not shots:
+        return None
+    if len(shots) == 1 or getattr(config, "comic_variants_keep", False):
+        if len(shots) > 1:
+            _clog(f"컷 {panel['no']}: 후보 {len(shots)}장 전부 보존(--variants-keep)")
+        return shots[-1]
+    win, losers = _pick_best_shot(shots, panel, full_prompt)
+    _reject_shots(losers)
+    return win
 
 
 # ------------------------------------------------------------------ 에피소드 실행

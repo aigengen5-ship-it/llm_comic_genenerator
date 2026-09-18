@@ -785,6 +785,10 @@ def main() -> int:
     ap.add_argument("--no-wide", action="store_true", help="wide(1366x1024) 컷 금지")
     ap.add_argument("--cut-yaml", dest="cut_yaml", default="",
                     help="페이지 템플릿 DB 경로를 바꿉니다 (예: data/cut_new.yaml — 실측 기반 20종, 칸별 생성 요청 gen 포함)")
+    ap.add_argument("--variants", type=int, default=1, metavar="N",
+                    help="컷당 N장 뽑아 VLM 점수로 최고점만 채택합니다(기본 1). 후보는 image/rejected/ 로 옮겨집니다")
+    ap.add_argument("--variants-keep", action="store_true", dest="variants_keep",
+                    help="후보 전원을 image/ 에 보존합니다(채택본만 남기지 않음 — 합성은 마지막 장을 씁니다)")
     ap.add_argument("--no-cut-gen", action="store_true",
                     help="템플릿의 gen(칸별 이미지 생성 요청: 전신·클로즈업·배경 등)을 끄고 비율/순서만 씁니다")
     ap.add_argument("--no-token-gate", action="store_true", dest="no_token_gate",
@@ -942,6 +946,8 @@ def main() -> int:
     _AG_EYE.set_eye_voice(weight=float(getattr(args, "eye_weight", 1.4)),
                           prose=bool(getattr(args, "eye_prose", False)),
                           enable=not bool(getattr(args, "no_eye_tag", False)))
+    config.comic_variants = max(1, int(getattr(args, "variants", 1) or 1))
+    config.comic_variants_keep = bool(getattr(args, "variants_keep", False))
     config.char_match = (str(getattr(args, "char_tag", "auto")).lower() != "off")
     config.char_match_series = bool(getattr(args, "char_series", False))
     # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한

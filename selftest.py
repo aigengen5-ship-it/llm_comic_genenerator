@@ -4360,7 +4360,10 @@ def main() -> int:
     check("CLI에 --no-age-voice 가 있다", '"--no-age-voice"' in _rc2[1])
     check("CLI에 --age-voice-tag 가 있다", '"--age-voice-tag"' in _rc2[1])
     check("CLI 플래그가 set_age_voice 로 이어진다", "set_age_voice(" in _rc2[1])
+    _pb = open(os.path.join("analysis_chara", "probe.py"), encoding="utf-8").read()
     check("프로브 스크립트가 커밋 대상이다", os.path.isfile(os.path.join("analysis_chara", "probe.py")))
+    check("프로브에 인지 나이 마지노선이 있다(너무 어리면 FAIL)", "AGE_FLOOR" in _pb and "perceived_age" in _pb)
+    check("프로브는 렌더 없이 판정만 다시 할 수 있다(--judge-only)", "--judge-only" in _pb)
     _rd2 = open("README.md", encoding="utf-8").read()
     check("README 에 나이대 발화 정책이 적혀 있다", "나이대 발화 정책" in _rd2 and "a mature woman" in _rd2)
 

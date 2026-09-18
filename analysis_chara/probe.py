@@ -77,6 +77,16 @@ SHEET_HARD = {
     "actions": [], "rating": "SAFE",
 }
 
+# 성숙/노년 시트의 '너무 어리지 않은가' 마지노선 — 러브코미디 화풍은 원래 젊게 나오므로
+# 30대 중반을 30대로 뽑자는 기준이 아니라, 20대 중반 이하로 밀리면政策이 죽었다고 본다.
+AGE_FLOOR = {"plain": 0, "milf": 25, "hard": 25}
+
+AGE_ASK = """각 그림의 주인공 여성이 몇 살로 보이는지 추정하세요. 그림 {n}장을 순서대로 봅니다.
+나이는 실제 나이대보다 젊게 그려지기 쉬우니, 화풍이 어려 보여도 얼굴·몸·차림새의 나이대를 보세요.
+답은 반드시 이 형식만:
+AGE: 숫자, 숫자, … ({n}개, 쉼표 구분, 세는 단위 없이)
+NOTE: 18자 안쪽으로 인상 한 마디"""
+
 # 4구도 — 얼굴·상반신·전신·측면 (구도가 바뀌어도 같은 인물이어야 한다)
 PANELS = [
     {"no": 1, "type": "face", "caption_ko": "", "dialog": [], "lines": [], "sfx": "",
@@ -133,6 +143,8 @@ def main() -> int:
     ap.add_argument("--prefix", default="", help="결과 파일 접두어(예: milf_) — 두 시트를 한 폴더에 둘 때")
     ap.add_argument("--reps", type=int, default=1, help="교차-시드 쌍을 여러 번 만들어 평균냅니다")
     ap.add_argument("--noun", default="", help="나이대 산문 문구를 덮어씁니다(A/B용): 'mature=문구,elder=문구'")
+    ap.add_argument("--judge-only", action="store_true",
+                    help="렌더를 건너뛰고 이미 뽑힌 그림으로 판정·인지 나이만 다시 합니다")
     ap.add_argument("--no-cross", action="store_true",
                     help="교차-시드 검사(같은 컷을 시드 두 번)를 건너뜁니다 — 회차를 넘어 얼굴이 유지되는지의 대리 시험")
     args = ap.parse_args()
@@ -194,10 +206,19 @@ def main() -> int:
         elif a == "auto_series":
             arms[a], voice[a] = (([picked] if picked else []) + ([series] if series else [])), (True, True)
 
+    band = "hard" if args.hard else ("milf" if args.milf else "plain")
     mf = os.path.join(OUT, "manifest" + (("_" + args.prefix.rstrip("_")) if args.prefix else "") + ".json")
     manifest = {"generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
                 "seed": args.seed, "picked": picked, "series": series, "arms": {}}
+    if args.judge_only and os.path.isfile(mf):
+        manifest = json.load(open(mf, encoding="utf-8"))
+        for arm in list(arms):
+            arms[arm] = [r for r in manifest.get("arms", {}).get(arm, [])]
+            arms[arm] = ([picked] if picked and arm in ("auto", "auto_series") else [])
+        log("렌더 생략 — 기존 그림으로 판정만 합니다")
     for arm, tags in arms.items():
+        if args.judge_only:
+            continue
         config.char_tags = list(tags)
         anima_gen.set_age_voice(*(voice.get(arm) or (True, True)))
         rows = []
@@ -280,6 +301,38 @@ def main() -> int:
         json.dump(manifest, open(mf, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     import image_eval as IE
+    import re as _re2
+
+    def perceived_age(rows, tag):
+        """그림 무더기를 VLM에 보여주고 인지 나이를 받는다 → (list, 평균)"""
+        imgs = [r["png"] for r in rows if os.path.isfile(r.get("png", ""))]
+        if len(imgs) < 2:
+            return [], None
+        msg = [{"role": "user", "content": [{"type": "text", "text": AGE_ASK.format(n=len(imgs))}]}]
+        for p_ in imgs:
+            msg[0]["content"].append({"type": "image_url", "image_url": {"url": IE.image_data_url(p_)}})
+        try:
+            ans = IE.ask_image_raw(msg) or ""
+        except Exception as e:
+            log(f"  인지 나이 판정 실패({tag}): {e}")
+            return [], None
+        m = _re2.search(r"AGE[^0-9]{0,8}([0-9][0-9,\s]*)", ans.upper())
+        ages = [int(x) for x in _re2.findall(r"\d+", m.group(1))][:len(imgs)] if m else []
+        ages = [a for a in ages if 8 <= a <= 90]
+        return ages, (round(sum(ages) / len(ages), 1) if ages else None)
+
+    floor = AGE_FLOOR.get(band, 0)
+    for arm, rows in manifest.get("arms", {}).items():
+        ages, avg = perceived_age(rows, arm)
+        if avg is None:
+            continue
+        verdict = "PASS" if avg >= floor else "FAIL"
+        manifest.setdefault("perceived_age", {})[arm] = {"ages": ages, "avg": avg,
+                                                        "floor": floor, "verdict": verdict}
+        log(f"  인지 나이 {arm:12s} {ages} 평균 {avg}세 · 마지노선 {floor}세 → {verdict}"
+            + ("" if floor else " (이 시트는 나이대 요구 없음)"))
+    json.dump(manifest, open(mf, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
     log("VLM 판정 시작")
     for arm, rows in manifest["arms"].items():
         if len(rows) < 2:

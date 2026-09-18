@@ -4364,9 +4364,51 @@ def main() -> int:
     check("프로브 스크립트가 커밋 대상이다", os.path.isfile(os.path.join("analysis_chara", "probe.py")))
     check("프로브에 인지 나이 마지노선이 있다(너무 어리면 FAIL)", "AGE_FLOOR" in _pb and "perceived_age" in _pb)
     check("프로브는 렌더 없이 판정만 다시 할 수 있다(--judge-only)", "--judge-only" in _pb)
+    # ══════════════════════ 캐릭터 태그: 괄호 escaping · 동률 랜덤 ══════════════════════
+    import chara_match as _CMH
+    check("anima 요구: 태그의 ( ) 는 \( \) 로 나간다",
+          _CMH.prompt_safe("zero_two_(darling_in_the_franxx)") == "zero_two_\(darling_in_the_franxx\)",
+          _CMH.prompt_safe("zero_two_(darling_in_the_franxx)"))
+    check("괄호 없는 태그는 그대로", _CMH.prompt_safe("mizuhara_chizuru") == "mizuhara_chizuru")
+    _db = {}
+    for _i, _t in enumerate(["aaa_char", "bbb_char", "ccc_char", "ddd_char"]):
+        _db[_t] = {"posts": 5000, "age_band": "adult", "kid_pct": 0, "mature_pct": 0,
+                   "explicit_pct": 10, "hair_color": {"black_hair": 100}, "hair_length": {"long_hair": 100},
+                   "eyes": {"brown_eyes": 100}, "traits": {}, "outfit": {}, "skin": {}}
+    _proto = {"hair_color": "black hair", "hair_style": "long hair", "eye_color": "brown eyes"}
+    _r1 = _CMH.pick_char_lookalike(_proto, db=_db)
+    check("기본은 최고점 하나(기존 동작) — 랜덤 아님", _CMH.PICK_RANDOM is False and _r1.get("tag") == "aaa_char",
+          str(_r1.get("tag")))
+    _CMH.set_pick(topk=3, margin=0.5, randomize=True, seed="FIXED")
+    _ra = _CMH.pick_char_lookalike(_proto, db=_db)
+    _CMH.set_pick(topk=3, margin=0.5, randomize=True, seed="FIXED")
+    _rb = _CMH.pick_char_lookalike(_proto, db=_db)
+    check("동률 풀(마진 이내)에서 뽑고, 같은 시드는 같은 선택을 준다",
+          _ra.get("tag") == _rb.get("tag") and len(_ra.get("pool") or []) >= 2,
+          str((_ra.get("tag"), _ra.get("pool"))))
+    _CMH.set_pick(topk=1, margin=0.05, randomize=False, seed=None)
+    check("CLI에 캐릭터 고름 플래그가 있다",
+          '"--char-pick"' in _rc2[1] and '"--char-topk"' in _rc2[1] and '"--char-seed"' in _rc2[1])
+    check("config 에 고름 설정이 있다",
+          getattr(config, "char_match_pick", "") in ("best", "random")
+          and isinstance(getattr(config, "char_match_topk", 0), int))
+    _rd9 = open("README.md", encoding="utf-8").read()
+    _hy9 = open("HISTORY.md", encoding="utf-8").read()
+    check("README 에 캐릭터 고름이 적혀 있다", "--char-pick" in _rd9)
+    check("HISTORY 에 괄호 escaping 사유가 적혀 있다", "가중치" in _hy9 and "대괄호" in _hy9 or "\\(" in _hy9)
     _rd2 = open("README.md", encoding="utf-8").read()
 
-    check("README 에 나이대 발화 정책이 적혀 있다", "나이대 발화 정책" in _rd2 and "a mature woman" in _rd2)
+    check("README 에 나이대 발화 동작이 적혀 있다", "나이대 발화" in _rd2 and "a mature woman" in _rd2)
+    _hy = open("HISTORY.md", encoding="utf-8").read()
+    check("연대기는 HISTORY.md 로 빠져 있다(README 은 현재 동작만)",
+          "2026-" not in _rd2 and "변경 이력" in _hy and "커밋 연대기" in _hy)
+    check("HISTORY 에 실측 근거가 남아 있다", "29.5" in _hy and "430" in _hy and "122줄" in _hy.replace("`", ""))
+    check("README 가 HISTORY 를 가리킨다", "README 가 HISTORY" or "HISTORY.md" in _rd2)
+    check("로컬 흐름 문서가 있다(있으면 순서·파일 표를 확인)",
+          (not os.path.isfile("FLOW_LOCAL.md"))
+          or all(k in open("FLOW_LOCAL.md", encoding="utf-8").read()
+                 for k in ("run_comic.py", "comic_input", "render_panel", "compose_pages",
+                           "local_settings.yaml", "plot.local.json", "읽는 파일")))
     # ── 눈동자 색: 도입 전엔 프롬프트에 0회였다 ──
     _bk_eye = (anima_gen.EYE_ENABLE, anima_gen.EYE_TAG_WEIGHT, anima_gen.EYE_VOICE_PROSE)
     config.eye_color = "brown eyes"

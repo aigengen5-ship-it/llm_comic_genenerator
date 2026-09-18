@@ -1591,8 +1591,11 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
             config.char_tags = [_cm["tag"]]
             if getattr(config, "char_match_series", False) and _cm.get("series"):
                 config.char_tags.append(_cm["series"])
+            _pool = _cm.get("pool") or []
             clog(f"[[CHAR TAG]] 시트 속성( {_cm.get('why','')} ) → **{_cm['tag']}** "
-                 f"(유사도 {_cm['score']}, 학습 {_cm['posts']}글) — 모든 컷에 강제 주입됩니다")
+                 f"(유사도 {_cm['score']}, 학습 {_cm['posts']}글)"
+                 + (f" — 동률 후보 {len(_pool)}개 중 뽑음 [{', '.join(_pool)}]" if _pool else "")
+                 + " — 모든 컷에 강제 주입됩니다")
         elif _cm:
             clog(f"[[CHAR TAG]] {_cm.get('rejected', '후보 없음')} — 속성 태그만 사용합니다")
 

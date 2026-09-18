@@ -808,6 +808,12 @@ def main() -> int:
                     help="나이대를 문장 대신 헤더 가중 태그로 말합니다 (실측상 단독으로는 효과가 없었음)")
     ap.add_argument("--char-tag", default="auto", dest="char_tag", choices=["auto", "off"],
                     help="시트에 #태그#가 없을 때 닮은 캐릭터 태그를 자동으로 골라 넣는가 (기본 auto; off = 속성 태그만)")
+    ap.add_argument("--char-pick", default="", dest="char_pick", choices=["", "best", "random"],
+                    help="닮은 캐릭터 후보 고름: best(기본, 최고점 하나) / random(동률 후보에서 랜덤)")
+    ap.add_argument("--char-topk", type=int, default=3, dest="char_topk", metavar="N",
+                    help="랜덤 고름 때 풀에 넣을 최대 후보 수(기본 3, 유사도 마진 0.05 이내만)")
+    ap.add_argument("--char-seed", default="", dest="char_seed",
+                    help="캐릭터 랜덤 고름 재현 시드(예: plot 해시) — 비우면 매 실행 다르게 뽑습니다")
     ap.add_argument("--char-series", action="store_true", dest="char_series",
                     help="고른 캐릭터의 작품(저작권) 태그도 같이 넣습니다 — 화풍을 그 작품으로 끌어당기므로 A/B 후 사용")
     ap.add_argument("--font", default="", help="한글 폰트 ttf/ttc 경로 (비우면 OS별 자동probe; 예: C:\\Windows\\Fonts\\malgunbd.ttf)")
@@ -949,6 +955,13 @@ def main() -> int:
     config.comic_variants = max(1, int(getattr(args, "variants", 1) or 1))
     config.comic_variants_keep = bool(getattr(args, "variants_keep", False))
     config.char_match = (str(getattr(args, "char_tag", "auto")).lower() != "off")
+    import chara_match as _CM_PICK
+    _pk = str(getattr(args, "char_pick", "") or "").lower()
+    config.char_match_pick = _pk or ("random" if config.char_match_pick else "best")
+    config.char_match_topk = max(1, int(getattr(args, "char_topk", 3) or 3))
+    config.char_match_seed = str(getattr(args, "char_seed", "") or "")
+    _CM_PICK.set_pick(topk=config.char_match_topk, randomize=(config.char_match_pick == "random"),
+                      seed=(config.char_match_seed or None))
     config.char_match_series = bool(getattr(args, "char_series", False))
     # [2026-09-16] Anima 학습 창(512 슬롯) 게이트 — 정본(llm_shortnovel_generator_gui)에서 이식한
     #   프롬프트 재단기. 렌더 직전 comfyui_run_anima 에서 도므로 여기서는 스위치만 세운다.

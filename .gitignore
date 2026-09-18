@@ -62,3 +62,5 @@ analysis_chara/*.log
 analysis_chara/*.json
 # 캐릭터 태그 프로브 실렌더 결과 (probe.py 로 재생성 — 그림이라 커밋하지 않습니다)
 analysis_chara/probe/
+# 로컬 전용 문서(머신 고유포트·경로를 그대로 적는다) — README_local.md와 같은 취급
+FLOW_LOCAL.md

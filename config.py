@@ -89,6 +89,9 @@ partner_char_tags = []            # 상대방 태그 목록 — [BBB]쪽(POV 컷
 comic_variants = 1
 comic_variants_keep = False         # True 면 후보를 image/rejected/ 로 옮기지 않고 전부 둔다
 char_match = True                 # off: 속성 태그만 사용
+char_match_pick = "best"            # best: 최고점 하나 / random: 동률(이내 점수) 후보에서 랜덤
+char_match_topk = 3                 # 랜덤 풀에 넣을 최대 후보 수 (유사도 마진은 chara_match.PICK_MARGIN)
+char_match_seed = ""                # 랜덤 재현용 시드 (비우면 매 실행 다름)
 char_match_series = False         # 작품(저작권) 태그를 같이 넣는가 — 화풍을 그 작품으로 끌어당겨 기본 OFF
 
 # ------------------------------------------------------------------ 상대방 (Character B)

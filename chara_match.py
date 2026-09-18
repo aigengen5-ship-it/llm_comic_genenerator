@@ -16,6 +16,7 @@
      들어옵니다 — 속성 태그만 쓰는 편이 낫습니다.
 """
 import os
+import random
 import re
 
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chara_tags.yaml")
@@ -25,6 +26,13 @@ MIN_POSTS = 600          # 학습량 하한 — 이 아래면 얼굴이 아니�
 #   Danbooru 관례가 있어서, elder/child는 같은 신호로 더 적은 글을 먹습니다.
 MIN_POSTS_BY_BAND = {"adult": 600, "child": 300, "elder": 150}   # 나이대 코드는 모수가 원래 작다
 THRESHOLD = 0.50         # 이보다 낮으면 태그 사용 중단(속성 태그만)
+
+# ── 후보 고름 · 태그 표기 ────────────────────────────────────────────────────
+PAREN_ESCAPE = True      # 태그의 ( ) 를 \( \) 로 — anima는 괄호를 가중치로 읽는다
+PICK_TOPK = 1            # 최고점과 근소차 후보 중 몇 개를 풀로 보나 (1 = 오직 최고점)
+PICK_MARGIN = 0.05       # 이 안에서만 '같은 급'으로 본다 (유사도는 0~1 정규화)
+PICK_RANDOM = False      # True 면 풀 안에서 랜덤 (출연진 다양화용)
+_PICK_RND = random.Random()
 MAX_EXPLICIT = 60        # 이 태그가 끌어오는 성인 콘텐츠 비율 상한 (safe 기본 정책)
 
 # 요청 속성(시트의 영문 태그 문자열) → DB 속성 키. 점수 가중치.
@@ -163,8 +171,36 @@ def score_one(tag: str, d: dict, req: dict) -> tuple:
     return max(0.0, s - pen), ",".join(why) + (",복장 유입 감점" if pen else "")
 
 
+def prompt_safe(tag: str) -> str:
+    """태그를 anima 요청 규격으로 보냅니다 — `(` `)` 는 `\\(` `\\)`.
+
+    anima/SDXL 계열은 괄호를 **가중치 구문**으로 읽습니다. Danbooru 태그는 동명이인 구분자로
+    괄호를 쓰므로(`zero_two_(darling_in_the_franxx)`) 그대로 보내면 `darling in the franxx`가
+    가중치로 해석되어 캐릭터가 빠집니다. 밑줄→공백 치환과 순서가 무엇이든 결과는 같습니다.
+    """
+    t = str(tag or "")
+    return t.replace("(", "\\(").replace(")", "\\)") if PAREN_ESCAPE else t
+
+
+def set_pick(topk: int = None, margin: float = None, randomize: bool = None, seed=None):
+    """후보 고름 규칙을 바꿉니다(프로브/CLI용). None 은 건드리지 않음."""
+    global PICK_TOPK, PICK_MARGIN, PICK_RANDOM, _PICK_RND
+    if topk is not None:
+        PICK_TOPK = max(1, int(topk))
+    if margin is not None:
+        PICK_MARGIN = max(0.0, float(margin))
+    if randomize is not None:
+        PICK_RANDOM = bool(randomize)
+    if seed is not None:
+        _PICK_RND = random.Random(seed)
+
+
 def pick_char_lookalike(proto: dict, skin: str = None, db: dict = None, top: int = 3) -> dict:
-    """시트 protagonist 속성으로 가장 닮은(학습량 확인된) 캐릭터 태그를 고릅니다. 없으면 None."""
+    """시트 protagonist 속성으로 가장 닮은(학습량 확인된) 캐릭터 태그를 고릅니다. 없으면 None.
+
+    후보가 여러 개면(유사도가 최고점과 PICK_MARGIN 이내) 그중 랜덤으로 고릅니다(기본은 최고점 하나).
+    반환 태그는 anima 규격으로 escaped 되어 있습니다(`\\(` `\\)`). 원본 태그가 궁금하면 candidates 의 raw 를 보세요.
+    """
     db = db if db is not None else load_db()
     if not db or not proto:
         return None
@@ -180,11 +216,17 @@ def pick_char_lookalike(proto: dict, skin: str = None, db: dict = None, top: int
         return None
     scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
     best = scored[0]
-    out = {"candidates": [{"tag": t, "score": round(s, 3), "why": w} for s, p, t, w in scored[:top]],
+    out = {"candidates": [{"tag": prompt_safe(t), "raw": t, "score": round(s, 3), "why": w}
+                          for s, p, t, w in scored[:top]],
            "threshold": THRESHOLD}
     if best[0] < THRESHOLD:
         out["rejected"] = f"최고 유사도 {best[0]:.2f} < {THRESHOLD} — 속성 태그만 사용"
         return out
-    out.update({"tag": best[2], "score": round(best[0], 3), "why": best[3],
-                "posts": best[1], "series": (db.get(best[2]) or {}).get("series") or ""})
+    # 동률(이내 점수) 후보 — 랜덤 선택은 여기서만 일어난다
+    pool = [c for c in scored[:max(1, PICK_TOPK)] if c[0] >= best[0] - PICK_MARGIN]
+    chosen = _PICK_RND.choice(pool) if PICK_RANDOM else pool[0]
+    out.update({"tag": prompt_safe(chosen[2]), "raw": chosen[2], "score": round(chosen[0], 3),
+                "why": chosen[3], "posts": chosen[1],
+                "series": prompt_safe((db.get(chosen[2]) or {}).get("series") or ""),
+                "pool": [prompt_safe(c[2]) for c in pool] if len(pool) > 1 else []})
     return out

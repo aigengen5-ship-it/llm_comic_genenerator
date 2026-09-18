@@ -203,6 +203,14 @@ def load(dir_path: str, ep_num: int, names: dict = None, mode: str = "rec",
     kept, dropped = budget(got["items"], target_pages=target_pages, per_page=per_page)
     audit = dict(got["audit"])
     audit["dropped"] = list(audit.get("dropped") or []) + list(dropped)
+    # 이 디렉토리가 "한 실행분"인지 파일명으로 확인합니다(manifest 없이) — 컷 시트 이름엔 해시가 없어서
+    # 옆에 놓인 시트·본문 사본의 해시를 봅니다. 두 개 이상이면 다른 실행이 섞인 것입니다.
+    _hs = set()
+    for _f in os.listdir(dir_path):
+        _m = re.search(r"_([0-9a-f]{12,32})(?:\.[a-z]+)?$", str(_f))
+        if _m:
+            _hs.add(_m.group(1))
+    audit["hashes"] = sorted(_hs)
     audit["after_budget"] = len(kept)
     audit["target_pages"] = int(target_pages or 12)
     return {"items": kept, "audit": audit, "path": path}

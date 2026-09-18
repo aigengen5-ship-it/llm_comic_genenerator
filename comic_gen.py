@@ -784,6 +784,7 @@ def _apply_special_plan(raw_list, plan, notes) -> list:
             elif kind == "standing":
                 it["caption_ko"] = ""                # [CLOTHES]는 자막 없이 그림으로만 보여 준다
                 it["caption_screen"] = ""
+            it["_spec_kind"] = str(sp.get("kind") or "")     # 스탠딩 재사용이 이 자국을 찾는다
         notes.append(f"컷 {j + 1}: [{str(sp.get('kind') or '')}] 원작 헤더를 그대로 배분")
     return raw_list
 
@@ -3500,7 +3501,7 @@ def _build_bg_only_prompt(ep_idx: int, panel, safety_tag: str) -> str:
 
 
 def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, angle_preset=None,
-                       tidy: bool = True) -> str:
+                       tidy: bool = True, standing: bool = False) -> str:
     """컷 1개 → 최종 ComfyUI 프롬프트 (헤더 + [ANGLE] + 납작태그 본문)
 
     [2026-09-07] gloss: EP당 1회 만든 한글→영문 glossary(없으면 한글 조각 파기).
@@ -3563,10 +3564,13 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         angle = anima_gen._resolve_angle_tags(angle_preset) or angle
         _clog(f"EP{ep_idx+1} 컷{panel['no']} angle 프리셋 → {angle}")
     if is_face:
-        # 정석 close-up에는 방향이 없다 — 정면(from_front)을 명시해 얼굴 전체 정면 구도를 강제한다
+        # 정석 close-up에는 방향이 없다 — 정면(from_front)을 명시해 얼굴 전체 정면 구도를 강…
         angle = f"{angle}, from_front, {FACE_CLOSEUP_TAGS.rstrip(', ')}\n"
     else:
         angle = f"{angle}\n"
+    if standing:
+        # 전신 한 장 = 흰 배경 타치-e(정본 anima_gen_standing과 같은 어구) — 합성에서 배경 위에 얹습니다
+        angle = anima_gen.ANIMA_STANDING_ANGLE + "\n"
     header = header.replace("[ANGLE]", angle)
     # [2026-09-07] 컷 종류별 본문 전략(사용자 지시):
     #   portrait(face) = 기존 결정론 방식 유지 / POV = prompt_pov.md 가이드 / multi = prompt_multi.md 가이드
@@ -3745,9 +3749,90 @@ def _reject_shots(paths):
             pass
 
 
+# ── 스탠딩 재사용 ──────────────────────────────────────────────────────────────────
+#   원작이 [CLOTHES]/[STANDING] 으로 전신 한 장을 정해 주면, 흰 배경 스탠딩을 한 장만 뽑아
+#   (복장·몸·화풍이 같은 컷은 캐시 재사용) 같은 장면의 배경 컷 위에 얹어 컷 한 장으로 만듭니다.
+#   프롬프트 어구·해상도는 정본 anima_gen.anima_gen_standing과 같습니다(흰 배경 타치-e, 슬롯 6).
+STANDING_CACHE_DIR = os.path.join("image", "standing")
+
+
+def _is_standing_cut(panel) -> bool:
+    """스탠딩 재사용 대상인가(원작이 전신 한 장으로 지정한 컷 + 스위치 ON)."""
+    return bool(getattr(config, "comic_standing", False)) \
+        and str((panel or {}).get("_spec_kind") or "") == "standing"
+
+
+def _latest_bg_image(panels, got) -> str:
+    """이 회차에서 **이미 렌더된 가장 최근 배경(확립) 컷** — 스탠딩을 얹을 배경으로 씁니다."""
+    last = ""
+    for p, f in zip(panels, got):
+        if f and (p or {}).get("bg_only"):
+            last = f
+    return last
+
+
+def _standing_key(json_value) -> str:
+    """스프라이트 캐시 키 — 복장·몸매·캐릭터 태그·화풍이 다 같아야 재사용합니다."""
+    import hashlib
+    jv = json_value or {}
+    bits = [str(getattr(config, "name", "")), str(getattr(config, "clothes", "")),
+            str(getattr(config, "body_shape", "")), str(getattr(config, "char_tags", "") or ""),
+            str(getattr(config, "current_level", 0)),
+            str(jv.get("anima_unet") or ""), str(jv.get("anima_style") or ""), str(jv.get("anima_lora") or "")]
+    return hashlib.sha1("|".join(bits).encode("utf-8")).hexdigest()[:12]
+
+
+def _render_standing(ep_idx: int, panel, seed: int, json_value, prompt: str,
+                     bg_image: str = "", wait_seconds: int = 120) -> str:
+    """흰 배경 전신 스프라이트(캐시) + 배경 컷 → 컷 이미지 한 장. 실패하면 ""(일반 렌더로 회귀)."""
+    import comic_page_merge as _CPM
+    key = _standing_key(json_value)
+    os.makedirs(STANDING_CACHE_DIR, exist_ok=True)
+    sprite = os.path.join(STANDING_CACHE_DIR, f"{key}.png")
+    reused = os.path.isfile(sprite)
+    if not reused:
+        old_tag = getattr(anima_gen, "anima_nametag", "")
+        old_ep = getattr(config, "episode_num", 0)
+        anima_gen.anima_nametag = f"standing_e{ep_idx + 1}_{key}"
+        anima_gen.set_extra_negative(getattr(anima_gen, "ANIMA_STANDING_NEG", ""))
+        config.episode_num = ep_idx
+        try:
+            ids = []
+            t_queue = time.time() - 2
+            pfx = anima_gen.comfyui_run_anima(json_value, ep_idx, prompt, anima_gen.ANIMA_STANDING_RES,
+                                             seed=int(seed), queue_count=1, ids_out=ids) or ""
+            anima_gen._wait_and_copy_image(pfx, json_value, min_mtime=t_queue,
+                                          wait_seconds=wait_seconds, prompt_ids=ids)
+            hits = sorted(glob.glob(os.path.join("image", f"{pfx}*.png"))) or \
+                sorted(glob.glob(os.path.join("image", f"{pfx[:50]}*.png")))
+            if hits:
+                os.replace(hits[-1], sprite)
+        except Exception as e:
+            _clog(f"EP{ep_idx + 1} 컷{panel.get('no')} 스탠딩 스프라이트 렌더 실패: {e}")
+        finally:
+            anima_gen.anima_nametag = old_tag
+            config.episode_num = old_ep
+            anima_gen.set_extra_negative("")
+    if not os.path.isfile(sprite):
+        _clog(f"EP{ep_idx + 1} 컷{panel.get('no')} 스탠딩 스프라이트 없음 — 일반 렌더로 갑니다")
+        return ""
+    out = os.path.join("image", f"comic_e{ep_idx + 1}_p{int(panel.get('no') or 0):02d}_standing.png")
+    try:
+        _CPM.compose_standing(sprite, bg_image or "", out)
+    except Exception as e:
+        _clog(f"EP{ep_idx + 1} 컷{panel.get('no')} 스탠딩 합성 실패({e}) — 스프라이트를 그대로 씁니다")
+        return sprite
+    _clog(f"EP{ep_idx + 1} 컷{panel.get('no')} 스탠딩 재사용: 스프라이트 {key}"
+          + ("(캐시)" if reused else "(신규 렌더)")
+          + (f" + 배경 {os.path.basename(bg_image)}" if bg_image else " + 단조 배경")
+          + " → 컷 1장(렌더 1장으로 처리)")
+    return out
+
+
 def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dict,
                  wait_seconds: int = 120, gloss: dict = None, angle_preset=None,
-                 prompt: str = None, variants: int = None):
+                 prompt: str = None, variants: int = None,
+                 standing: bool = False, bg_image: str = ""):
     """컷 1개 렌더 → 생성 PNG 경로 (실패 시 None)
 
     prompt: 미리 조립해 둔 프롬프트. 주면 그대로 쓴다(재조립 안 함) — pov/multi 가이드는
@@ -3757,6 +3842,9 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
     """
     full_prompt = prompt if prompt else build_panel_prompt(ep_idx, panel, safety_tag,
                                                           gloss=gloss, angle_preset=angle_preset)
+    if standing:
+        return _render_standing(ep_idx, panel, int(seed), json_value, full_prompt,
+                                bg_image, wait_seconds)
     # [2026-09-12] 컷별 음성 태그(남자 주인공 하체 보안 등)를 서버 요청에 태운다
     anima_gen.set_extra_negative(str(panel.get("_neg_extra") or ""))
     old_nametag = getattr(anima_gen, "anima_nametag", "")
@@ -3930,7 +4018,8 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
             try:
                 fold_cut_state(panels, ep_idx)   # 스크립트에 이미 있으면 그대로 재계산(안전)
                 prompts.append(build_panel_prompt(ep_idx, p, safety_tag, gloss=gloss,
-                                                 angle_preset=_pick_panel_angle(p)))
+                                                 angle_preset=_pick_panel_angle(p),
+                                                 standing=_is_standing_cut(p)))
             except Exception as e:
                 _clog(f"EP{ep_num_1} 컷{p.get('no')} 프롬프트 조립 실패(렌더 단계에서 재시도): {e}")
                 prompts.append(None)
@@ -3944,7 +4033,8 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
         got = []                              # 컷별 결과 (None = 이 컷은 아직 없음)
         for p, sd, pr in zip(panels, seeds, prompts):
             f = render_panel(ep_idx, p, sd, safety_tag, json_value, gloss=gloss,
-                             angle_preset=_pick_panel_angle(p), prompt=pr)
+                             angle_preset=_pick_panel_angle(p), prompt=pr,
+                             standing=_is_standing_cut(p), bg_image=_latest_bg_image(panels, got))
             got.append(f)
             if f:
                 _miss_run = 0
@@ -3970,7 +4060,8 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
             for i in _retry:
                 got[i] = render_panel(ep_idx, panels[i], seeds[i], safety_tag, json_value,
                                       gloss=gloss, angle_preset=_pick_panel_angle(panels[i]),
-                                      prompt=prompts[i])
+                                      prompt=prompts[i], standing=_is_standing_cut(panels[i]),
+                                      bg_image=_latest_bg_image(panels, got))
                 _miss2 = 0 if got[i] else _miss2 + 1
                 if _miss2 >= 3:
                     _clog(f"EP{ep_num_1} 재전송에서도 3컷 연속 실패 — ComfyUI가 멈춰 있는 것으로 보여 재전송을 접습니다")

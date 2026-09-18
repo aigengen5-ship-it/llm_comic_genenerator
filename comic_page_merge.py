@@ -1912,6 +1912,79 @@ def compose_page(panel_paths, captions, *,
     return canvas
 
 
+def white_to_alpha(img, tol: int = None):
+    """흰 배경 스프라이트를 RGBA로 만듭니다 — **가장자리에서 들어가는** 연결된 흰 영역만 투명화합니다.
+
+    간단히 "흰색 = 투명"으로 하면 흰 셔츠·흰 양말까지 사라집니다. 그래서 1/4 축약본에서
+    테두리 기원 flood-fill로 '바깥'을 찾고(86k 화소 수준이라 충분합니다), 다시 늘릴 때 LINEAR로
+    올려 테두리가 살짝 softer하게 퍼지도록 했습니다(흰 테두리 잔상이 남지 않습니다).
+    """
+    from collections import deque
+    import numpy as _np
+    tol = int(getattr(__import__("anima_gen"), "STANDING_WHITE_TOL", 26)) if tol is None else int(tol)
+    src = img.convert("RGB")
+    w, h = src.size
+    sw, sh = max(2, w // 4), max(2, h // 4)
+    a = _np.asarray(src.resize((sw, sh), Image.BOX)).astype("int16")
+    near = a.min(axis=2) >= (255 - max(0, min(200, tol)))          # 세 채널이 다 흰색에 가까운 곳
+    outside = _np.zeros(near.shape, dtype=bool)
+    dq = deque()
+    for x in range(sw):
+        for y in (0, sh - 1):
+            if near[y, x] and not outside[y, x]:
+                outside[y, x] = True
+                dq.append((y, x))
+    for y in range(sh):
+        for x in (0, sw - 1):
+            if near[y, x] and not outside[y, x]:
+                outside[y, x] = True
+                dq.append((y, x))
+    while dq:
+        y, x = dq.popleft()
+        for yy, xx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if 0 <= yy < sh and 0 <= xx < sw and near[yy, xx] and not outside[yy, xx]:
+                outside[yy, xx] = True
+                dq.append((yy, xx))
+    keep = Image.fromarray(((~outside).astype("uint8")) * 255).resize((w, h), Image.BILINEAR)
+    out = img.convert("RGBA")
+    out.putalpha(keep)
+    return out
+
+
+def _standing_backdrop(w: int, h: int):
+    """배경 컷이 없을 때의 폴백 — 윗쪽이 밝은 단조 그라디언트(톤 처리처럼 보입니다)."""
+    import numpy as _np
+    t = _np.linspace(0.0, 1.0, h, dtype="float32")[:, None]
+    top = _np.array([238, 236, 244], dtype="float32")
+    bot = _np.array([176, 172, 190], dtype="float32")
+    rows = (top + (bot - top) * t).astype("uint8")
+    return Image.fromarray(_np.repeat(rows[:, None, :], int(w), axis=1), "RGB")
+
+
+def compose_standing(sprite_path: str, bg_path: str, out_path: str, tol: int = None) -> str:
+    """흰 배경 전신 스프라이트를 컷 배경 위에 얹어 **컷 이미지 한 장**으로 만듭니다.
+
+    배경은 같은 장면의 배경(확립) 컷을 재사용합니다 — 그래서 전신 컷 한 장이 스프라이트 1장 +
+    이미 렌더된 배경으로 채워집니다. 배경이 없으면 단조 그라디언트로 대체합니다(화면은 성립합니다).
+    """
+    sp = Image.open(sprite_path)
+    w, h = sp.size
+    if bg_path and os.path.isfile(bg_path):
+        bg = Image.open(bg_path).convert("RGB")
+        s = max(w / float(bg.width), h / float(bg.height))
+        bg = bg.resize((max(w, int(bg.width * s + 0.5)), max(h, int(bg.height * s + 0.5))), Image.LANCZOS)
+        x0, y0 = (bg.width - w) // 2, (bg.height - h) // 2
+        canvas = bg.crop((x0, y0, x0 + w, y0 + h))
+    else:
+        canvas = _standing_backdrop(w, h)
+    rgba = white_to_alpha(sp, tol=tol)
+    canvas = canvas.convert("RGB")
+    canvas.paste(rgba, (0, 0), rgba)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    canvas.save(out_path, "PNG")
+    return out_path
+
+
 def compose_pages(panel_paths, captions, out_dir: str, basename: str,
                   *, panels_per_page: int = DEFAULT_PANELS_PER_PAGE,
                   page_label_prefix: str = None,

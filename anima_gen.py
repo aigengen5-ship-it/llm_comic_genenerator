@@ -109,6 +109,20 @@ def _canon_camera(token):
 
 
 # =====================================================================================
+# [스탠딩] 전신 한 장을 뽑아 배경 위에 얹는 길 — 정본 anima_gen.anima_gen_standing과 같은 어구
+# ------------------------------------------------------------------------------------
+# 정본은 [ANGLE] 슬롯을 이 문자열로 바꿔 전신을 뽑습니다(실측에서 가장 안정적인 single-subject 조합).
+# 만화 쪽에서는 이 그림의 흰 배경을 투명화해 같은 장면의 배경 컷 위에 얹습니다 — 그래서 컷 한 장을
+# 스프라이트 1장 + 이미 렌더된 배경으로 채울 수 있습니다(정본과 같은 해상도 슬롯 6 = 1024x1344).
+ANIMA_STANDING_ANGLE = ("date_sim:2.0, front_shot:2.0, white_background:2.0, no background, tachi-e.")
+ANIMA_STANDING_NEG = ("multiple views, split view, collage, grid view, multiple people, clones, "
+                      "smudged makeup, running makeup, smeared eyeliner, from above:3.0")
+ANIMA_STANDING_RES = 6
+# 흰 배경 투명화(합성 쪽에서 씁니다) — 이 값 이하의 흰색은 '바깥'으로 봅니다
+STANDING_WHITE_TOL = 26
+
+
+# =====================================================================================
 # [2026-09-07] 카메라 앵글 프리셋 사전 — data_comfyui/angle.txt → LLM 선택 — run_main.sh -angle_llm
 # ------------------------------------------------------------------------------------
 # 배경: [ANGLE] 슬롯은 actions.yaml의 5개 토큰(front_view/side_view/back_view/close_up/pov)에

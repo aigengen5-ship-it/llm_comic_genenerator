@@ -4585,6 +4585,10 @@ def main() -> int:
          "text": "다음 날", "chars": 3, "inherited": False, "split_part": None}]}
     with open(os.path.join(_cst, "episode_01_cuts.json"), "w", encoding="utf-8") as _f:
         json.dump(_rows, _f, ensure_ascii=False)
+    with open(os.path.join(_cst, "character_sheet_ep01_deadbeefcafe1234.json"), "w", encoding="utf-8") as _f:
+        _f.write("{}")
+    with open(os.path.join(_cst, "ep01_7c0d2b13e3d44b3f.txt"), "w", encoding="utf-8") as _f:
+        _f.write("x")
     _got = _CS.load(_cst, 1, names={"partner": "과장"}, mode="rec", target_pages=12)
     _tg = [r["tag"] for r in (_got or {}).get("items", [])]
     check("컷 시트: TALK2는 화자 이름을 붙여 TALK 로 내린다",
@@ -4616,6 +4620,68 @@ def main() -> int:
     check("컷 시트: 강등/예산 사연을 감사 리포트로 남긴다",
           bool(_CS.write_audit(_got["audit"], _cst, 1))
           and os.path.isfile(os.path.join(_cst, "audit_ep01.json")))
+    # [스탠딩 재사용] 흰 배경 전신 한 장 + 배경 컷 → 컷 이미지 한 장 (정본 anima_gen_standing 어구)
+    check("정본과 같은 스탠딩 어구·해상도를 쓴다",
+          "white_background" in anima_gen.ANIMA_STANDING_ANGLE
+          and "tachi-e" in anima_gen.ANIMA_STANDING_ANGLE
+          and "front_shot" in anima_gen.ANIMA_STANDING_ANGLE
+          and int(anima_gen.ANIMA_STANDING_RES) == 6
+          and "multiple people" in anima_gen.ANIMA_STANDING_NEG)
+    _pn = {"no": 3, "type": "full", "caption_ko": "", "caption_screen": "",
+           "pose": "She is standing, full body.", "camera": "front_view", "facing": "front",
+           "wide": False, "clothes": "white shirt, black skirt", "emotion": "calm", "state": "",
+           "dialog": "", "climax": False, "position": "left",
+           "_state": {"clothes": "white shirt, black skirt", "posture": "standing"},
+           "_spec_kind": "standing"}
+    _sp_old, config.comic_standing = config.comic_standing, True
+    _pr_st = CG.build_panel_prompt(0, _pn, "safe, ", standing=True)
+    check("스탠딩 컷 프롬프트는 앵글 자리에 흰 배경 타치-e를 넣는다",
+          "white_background" in _pr_st and "tachi-e" in _pr_st)
+    check("스탠딩 대상 판정: 스위치 ON + 원작이 전신으로 지정한 컷만",
+          CG._is_standing_cut(_pn) is True
+          and CG._is_standing_cut(dict(_pn, _spec_kind="wide")) is False)
+    config.comic_standing = False
+    check("스탠딩 대상 판정: 스위치를 끄면 어떤 컷도 대상이 아니다", CG._is_standing_cut(_pn) is False)
+    config.comic_standing = True
+    _k1, _k2 = CG._standing_key({"anima_unet": "u"}), CG._standing_key({"anima_unet": "u"})
+    _cl0 = config.clothes
+    config.clothes = _cl0 + ", red scarf"
+    _k3 = CG._standing_key({"anima_unet": "u"})
+    config.clothes = _cl0
+    check("스프라이트 캐시 키는 결정적이고, 복장이 바뀌면 달라진다",
+          _k1 == _k2 and _k1 != _k3 and len(_k1) == 12)
+    check("배경은 이미 렌더된 가장 최근 확립 컷을 쓴다",
+          CG._latest_bg_image([{"bg_only": True}, {"bg_only": False}, {"bg_only": True}, {"bg_only": True}],
+                              ["a.png", None, "b.png", None]) == "b.png")
+    import comic_page_merge as _CPM
+    from PIL import Image as _IM
+    _simg = _IM.new("RGB", (200, 300), (255, 255, 255))
+    from PIL import ImageDraw as _ID
+    _ID.Draw(_simg).rectangle([60, 40, 140, 260], fill=(40, 60, 160))     # 인물 몸통(흰 옷 아님)
+    _sdir = tempfile.mkdtemp(prefix="standing_")
+    _spp = os.path.join(_sdir, "sprite.png"); _simg.save(_spp)
+    _rgba = _CPM.white_to_alpha(_simg)
+    _al = _rgba.split()[-1]
+    check("흰 배경 투명화: 바깥은 투명, 안쪽 인물은 불투명",
+          _al.getpixel((2, 2)) == 0 and _al.getpixel((100, 150)) == 255
+          and _al.getpixel((10, 150)) == 0)
+    _bimg = _IM.new("RGB", (400, 400), (20, 120, 200))
+    _bpp = os.path.join(_sdir, "bg.png"); _bimg.save(_bpp)
+    _outp = os.path.join(_sdir, "cut.png")
+    check("스탠딩 합성: 배경 위에 인물을 얹어 컷 이미지 한 장을 만든다",
+          _CPM.compose_standing(_spp, _bpp, _outp) == _outp and os.path.isfile(_outp)
+          and _IM.open(_outp).size == (200, 300)
+          and _IM.open(_outp).convert("RGB").getpixel((100, 150)) == (40, 60, 160)
+          and abs(sum(_IM.open(_outp).convert("RGB").getpixel((4, 4))) - sum(_bimg.getpixel((0, 0)))) < 12)
+    check("배경이 없어도 단조 그라디언트로 성립한다",
+          os.path.isfile(_CPM.compose_standing(_spp, "", os.path.join(_sdir, "cut2.png"))))
+    shutil.rmtree(_sdir, ignore_errors=True)
+    check("실행 배선에 스탠딩 스위치가 있다(기본 OFF — 효과 확인 후 켠다)",
+          "--standing-reuse" in open("run_comic.py", encoding="utf-8").read()
+          and "comic_standing = False" in open("config.py", encoding="utf-8").read())
+    check("컷 시트 감사는 섞인 실행분을 잡는다(디렉토리의 해시 두 개면 경고감)",
+          len(_got["audit"].get("hashes") or []) == 2
+          and {"deadbeefcafe1234", "7c0d2b13e3d44b3f"} <= set(_got["audit"]["hashes"]))
     check("실행 배선에 컷 시트 스위치가 있다",
           all(k in open("run_comic.py", encoding="utf-8").read()
               for k in ("--cutsheet", "--target-pages", "--cuts-per-page", "--headers-mode", "cutsheet as _CS")))

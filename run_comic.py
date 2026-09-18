@@ -565,6 +565,9 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         if _cs:
             _au = _cs["audit"]
             _hdr = _cs["items"]
+            if len(_au.get("hashes") or []) > 1:
+                perr(f"  ⚠ 이 디렉토리에 두 실행분이 섞여 있습니다(해시 {' · '.join(_au['hashes'])}) — "
+                     "시트·컷 시트·본문이 같은 실행의 산출물인지 확인해 주세요")
             _cc = [c for c in _CS.cards_for_extract(_cs["items"]) if c]
             _cards = _cards + _cc
             import comic_gen as _CG_CS
@@ -830,6 +833,8 @@ def main() -> int:
                     help="한 회차 목표 면수(기본 12) — 컷 시트가 이보다 많으면 서술 컷부터 자릅니다")
     ap.add_argument("--cuts-per-page", type=float, default=0.0, dest="cuts_per_page",
                     help="면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율")
+    ap.add_argument("--standing-reuse", action="store_true", dest="standing_reuse",
+                    help="전신 스탠딩 컷을 흰 배경 스프라이트 1장으로 뽑아 배경 컷 위에 얹습니다(렌더 1장으로 컷 1장)")
     ap.add_argument("--headers-mode", default="", dest="headers_mode", choices=["", "min", "rec", "full"],
                     help="컷 시트 태그를 오늘짜리 형태로 내리는 폭(기본 rec: PAGE_TURN/STANDING2 버림)")
     ap.add_argument("--no-token-gate", action="store_true", dest="no_token_gate",
@@ -992,6 +997,8 @@ def main() -> int:
         config.comic_cuts_per_page = float(args.cuts_per_page)
     if str(getattr(args, "headers_mode", "") or ""):
         config.comic_headers_mode = str(args.headers_mode)
+    if bool(getattr(args, "standing_reuse", False)):
+        config.comic_standing = True
     # [2026-09-16] 닮은 캐릭터 태그 자동 선택 (chara_match) — 시트에 #태그#가 없는 회차의 얼굴 고정
     # [2026-09-16] 나이대 발화 정책 — 헤더가 "a girl"이면 서른여덟이 23세로 나온다(프로브 실측)
     import anima_gen as _AG_AGE

@@ -966,6 +966,37 @@ def _resolve_cli_lora(episode):
     return (lora1, str1, lora2, str2, anima_cli_lora_unet, trigger)
 
 
+def lora_report(json_value, episode=None) -> str:
+    """그 회차에 실제로 쓸 LoRA/UNET/트리거를 **한 줄**로. 렌더를 기다리지 말고 실행 머리에 찍습니다.
+
+    실측 불만: `--lora1/--str1`을 줘도 배너에는 LoRA가 없고, 확정 값은 렌더 직전 anima_gen.log에만
+    남았습니다. 그래서 해석기(resolve_anima_lora)를 한 번 미리 돌려 화면에 보여 줍니다(해석은 멱등).
+    """
+    try:
+        lora1, str1, lora2, str2, unet, trigger = resolve_anima_lora(json_value or {}, episode)
+    except Exception as e:
+        return f"그림 LoRA      : 해석 실패({type(e).__name__}: {e})"
+    byfile = {}
+    for _key, _cfg in (ANIMA_LORA_CONFIG or {}).items():
+        try:
+            byfile.setdefault(os.path.basename(str(_cfg[0]).strip()), _key)
+        except Exception:
+            pass
+
+    def _k(path):
+        f = os.path.basename(str(path or "").strip())
+        if not f:
+            return "-"
+        return f"{byfile[f]}({f})" if f in byfile else f
+    bits = [f"lora1={_k(lora1)}({float(str1 or 0):.2f})", f"lora2={_k(lora2)}({float(str2 or 0):.2f})"]
+    bits.append(f"UNet={_k(unet) if unet else 'plot.json 화풍'}")
+    bits.append(f"trigger={trigger.strip() if trigger else '(없음)'}")
+    bits.append("디테일러 ON" if bool(getattr(config, "comic_detailer_on", False)) else "디테일러 OFF")
+    if str(getattr(config, "comic_lora_chg", "") or "").lower() == "episode":
+        bits.append("(회차마다 재선택)")
+    return "그림 LoRA      : " + " · ".join(bits)
+
+
 def resolve_anima_lora(json_value, episode=None):
     """LoRA 설정 해석의 단일 진입점 — 내부 해석 후 CLI 오버라이드/실존 검사/트리거를 반영한다.
 

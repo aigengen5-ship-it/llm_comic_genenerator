@@ -1624,6 +1624,43 @@ def paste_balloon_art(canvas, variant: str, region, box, flip: bool = False, tai
         return None
 
 
+def _vector_tail(d, kind: str, x0: int, y0: int, x1: int, y1: int, column: str, iy: int, ih: int,
+                 fs: int, *, plate, frame, line: int):
+    """벡터로 그리는 풍선의 꼬리 — 말풍선은 삼각형, 속마음은 생각 물방울.
+
+    자산 모드(`--balloon-style image`)에는 꼬리가 굽혀 있지만 벡터 모드에는 없어 화자를 가리키는
+    표지가 없었습니다(사용자 지시). 방향 규칙은 자산과 같습니다 — 꼬리는 **화자(컷 가운데) 쪽으로
+    아래로** 향합니다. 열(`column`: 주인공='l' · 상대방='r') 안쪽 아래로 내밀고, 컷 바닥을 넘으면
+    꼬리를 짧게 줄입니다. 확장된 상자(꼬리 포함)를 돌려줍니다(겹침 검사·이모티콘 자리에 쓰입니다).
+    """
+    bw = max(1, x1 - x0)
+    room = max(6, (iy + ih - 2) - y1)                       # 컷 안에서 꼬리에 허락된 세로
+    inner = (column != "r")                                 # 주인공 열(왼쪽)은 안쪽이 오른쪽
+    if kind == "speech":
+        w = max(10, min(int(bw * 0.24), 28))
+        inset = max(3, int(bw * 0.06))
+        bx0, bx1 = (x1 - inset - w, x1 - inset) if inner else (x0 + inset, x0 + inset + w)
+        tl = max(8, min(int(fs * 1.15), 24, room))
+        ax = (bx0 + bx1) // 2 + (max(3, int(bw * 0.10)) if inner else -max(3, int(bw * 0.10)))
+        ay = y1 + tl
+        d.polygon([(bx0, y1), (bx1, y1), (ax, ay)], fill=plate, outline=frame,
+                  width=max(1, int(line)))
+        d.line([(bx0, y1), (bx1, y1)], fill=frame, width=max(1, int(line)))
+        return (x0, y0, x1, ay)
+    r = max(4, int(fs * 0.34))
+    cx = (x1 - max(r * 2, int(bw * 0.20)) - 4) if inner else (x0 + max(r * 2, int(bw * 0.20)) + 4)
+    yy = y1 + max(3, r // 2)
+    out = (x0, y0, x1, y1)
+    for i, rad in enumerate((r, max(3, r - 2), max(2, r - 4))[:2]):
+        cy = yy + rad + i * (rad * 2 + 2)
+        if cy + rad > iy + ih - 2:
+            break
+        d.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=plate, outline=frame,
+                  width=max(1, int(line)))
+        out = (min(out[0], cx - rad), out[1], max(out[2], cx + rad), max(out[3], cy + rad))
+    return out
+
+
 def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                   plate=DEFAULT_PLATE, frame=DEFAULT_FRAME, line: int = DEFAULT_FRAME_WIDTH,
                   text_color=DEFAULT_TEXT, font_size: int = BALLOON_FONT_SIZE, font_path=None,
@@ -1750,11 +1787,16 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
                 ty0 = y0 + _st + max(0, (box_h - _st - _sb - len(lines) * line_h) // 2)
         else:
             art = ""
+    _col = "l" if str(prefer[0])[-1] == "l" else "r"        # 화자 열(주인공=왼쪽, 상대방=오른쪽)
     if not art and kind == "speech":
         d.rectangle([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
+        box_tail = _vector_tail(d, "speech", x0, y0, x1, y1, _col, iy, ih, fs,
+                                plate=plate, frame=frame, line=line)
         ty0 = y0 + pad
     elif not art:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
+        box_tail = _vector_tail(d, "thought", x0, y0, x1, y1, _col, iy, ih, fs,
+                                plate=plate, frame=frame, line=line)
         ty0 = y0 + int(box_h * 0.5 - len(lines) * line_h / 2)        # 타원 안에서는 글자 블록을 세로 가운데에 둔다
     ty = ty0
     for ln in lines:
@@ -1764,7 +1806,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
             wln = len(ln) * fs * 0.6
         d.text(((x0 + x1 - wln) // 2, ty), ln, font=font, fill=text_color)
         ty += line_h
-    box = (x0, y0, x1, y1)
+    box = locals().get("box_tail") or (x0, y0, x1, y1)
     if emo:
         e = _draw_emotif(d, x0, y0, x1, y1, ix, iy, iw, ih, emo, font_path=font_path)
         if e:

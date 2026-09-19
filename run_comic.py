@@ -517,6 +517,29 @@ def make_thumbs(paths, divisor=4):
     return out
 
 
+def cached_script(ep_num: int, out_dir: str, stamp=None) -> dict:
+    """지난 실행의 `episode_NN_comic.json`을 컷 스크립트로 되쓴다 — 같은 원고(도장이 같은)일 때만.
+
+    컷 구성·지문·풍선이 그대로 박제되므로 컷 스크립트 LLM이 0회가 됩니다(재현 재렌더·수정 재시도용).
+    """
+    if not stamp or not str((stamp or {}).get("sheet_sha") or ""):
+        return {}
+    path = os.path.join(out_dir, f"episode_{int(ep_num):02d}_comic.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return {}
+    if str(((d or {}).get("cutsheet") or {}).get("sheet_sha") or "") != str(stamp.get("sheet_sha") or ""):
+        return {}
+    panels = (d or {}).get("panels") or []
+    if not panels:
+        return {}
+    return {"panels": panels, "notes": list((d or {}).get("notes") or []), "raw": "",
+            "page_plans": (d or {}).get("page_plans"), "beats": (d or {}).get("beats"),
+            "target_panels": (d or {}).get("target_panels"), "_from": os.path.basename(path)}
+
+
 def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: str, t0: float) -> int:
     """한 회차를 끝까지 돈다 (추출 → config 주입 → 태그 생성 → 컷 스크립트 → 렌더 → 페이지 합성)
 
@@ -592,6 +615,9 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
             if len(_au.get("hashes") or []) > 1:
                 perr(f"  ⚠ 이 디렉토리에 두 실행분이 섞여 있습니다(해시 {' · '.join(_au['hashes'])}) — "
                      "시트·컷 시트·본문이 같은 실행의 산출물인지 확인해 주세요")
+            config.cutsheet_stamp = {"path": os.path.relpath(_cs["path"], os.getcwd()),
+                                     "source_sha": (_au.get("hashes") or [""])[0],
+                                     "sheet_sha": _CS.source_sha(_cs_dir, ep_num)}
             _cc = [c for c in _CS.cards_for_extract(_cs["items"]) if c]
             _cards = _cards + _cc
             import comic_gen as _CG_CS
@@ -765,8 +791,14 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
         return 0
 
     # 5) 본 실행: 태그 초기화 + 컷 생성 + 렌더 + 페이지 합성 (comic_gen_episode가 전 과정 담당)
+    _script = None
+    if not bool(getattr(args, "no_reuse_script", False)):
+        _script = cached_script(ep_num, CG.comic_out_dir(), getattr(config, "cutsheet_stamp", None))
+        if _script:
+            p(f"  ◆ 컷 스크립트 재사용[{_script['_from']}]: 컷 {len(_script['panels'])}개 · "
+              "컷 스크립트 LLM 0회 (--no-reuse-script로 새로 씀)")
     try:
-        meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True)
+        meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True, script=_script)
     except CG.PanelScriptError as e:
         perr(f"[오류] {e}")
         p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다(렌더는 시작되지 않았습니다).")
@@ -857,6 +889,8 @@ def main() -> int:
                     help="한 회차 목표 면수(기본 12) — 컷 시트가 이보다 많으면 서술 컷부터 자릅니다")
     ap.add_argument("--cuts-per-page", type=float, default=0.0, dest="cuts_per_page",
                     help="면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율")
+    ap.add_argument("--no-reuse-script", action="store_true", dest="no_reuse_script",
+                    help="지난 실행의 컷 스크립트를 재사용하지 않고 매번 LLM으로 다시 씁니다")
     ap.add_argument("--rebuild-cutsheet", action="store_true", dest="rebuild_cutsheet",
                     help="컷 시트(cuts_epNN_<해시>.json)를 입력 폴더에서 다시 만듭니다(원고가 바뀌면 자동 재생성)")
     ap.add_argument("--standing-reuse", action="store_true", dest="standing_reuse",
@@ -1197,6 +1231,17 @@ def main() -> int:
          else f'{len(CG.load_cut_templates())}종 자동 (회차 안 재사용)')
       + f' · DB {_cutdb}'
       + ('' if getattr(CG, 'GEN_REQ_ENABLE', True) else ' · 칸별 gen 요청 OFF'))
+    try:
+        import anima_gen as _AG_LORA
+        _lora_line = _AG_LORA.lora_report(config.get_json_value(), max(0, int(args.ep or 1) - 1))
+        p("  " + _lora_line)
+        try:
+            import comic_gen as _CG_LORA
+            _CG_LORA._clog(_lora_line)
+        except Exception:
+            pass
+    except Exception:
+        pass
     _cs_on = str(getattr(config, 'comic_cutsheet', 'auto') or 'auto') != 'off'
     _cpp = float(getattr(config, 'comic_cuts_per_page', 5.0) or 5.0)
     p("  컷 시트 수신   : " + ("꺼짐(본문에서 컷을 나눕니다)" if not _cs_on else

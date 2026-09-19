@@ -305,6 +305,25 @@ tachi-e.` + front_shot, negative에 `multiple people, clones, split view, collag
 주인공 발화 (16,16)=왼쪽 위, 면적 2.1~4.8%.
 
 
+### LoRA를 실행 머리에 찍고, 컷 스크립트를 재사용하고,벡터 풍선에 꼬리를 붙였습니다
+
+**LoRA 출력(사용자 지적).** LoRA 확정 값은 렌더 직전 `anima_gen.log`의 `[ComfyUI LoRA]` 한 줄에만 남았고,
+`--dry-run`이면 아예 보이지 않았습니다. 그래서 `anima_gen.lora_report()`를 만들어 해석 결과를 실행 머리에
+한 줄로 찍고 `comic_gen.log`에도 복제했습니다(키 이름은 파일명에서 역참조 — `lora_lambton(Lambton.safetensors)`).
+겸사겸사 로컬 래퍼의 `set -u` 사고를 고쳤습니다: 기본값을 준 자리(`${VARIANTS:-3}`)와 달리 뒤에서 `${VARIANTS}`를
+맨 참조해 "unbound variable"로 죽었습니다(실측: `go 3`이 실행 라인만 찍고 종료).
+
+**컷 스크립트 재사용.** `episode_NN_comic.json`에 그 회차의 스크립트(panels/page_plans/beats/target_panels)가
+이미 들어가 있었다면, 원고 도장만 없었을 뿐입니다. 컷 시트 도장(`cutsheet.sheet_sha`)을 같이 박고,
+`run_comic.cached_script()`가 같은 도장이면 그걸 `script=`로 넘깁니다 → **컷 스크립트 LLM 0회**, 같은 컷 구성으로
+재렌더. 도장이 다르거나(`--rebuild-cutsheet`, 원고 수정) 없으면 평소대로 LLM이 씁니다. 끄는 법 `--no-reuse-script`.
+
+**벡터 풍선 꼬리.** 자산 모드에는 꼬리가 굽혀 있지만 벡터에는 없어 화자 표지가 없었습니다(사용자 지시).
+말풍선은 삼각형, 속마음은 생각 물방울 2개이고, 방향은 자산과 같은 규칙 — 컷 가운데(화자) 쪽으로 아래로.
+컷 바닥이 가까우면 짧아지고, 꼬리까지 포함한 상자가 겹침 검사에 쓰입니다(실측: 주인공은 박스 오른쪽끝 부근,
+상대방은 왼쪽 끝 부근, 길이 20px).
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

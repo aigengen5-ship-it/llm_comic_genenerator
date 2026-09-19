@@ -4124,7 +4124,9 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     meta = {"ep": ep_num_1, "base_seed": base, "seeds": seeds, "panels": panels,
             "files": files, "pages": pages, "notes": notes, "missing": missing,
             "beats": script.get("beats"), "target_panels": script.get("target_panels"),
-            "page_plans": page_plans or None}
+            "page_plans": page_plans or None,
+            # 컷 시트 도장 — 같은 원고(같은 해시)에서 만들어진 스크립트라는 증거. 재실행 때 이걸로 재사용을 판정한다.
+            "cutsheet": (getattr(config, "cutsheet_stamp", None) or None)}
     try:
         with open(os.path.join(out_dir, f"episode_{ep_num_1:02d}_comic.json"), "w",
                   encoding="utf-8") as f:

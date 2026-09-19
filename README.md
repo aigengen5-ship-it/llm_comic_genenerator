@@ -315,6 +315,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--char-tag off` | 시트에 `#태그#`가 없을 때 닮은 캐릭터 태그를 자동으로 고르는 일을 끕니다(3-8l절) — 속성 태그만 사용합니다 |
 | `--no-age-voice` | 시트의 나이대를 프롬프트 문장에서 말하는 정책을 끕니다(3-8m절) — 항상 "a girl"로 갑니다 |
 | `--no-eye-tag` | 시트의 눈동자 색을 이미지 프롬프트에 넣지 않습니다(3-8n절) |
+| `--no-reuse-script` | 지난 실행의 **컷 스크립트**를 재사용하지 않고 매번 LLM으로 다시 씁니다. 기본은 재사용(같은 원고·같은 컷 시트일 때 컷 스크립트 LLM 0회) — `comic/bookNNN/episode_NN_comic.json`에 박은 컷 시트 도장(`cutsheet.sheet_sha`)이 근거입니다 |
 | `--variants 3` | 컷당 3장 뽑아 최고점만 채택(탈락은 `image/rejected/`) — 3-8o절 |
 | `--variants-keep` | 후보를 옮기지 않고 전부 보존 |
 | `--eye-weight 1.4` · `--eye-prose` | 눈동자 색 태그 가중치(기본 1.4)와 헤더 문장 병기 여부 |
@@ -403,6 +404,18 @@ python run_comic.py --episode inputs/ep01.txt --lora1 lora_mi1k --lora2 lora_sex
 - 로그 한 줄로도 보입니다: `[ComfyUI LoRA] lora_1=…(1.0) lora_2=…(0.8) unet=…` · `[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): …`.
 - 템플릿(`data_comfyui/anima_spectrum_July11.json`)의 `on:false`는 **UI 기본값**입니다. 코드가 강도>0이면 제출 직전 `on:true`로 켭니다 — 템플릿만 보고 "꺼져 있다"로 오해하지 마세요.
 - 실제로 ComfyUI에 들어간 값은 `log/anima_gen.log`의 `[ComfyUI LoRA] lora_1=…(강도) … | trigger=…` 한 줄에서 확인됩니다.
+
+### 3-5a) 실행 머리에 LoRA를 찍습니다 — 어떤 그림 LoRA로 그리는지 렌더를 기다리지 않아도 알 수 있습니다
+
+`--lora1/--lora2/--real/--sole`를 줘도 배너에는 LoRA가 없고, 확정 값은 렌더 직전 `log/anima_gen.log`에만
+남았습니다. 그래서 해석기(`resolve_anima_lora`)를 실행 머리에 한 번 더 돌려 **화면과 로그 양쪽**에 찍습니다.
+
+```
+  그림 LoRA      : lora1=lora_lambton(Lambton.safetensors)(1.00) · lora2=-(0.00) · UNet=anima_aestheticV11.safetensors · trigger=(없음) · 디테일러 OFF
+```
+
+`plot.json` 화풍·로컬 설정·강도 오버라이드·파일 실존 검사까지 통과한 **실제 값**이고, 키 이름도 함께 보입니다
+(`bash run_local.sh loras`의 키와 같습니다). `--lora-chg episode`를 쓰면 "(회차마다 재선택)"이 붙습니다.
 
 ### 3-6) 캐릭터 시트 작성법 — `#캐릭터 태그#`로 캐릭터를 지정해 주세요
 
@@ -563,6 +576,9 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 - **컷당 풍선은 최대 3개입니다.** 이 상한은 `comic_page_merge.BALLOON_MAX` **하나**에서 나오고, 컷 스크립트 상한(`comic_gen.DIALOG_LINES`)이 같은 값을 따릅니다 — 한쪽만 올리면 대사가 3번째 풍선 전에 잘려 화면에 나타나지 않습니다.
 - **설명은 자르지 않습니다**: 지문은 길이로 잘지 않고(옛 `…` 토막 마감 폐지), 길면 박스가 자라고 그래도 안 들어가면 **글자 크기를 20px → 최소 11px까지 줄여** 다 담습니다. 실측: 132자=20px·6줄, 600자=19px·32줄, 3,000자=11px·90줄(3단 세로컷 기준, 전부 잘림 없음)
 - 긴 대사는 **'…'로 버리지 않고 풍선 두 개에 나눠** 담습니다(끊는 곳은 문장부호·조사 앞)
+- **꼬리는 두 모드 다 있습니다.** `--balloon-style image`는 자산에 굽혀진 꼬리, 벡터 모드는 코드로 그리는
+  삼각형(말풍선)·생각 물방울(속마음, 원 2개)입니다. 방향은 같게 맞췄습니다 — 꼬리는 **화자(컷 가운데) 쪽으로
+  아래로** 향하고, 컷 바닥이 가까우면 짧아집니다. 꼬리까지 포함한 상자가 겹침 검사에 쓰입니다.
 - 화면에 화자 이름은 찍지 않습니다. 풍선 자리(왼쪽/오른쪽)와 형태(직사각형/타원)로 화자를 가릅니다. **꼬리(화살표)·생각 물방울은 이미지 자산에 굽혀져 있습니다** — 쓰시려면 `--balloon-style image`(3-8f)입니다. 벡터 모드에는 꼬리가 없습니다.
 - 의성어/의태어(`sfx`)는 대형 흰 글씨 + 검은 윤곽으로 살짝 기운 각도로 들어갑니다.
 - 모든 요소는 컷 안에서만 쓰이고 서로 겹치지 않으며, 배치는 **결정론**입니다(같은 입력 → 같은 자리).

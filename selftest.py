@@ -38,6 +38,7 @@ import anima_gen
 import comic_gen as CG
 import comic_input as CI
 import comic_page_merge as CPM
+import run_comic
 import run_comic as RC
 import openAPI_control as OAC
 
@@ -3635,7 +3636,8 @@ def main() -> int:
         # ── 사용자 지시: 몸통이 글자보다 작았다(2~2.5배로) — 벡터때와 견준다
         _cv_v, _, _bx_v = _shot("speech", "거기 서! 오늘 할 이야기가 있어서 왔어.", style="vector")
         _a_img = (_bx[2] - _bx[0]) * (_bx[3] - _bx[1])
-        _a_vec = (_bx_v[2] - _bx_v[0]) * (_bx_v[3] - _bx_v[1])
+        # 벡터 쪽 반환 상자는 꼬리(삼각형)까지 포함한다 — 몸통 동끼리 견주려면 박스 치수를 쓴다
+        _a_vec = int(CPM._BALLOON_LAST.get("box_w") or 1) * int(CPM._BALLOON_LAST.get("box_h") or 1)
         check("몸통이 예전(벡터)보다 면적 1.5배 이상 크다(폭 절반 후) — 글자를 몸통 안에 다 넣는다",
               _a_img >= 1.5 * _a_vec, f"이미지 {_a_img} vs 벡터 {_a_vec} = {_a_img / max(1, _a_vec):.1f}배")
 
@@ -4765,6 +4767,48 @@ def main() -> int:
     check("말풍선·속마음은 컷 위쪽 칸에 자리한다", bool(_ok_top))
     _xy = CPM._place_in_panel(8, 8, 684, 444, 170, 60, avoid=(), prefer=("ml",), margin=8)
     check("같은 열에서는 풍선을 맨 위까지 올린다", bool(_xy) and _xy[1] == 8 + 8)
+    # [꼬리·LoRA·스크립트 재사용]
+    _ti = Image.new("RGB", (700, 460), (250, 250, 250))
+    _td = ImageDraw.Draw(_ti)
+    _rb = CPM._draw_balloon(_td, 8, 8, 684, 444, CPM._balloon("speech", "나 좋아?", speaker="me"),
+                            canvas=_ti, idx=0)
+    _Lm = dict(CPM._BALLOON_LAST)
+    _ti2 = Image.new("RGB", (700, 460), (250, 250, 250))
+    _td2 = ImageDraw.Draw(_ti2)
+    _ro = CPM._draw_balloon(_td2, 8, 8, 684, 444, CPM._balloon("speech", "너 때문이야", speaker="other"),
+                            canvas=_ti2, idx=0)
+    _Lo = dict(CPM._BALLOON_LAST)
+    check("벡터 말풍선에도 꼬리가 있다(화자 쪽 아래로)",
+          _rb and _ro and _rb[3] >= _Lm["xy"][1] + _Lm["box_h"] + 8 and _ro[3] >= _Lo["xy"][1] + _Lo["box_h"] + 8)
+    _xs_me = [x for x in range(int(_rb[0]), int(_rb[2]))
+              for y in range(_Lm["xy"][1] + _Lm["box_h"] + 2, int(_rb[3]))
+              if _ti.getpixel((x, y)) != (250, 250, 250)]
+    _xs_ot = [x for x in range(int(_ro[0]), int(_ro[2]))
+              for y in range(_Lo["xy"][1] + _Lo["box_h"] + 2, int(_ro[3]))
+              if _ti2.getpixel((x, y)) != (250, 250, 250)]
+    check("꼬리는 컷 가운데(화자) 쪽으로 내민다 — 주인공은 박스 오른쪽, 상대방은 왼쪽",
+          _xs_me and _xs_ot
+          and max(_xs_me) >= _Lm["xy"][0] + _Lm["box_w"] - 12
+          and min(_xs_ot) <= _Lo["xy"][0] + 12)
+    _th = CPM._draw_balloon(_td, 8, 8, 684, 444, CPM._balloon("thought", "이상할 것 같아", speaker="me"),
+                            canvas=_ti, idx=1)
+    check("속마음은 생각 물방울로 아래로 이어진다",
+          _th and _th[3] >= dict(CPM._BALLOON_LAST)["xy"][1] + dict(CPM._BALLOON_LAST)["box_h"] + 6)
+    _rep = anima_gen.lora_report(config.get_json_value(), 0)
+    check("LoRA 해석 결과를 실행 머리에 한 줄로 보여준다(키·파일·강도·UNet·트리거)",
+          _rep.startswith("그림 LoRA") and "lora1=" in _rep and "UNet=" in _rep and "trigger=" in _rep
+          and "디테일러" in _rep and "--no-reuse-script" in open("run_comic.py", encoding="utf-8").read())
+    _ct = tempfile.mkdtemp(prefix="script_cache_")
+    with open(os.path.join(_ct, "episode_05_comic.json"), "w", encoding="utf-8") as _f:
+        json.dump({"ep": 5, "panels": [{"no": 1, "caption_ko": "지문"}], "notes": [],
+                   "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
+    check("같은 원고의 지난 컷 스크립트를 재사용한다(LLM 0회)",
+          run_comic.cached_script(5, _ct, {"sheet_sha": "deadbeefdeadbeef"}).get("panels"))
+    check("원고 도장이 다르면 컷 스크립트를 재사용하지 않는다",
+          not run_comic.cached_script(5, _ct, {"sheet_sha": "1111111111111111"})
+          and not run_comic.cached_script(5, _ct, None)
+          and not run_comic.cached_script(6, _ct, {"sheet_sha": "deadbeefdeadbeef"}))
+    shutil.rmtree(_ct, ignore_errors=True)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

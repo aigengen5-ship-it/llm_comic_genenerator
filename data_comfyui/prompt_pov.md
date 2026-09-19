@@ -56,6 +56,7 @@ The background and surrounding atmosphere are described as:
 
 - Composition section: state these slots IN THIS ORDER, and only the ones this shot needs:
   1. shot type — extreme close-up / close-up / medium shot / cowboy shot / full shot / wide shot
+[b.외모는 받은 대로만]: 머리(색·길이)·눈·체형·피부는 요청의 [AAA HAIR]/[AAA EYES]/[AAA BODY]/[AAA SKIN] 과 [BBB] 그룹에 적힌 글자만 씁니다 — 그 줄에 없는 외모를 지어내지 말고, 줄이 없으면 빼십시오.
   2. camera height & direction — eye level / low angle / high angle / from above / from below / from side / over the shoulder / dutch angle / directly above
   3. subject relation & gaze geometry — face-to-face / from behind / profile / one behind another / looking up / looking down
   4. lens & focus ONLY when it changes the read — depth of field / shallow depth of field / focus on AAA's face / focus on legs

@@ -371,6 +371,30 @@ tachi-e.` + front_shot, negative에 `multiple people, clones, split view, collag
 
 
 
+### "주인공과 상대방의 태그가 섞이는데?" — 섞인 게 아니라 **주인공 외모가 비어 있었습니다**
+
+실측 프롬프트(EP2 컷48): `[Subject 1: girl1] the girl1 is zero two (darling in the franxx), **short dark hair and
+straight bangs**, (green eyes:1.4) …, **muscular body** …` — 시트는 `dyed pink hair / long wavy hair / gyaru /
+curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, 시트가 말하지 않은 속성만 있습니다.
+추적 결과混入이 아니라 **대체**였습니다. 태그 블록을 조립할 때 컷 상태 시트 값을 시트 값 *대신* 넣었습니다:
+`hair_line = _st.get("hair") or f"{config.hair_color}, {config.hair_style}"` — 상태가 `ponytail` 한 단어를 주니
+시트의 머릿색·길이가 통째로 사라졌고, 가이드 템플릿은 머리칸을 요구하니 LLM이 자기 기억(zero two=짧은 흑발)으로
+채웠습니다. `body`도 같아서 상태의 `slim` 이 시트의 `curvy` 를 밀어내고 "muscular body"를 불렀습니다.
+(상대방은 예전부터 "고정 그룹 그대로 쓰고 지어내지 말라"는 장치가 있어 덜 섞였고, 주인공엔 그 장치가 없었습니다.)
+
+고친 것 4곳:
+1. 상태 시트 프롬프트 — 체형·머리색·머리길이·피부색을 **다시 쓰지 말라**고 명시(예시도 `slim body` → `sweat, flushed skin` 으로 교체).
+2. `_merged_attr()` — 시트 고정 속성을 항상 앞에 두고, 상태 문구에서 **시트가 이미 말한 범주**의 재서술만 버립니다(범주가 비어 있을 때만 상태가 채운다). 단어 경계로 봅니다(`standing` ≠ `tan`).
+3. `[AAA SKIN]` 신설 — 상태 문구의 피부·질감 글자를 체형 자리에서 떼어냅니다.
+4. 가이드(pov/multi)·요청 문구 — "외모는 받은 대로만, 줄이 없으면 빼라"를 주인공에게도 상대방과 같은 등급으로.
+
+실측 전/후(같은 화차 EP2, 컷 6장/페이지 1장 완료):
+- 전: `short dark hair and straight bangs, (green eyes:1.4), muscular body`
+- 후: `dyed pink hair and long hair and wavy hair and gyaru and messy hair, (green eyes:1.4) and sparkling eyes, curvy body and large breasts and wide hips, tanned skin and flushed skin, sweaty`
+- 상대방은 그대로 고정 그룹: `the boy1 is (gray silhouette:5.0) and (featureless:5.0) tall man, …`(옷·행동만 덧붙음)
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

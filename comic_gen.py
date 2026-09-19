@@ -63,7 +63,7 @@ DIALOG_LINES = CPM.BALLOON_MAX                  # 컷당 풍선 최대 개수 �
 #   왼쪽 위·왼쪽 중간·오른쪽 위·오른쪽 중간 4칸으로 줄였으니 한 컷에 3개를 넣으면 금방 찬다.
 DIALOG_PER_CUT = 2                               # 컷당 발화 상한(넘으면 컷 분리) — 렌더 상한(DIALOG_LINES)과 다르다
                                                 #   (2026-09-11 사용자 지시 2→3, 예전은 여기서 2로 잘라 렌더 상한과 어긋났다)
-SFX_MAX_LEN = 10                                # 의성어/의태어 최대 길이
+SFX_MAX_LEN = 4                                 # 의성어/의태어 최대 길이
 WIDE_ENABLE = True          # False면 wide 컷을 전부 portrait로 강등 (런너 --no-wide 스위치)
 GEN_REQ_ENABLE = True       # False면 cut.yaml 의 ★gen(이미지 생성 요청)을 무시 (런너 --no-cut-gen)
 
@@ -1087,7 +1087,7 @@ def build_panel_script_prompt(ep_num_1based: int, total_eps: int, proto: str, pa
    "lines": [{{"kind": "speech", "who": "{name1}", "text": "대사 또는 신음(최장 {DIALOG_MAX_LEN}자)",
               "emo": "anger|surprise|sweat|heart|gloom|sparkle|question 중 하나 (없으면 \"\")"}},
              {{"kind": "thought", "who": "{name2}", "text": "속마음(최장 {DIALOG_MAX_LEN}자)", "emo": ""}}],
-   "sfx": "의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자)",
+   "sfx": "한글 의성어/의태어(없으면 \"\", 최장 {SFX_MAX_LEN}자, 가능한 1~2자)",
    "wide": false, "facing": "front", "clothes": "police uniform", "emotion": "embarrassed",
    "state": "face=sad; clothes=school uniform; place=shopping street; background=crowd, neon signs; p_face=angry; p_clothes=white shirt",
    "pose": "She is ... English pose sentence.", "camera": "close_up", "position": "NONE", "climax": ""}},
@@ -3183,6 +3183,13 @@ def _llm_compose_panel_prompt(ep_idx: int, tag_block: str, angle: str, kind: str
         f"- Replace (PARTNER)/observer/BBB with: {name_b}\n"
         f"- Camera angle tags to place verbatim (unweighted) in the composition part: {angle}\n"
         "- Youth policy: exposure up to nipples/cameltoe is allowed; genitals must NEVER appear.\n"
+        # [2026-09-18] 실측: 상대방에게는 '지어내지 말라'는 고정 장치가 있는데 주인공에게는 없었다.
+        #   [AAA HAIR] 가 "ponytail" 한 단어였더니 가이드가 Subject 본문에 "short dark hair and straight
+        #   bangs, muscular body"를 스스로 채웠다(시트는 dyed pink hair · long wavy hair · curvy).
+        "- APPEARANCE IS GIVEN, NOT INVENTED: hair (color/length/bangs), eyes, body type and skin come "
+        "ONLY from the [AAA HAIR]/[AAA EYES]/[AAA BODY]/[AAA SKIN] lines for the protagonist and from the "
+        "[BBB ...] group for the partner. Writing an appearance tag that is not in those lines is an error. "
+        "If a line is missing, leave that part out instead of guessing.\n"
         + ("- MANDATORY: copy the character identity tags from [AAA TRIGGER]/[BBB TRIGGER] verbatim "
            "into the finished prompt (they select the character — dropping them is an error).\n"
            if "TRIGGER]" in tag_block else "")

@@ -1256,7 +1256,9 @@ def _generate_tags_via_llm(episode: int, client=None) -> dict:
 - exposure_late: 회차 **후반(클라이맥스)**에 도달하는 복장 상태 (예: open shirt, wet clothes, topless).
   후반에도 옷이 그대로면 빈 문자열. 초반 컷에 이 태그가 붙으면 안 됩니다(옷을 안 입고 시작하게 됩니다)
 - parts_exposure: 복장 밖으로 드러나는 부위 (예: cleavage, cameltoe, see-through clothes, navel)
-- body: 체형·질감 (예: slim body, large breasts, pale skin, oily skin)
+- body: 컷 단위의 **질감·상태만** (예: sweat, flushed skin, oily skin, trembling).
+  시트가 정한 체형·머리색·머리길이·피부색(slim/curvy/muscular/long hair/short hair/pale skin…)을 **다시 쓰지 않습니다**
+  — 상태 시트가 그 글자를 적으면 시트의 고정 속성이 사라지고, 그 자리를 LLM이 다른 캐릭터의 것으로 채웁니다(실측).
 - bodystyle: 자세·습관 (예: standing, kneeling, shy posture) + 복장 추가 아이템 (예: police cap)
 - background: 배경 효과 태그 (예: dim light, floating hearts, rain)
 - expressions: 얼굴 클로즈업 패널용 표정 문구 정확히 5개 (배열) — **서로 다른 감정**으로 다양하게
@@ -3237,6 +3239,59 @@ def _partner_exposure_at(episode: int, cut_depth=None, climax: bool = False) -> 
     return base
 
 
+    
+# [2026-09-18] 컷 상태 시트가 시트의 고정 속성을 **대체**하던 버그(실측: [AAA HAIR] ponytail 하나로
+#   "dyed pink hair, long hair, wavy hair"가 사라지자 가이드가 "short dark hair and straight bangs"를
+#   지어냈고, [AAA BODY] slim 이 "muscular body"를 불렀다). 고정 속성은 항상 앞에 두고,
+#   상태 시트 문구에서 시트와 같은 범주를 겹쳐 말하는 글자만 버립니다(나머지 스타일·질감은 남깁니다).
+_HAIR_COLOR_WORDS = ("black hair", "dark hair", "brown hair", "blonde hair", "blue hair", "red hair",
+                     "white hair", "grey hair", "gray hair", "purple hair", "silver hair", "orange hair",
+                     "green hair", "pink hair", "auburn hair", "two-tone hair", "multicolored hair")
+_HAIR_LEN_WORDS = ("short hair", "very short hair", "medium hair", "long hair", "very long hair",
+                   "shoulder-length hair")
+_BODY_SHAPE_WORDS = ("slim", "slim body", "muscular", "muscular body", "curvy", "curvy body", "petite",
+                     "athletic", "skinny", "thin", "thick", "chubby", "fit", "toned", "bony", "plump",
+                     "average build", "large breasts", "huge breasts", "flat chest", "wide hips",
+                     "narrow hips", "body")
+_SKIN_WORDS = ("skin", "tan", "tanned", "pale", "oily", "flushed", "blush", "sweat", "sweating")
+
+
+def _tok_split(v: str) -> list:
+    return [t.strip() for t in str(v or "").split(",") if t.strip()]
+
+
+def _in_cat(token: str, words: tuple) -> bool:
+    """태그 글자가 그 범주(머릿색·머리길이·체형…)의 글자인지 — 단어 경계로 봅니다('standing' ≠ 'tan')."""
+    tl = str(token).lower()
+    return any(re.search(r"\b" + re.escape(w) + r"\b", tl) for w in words)
+
+
+def _merged_attr(sheet: str, state: str, drop: tuple = ()) -> str:
+    """시트 고정 속성 + 상태 시트 문구. 시트가 이미 말한 범주를 상태가 겹쳐 말하면 **시트를 믿습니다**.
+
+    상태 시트가 머릿색·머리길이·체형을 다시 적는 순간 시트 값이 밀려나고, 그 빈 자리를 가이드 LLM이
+    다른 캐릭터의 속성으로 채웠습니다(실측). 범주가 비어 있을 때만 상태 문구를 받습니다.
+    """
+    keep = _tok_split(sheet)
+    low_sheet = " ".join(keep).lower()
+    sheet_speaks = bool(drop) and any(re.search(r"\b" + re.escape(w) + r"\b", low_sheet) for w in drop)
+    for t in _tok_split(state):
+        if drop and _in_cat(t, drop) and (sheet_speaks or any(t.lower() == k.lower() for k in keep)):
+            continue                                  # 시트가 정한 범주 — 상태 쪽 재서술은 버린다
+        if any(t.lower() == k.lower() for k in keep):
+            continue
+        keep.append(t)
+    return ", ".join(keep)
+
+
+def _skin_from_state(state: str) -> tuple:
+    """상태 문구에서 피부·질감 글자를 떼어냅니다(체형 자리에 섞이면 LLM이 체형으로 오해합니다)."""
+    skin, rest = [], []
+    for t in _tok_split(state):
+        (skin if _in_cat(t, _SKIN_WORDS) else rest).append(t)
+    return ", ".join(skin), ", ".join(rest)
+
+
 def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_ratio: str,
                      position_sentence: str, step_expression: str, is_side: bool,
                      name_a: str = None, name_b: str = None, observer_text: str = None,
@@ -3333,7 +3388,7 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if not _is_no_climax(climax_tag):
         lines_block.append(f"[CLIMAX] {climax_tag}")
 
-    # ============ AAA (주인공) 블록 — [AAA ...] 태그는 주인공에게만 적용 ============
+# ============ AAA (주인공) 블록 — [AAA ...] 태그는 주인공에게만 적용 ============
     lines_block.append(f"[AAA] {name_a} (protagonist) - tags in [AAA ...] lines apply ONLY to {name_a}, NEVER to "
                        f"the partner, and [AAA TRIGGER] tags must be kept verbatim")
     # [2026-09-08] 시트 #…# 캐릭터 공식 태그(트리거) — 모델이 캐릭터를 지정하는 태그라 이름 바로 아래 둔다
@@ -3341,13 +3396,17 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
     if _ctags:
         lines_block.append(f"[AAA TRIGGER] {_ctags}")
     # [2026-08-27] 안경 혼입 방지: 2인물(사이드뷰)에서 상대방만 안경이면 주인공은 명시적 no glasses
-    hair_line = str(_st.get("hair") or "").strip() or f"{config.hair_color}, {config.hair_style}"
+    _hair_sheet = ", ".join([p for p in [str(getattr(config, "hair_color", "") or "").strip(),
+                                         str(getattr(config, "hair_style", "") or "").strip()] if p])
+    hair_line = _merged_attr(_hair_sheet, str(_st.get("hair") or "").strip(),
+                             drop=_HAIR_COLOR_WORDS + _HAIR_LEN_WORDS)
     if is_side and (getattr(config, 'glasses2', '') or '').strip() == '안경' and not _protagonist_has_glasses():
         hair_line += ", no glasses"
     lines_block.append(f"[AAA HAIR] {hair_line}")
     # [2026-09-16] 눈 색은 여기서 처음 프롬프트에 enters 된다 — 실측 전까지는 0회였다.
     #   머리 바로 아래 두는 이유: 정체 태그는 머리→눈 순서로 읽힐 때 가장 덜 새기 때문.
-    _ey = str(_st.get("eyes") or "").strip() or _eye_tags()
+    _ey = _merged_attr(_eye_tags(), str(_st.get("eyes") or "").strip(),
+                       drop=tuple(w for w in _HAIR_COLOR_WORDS if w.endswith("eyes")))
     if _ey:
         lines_block.append(f"[AAA EYES] {_ey}")
     # [2026-09-09] 조건이 거꾸로였다(calm을 클라이맥스에만 적용) — 일상 컷에 극단 표정(실측
@@ -3366,10 +3425,16 @@ def _build_tag_block(episode: int, pose_text: str, camera_view: str, aspect_rati
         lines_block.append(f"[AAA MAKEUP] {_mk}")
     lines_block.append("[AAA EXPRESSION] " + ", ".join(
         _calm_face(p) if not climax_tag else p for p in expression_parts))
-    _bd = str(_st.get("body") or "").strip() or ", ".join(
-        [p for p in [config.body_shape, config.body_tag[episode]] if p])
+    _bd_sheet = ", ".join([p for p in [str(getattr(config, "body_shape", "") or "").strip(),
+                                       str(config.body_tag[episode] or "").strip()] if p])
+    _skin_st, _body_st = _skin_from_state(str(_st.get("body") or "").strip())
+    _bd = _merged_attr(_bd_sheet, _body_st, drop=_BODY_SHAPE_WORDS)      # 체형은 시트가 정한다
     body_parts = [p for p in [_bd, style_tokens] if p]
     lines_block.append(f"[AAA BODY] {', '.join(body_parts)}")
+    _skin_sheet = str(getattr(config, "skin_color", "") or "").strip()
+    _skin_all = _merged_attr(_skin_sheet, _skin_st or str(_st.get("skin") or "").strip())
+    if _skin_all:
+        lines_block.append(f"[AAA SKIN] {_skin_all}")
     if clothes_tokens:
         lines_block.append(f"[AAA CLOTHES] {clothes_tokens}")
     # [2026-09-09] 상태 시트로만 표현 가능했던 항목들 — 회차 상수엔 없는 컷 단위 정보다.

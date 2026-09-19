@@ -4886,6 +4886,27 @@ def main() -> int:
           and run_comic._why_code(6, 6) == 6 and "컷 0장" in run_comic._RC_WHY["1a"])
     CG.comic_out_dir = _out_dir_old
     shutil.rmtree(_dc, ignore_errors=True)
+    # [주인공 외모는 시트가 정한다 — 상태 시트가 고정 속성을 밀어낸 실측]
+    _sh = "dyed pink hair, long hair, wavy hair, gyaru"
+    _drop_h = anima_gen._HAIR_COLOR_WORDS + anima_gen._HAIR_LEN_WORDS
+    check("컷 상태가 머리를 다시 적어도 시트의 머리색·머리길이가 남는다(재서술만 버린다)",
+          anima_gen._merged_attr(_sh, "short dark hair, straight bangs", drop=_drop_h)
+          == "dyed pink hair, long hair, wavy hair, gyaru, straight bangs"
+          and anima_gen._merged_attr(_sh, "ponytail", drop=_drop_h).endswith("ponytail"))
+    check("시트가 말하지 않은 범주만 상태 시트가 채운다(머리 정보 없을 때 폴백)",
+          anima_gen._merged_attr("", "short dark hair, straight bangs", drop=_drop_h)
+          == "short dark hair, straight bangs")
+    _sk, _rest = anima_gen._skin_from_state("slim, flushed skin, sweat, standing, hugging")
+    check("상태 문구에서 피부 글자를 떼어낸다('standing'을 'tan'으로 오해하지 않는다)",
+          _sk == "flushed skin, sweat" and _rest == "slim, standing, hugging"
+          and anima_gen._merged_attr("curvy, wide hips, large breasts", _rest,
+                                     drop=anima_gen._BODY_SHAPE_WORDS)
+          == "curvy, wide hips, large breasts, standing, hugging")
+    _ag_src2 = open(os.path.join(ROOT, "anima_gen.py"), encoding="utf-8").read()
+    check("주인공에게도 외모 고정 장치를 둔다(요청·가이드·상태 시트 3곳)",
+          "APPEARANCE IS GIVEN, NOT INVENTED" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+          and "지어내지" in open(os.path.join(ROOT, "data_comfyui", "prompt_multi.md"), encoding="utf-8").read()
+          and "다시 쓰지 않습니다" in _ag_src2 and "[AAA SKIN]" in _ag_src2)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

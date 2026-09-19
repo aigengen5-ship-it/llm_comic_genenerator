@@ -806,13 +806,21 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 | 3 | 몸매·가슴·엉덩이 | `[AAA BODY]` | `petite, medium breasts` → `large breasts, wide hips` |
 | 4 | 복장 | `[AAA CLOTHES]` | `school uniform` → `gold bra, gold miniskirt` |
 | 5 | 악세사리 | `[AAA ACCESSORIES]` | `heart choker, earrings` |
-| + | 머리 상태 | `[AAA HAIR]` | `hair undone, wet hair` |
+| + | 머리 상태 | `[AAA HAIR]` | `hair undone, wet hair` — **시트가 정한 머리색·머리길이는 밀어내지 않고 뒤에 덧붙입니다** |
 | + | 몸의 흔적 | `[AAA MARKS]` | `tear trail, sweat, dirt on cheek` |
 | + | 소지품 | `[PROPS]` | `umbrella, smartphone, wads of cash` |
 | + | 지속 자세 | `[POSTURE]` | `on the ground, kneeling, hands bound` |
 | **+10** | 장소 | `[BACKGROUND]` | `shopping street corner` → `rooftop at dusk` |
 | **+11** | 시간대·조명 | `[BACKGROUND]` | `night` → `dusk, golden light` |
 | **+12** | 배경에 보이는 것 | `[BACKGROUND]` | `crowd, neon signs` → `falling banknotes` |
+
+**캐릭터의 고정 외모(머리색·머리길이·눈색·체형·피부색)는 시트가 정하고, 컷 상태는 덧붙이기만 합니다.**
+상태 시트가 그 글자를 다시 적으면 시트 값이 밀려나고, 프롬프트 가이드가 빈 자리를 자기 기억(다른 캐릭터의
+속성)으로 채웠습니다(실측: `[AAA HAIR] ponytail` 하나로 `dyed pink hair, long hair, wavy hair`가 사라지고
+Subject 본문에 `short dark hair and straight bangs, muscular body`가 생겼다). 그래서 ① 상태 시트 프롬프트가
+그 범주들을 다시 쓰지 말라고 막고, ② 태그 블록이 시트 값을 항상 앞에 두며 겹치는 재서술만 버리고,
+③ `[AAA SKIN]` 을 따로 두어 피부 글자가 체형 자리에 섞이지 않게 하고, ④ 가이드에 "외모는 받은 대로만,
+없는 줄은 빼라"를 상대방과 같은 등급의 규칙으로 넣었습니다.
 
 - **규칙: 언급이 없으면 직전 컷 값 그대로.** LLM은 컷마다 변한 항목만 채우고 나머지는 `""`로 둡니다. 누적 계산은 프로그램이 합니다(`comic_gen.fold_cut_state`) — 그래서 토큰도 적고, LLM이 반복을 빼먹어도 연속성이 안 끊깁니다.
 - 장소·시간·배경은 회차 태그가 **회차 전체의 장소 목록**이라 특히 중요합니다. 회치의 첫 컷과 장면이 바뀌는 컷에서 채우도록 프롬프트에 규칙이 있고, 도입 컷이 비워도 **앞으로 처음 명시된 장소**를 소급해 씁니다(다른 장소 배경이 섞이지 않습니다).

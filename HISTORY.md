@@ -376,7 +376,7 @@ tachi-e.` + front_shot, negative에 `multiple people, clones, split view, collag
 실측 프롬프트(EP2 컷48): `[Subject 1: girl1] the girl1 is zero two (darling in the franxx), **short dark hair and
 straight bangs**, (green eyes:1.4) …, **muscular body** …` — 시트는 `dyed pink hair / long wavy hair / gyaru /
 curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, 시트가 말하지 않은 속성만 있습니다.
-추적 결과混入이 아니라 **대체**였습니다. 태그 블록을 조립할 때 컷 상태 시트 값을 시트 값 *대신* 넣었습니다:
+추적 결과 **혼입이 아니라** **대체**였습니다. 태그 블록을 조립할 때 컷 상태 시트 값을 시트 값 *대신* 넣었습니다:
 `hair_line = _st.get("hair") or f"{config.hair_color}, {config.hair_style}"` — 상태가 `ponytail` 한 단어를 주니
 시트의 머릿색·길이가 통째로 사라졌고, 가이드 템플릿은 머리칸을 요구하니 LLM이 자기 기억(zero two=짧은 흑발)으로
 채웠습니다. `body`도 같아서 상태의 `slim` 이 시트의 `curvy` 를 밀어내고 "muscular body"를 불렀습니다.

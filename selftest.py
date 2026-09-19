@@ -4801,16 +4801,21 @@ def main() -> int:
           and "디테일러" in _rep and "--no-reuse-script" in open("run_comic.py", encoding="utf-8").read())
     _ct = tempfile.mkdtemp(prefix="script_cache_")
     with open(os.path.join(_ct, "episode_05_comic.json"), "w", encoding="utf-8") as _f:
+        # 실저장 형태를 그대로 씁니다 — 산출물 패널에는 `emotion`이 없습니다(표정은 state/_state 로 돕니다)
         json.dump({"ep": 5, "notes": [], "panels": [{"no": 1, "type": "wide", "pose": "She is standing.",
                                                      "camera": "front_view", "caption_ko": "지문",
-                                                     "clothes": "", "emotion": "calm", "position": "left",
-                                                     "lines": []}],
+                                                     "clothes": "school uniform", "position": "left",
+                                                     "lines": [], "state": {}, "_state": {}, "gen": {}}],
                    "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
     check("같은 원고의 지난 컷 스크립트를 재사용한다(LLM 0회)",
           run_comic.cached_script(5, _ct, {"sheet_sha": "deadbeefdeadbeef"}).get("panels"))
     with open(os.path.join(_ct, "episode_07_comic.json"), "w", encoding="utf-8") as _f:
         json.dump({"ep": 7, "panels": [{"no": 1, "caption_ko": "필수 항목 없음"}],
                    "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
+    check("저장된 형태(감정 키 없음)의 스크립트도 재사용한다(없는 키를 요구해 영 불발되던 일)",
+          len(run_comic.cached_script(5, _ct, {"sheet_sha": "deadbeefdeadbeef"}).get("panels") or []) == 1
+          and '"emotion"' not in open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read().split(
+              "need = (")[1].split(")")[0])
     check("필수 항목이 빠진 컷 스크립트는 재사용을 포기하고 LLM으로 돌아간다",
           not run_comic.cached_script(7, _ct, {"sheet_sha": "deadbeefdeadbeef"}))
     check("원고 도장이 다르면 컷 스크립트를 재사용하지 않는다",
@@ -4855,7 +4860,7 @@ def main() -> int:
           and os.listdir(_rj) == [])
     CG.rejected_dir = _old_rd
     shutil.rmtree(_rj, ignore_errors=True)
-    _cg_src = open("comic_gen.py", encoding="utf-8").read()
+    _cg_src = open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
     check("평가기에 컷이 아는 정보를 넘긴다(사람 없는 컷을 사람 기준으로 채점하지 않게)",
           "people=_people" in _cg_src and "camera=_cam" in _cg_src
           and "_panel_has_person(panel)" in _cg_src
@@ -4866,6 +4871,21 @@ def main() -> int:
           and "not stale(own, a.dir, a.ep)" in open("cutsheet.py", encoding="utf-8").read())
     check("결과 요약에도 그 회차의 그림 설정을 남긴다",
           "_AG_END.lora_report(jv, idx)" in open("run_comic.py", encoding="utf-8").read())
+    # [빈 스크립트는 없는 스크립트 — 재사용 배선 회귀(실측: 전 화차 "컷 스크립트 없음 → 건너뜀")]
+    _rc_src2 = open(os.path.join(ROOT, "run_comic.py"), encoding="utf-8").read()
+    check("재사용을 못 찾으면 스크립트를 None로 넘긴다({} 를 넘기면 회차가 통째로 건너뛴다)",
+          "script=(_script or None)" in _rc_src2 and "if not script:" in _cg_src)
+    _dc = tempfile.mkdtemp(prefix="whycode_")
+    with open(os.path.join(_dc, "episode_06_comic.json"), "w", encoding="utf-8") as _f:
+        json.dump({"ep": 6, "panels": [], "files": []}, _f)
+    with open(os.path.join(_dc, "episode_07_comic.json"), "w", encoding="utf-8") as _f:
+        json.dump({"ep": 7, "panels": [{"no": 1}], "files": ["a.png"]}, _f)
+    _out_dir_old, CG.comic_out_dir = CG.comic_out_dir, (lambda: _dc)
+    check("컷이 0장이면 '렌더는 했는데'가 아니라 '컷을 만들지 못했다'로 알린다",
+          run_comic._why_code(1, 6) == "1a" and run_comic._why_code(1, 7) == 1
+          and run_comic._why_code(6, 6) == 6 and "컷 0장" in run_comic._RC_WHY["1a"])
+    CG.comic_out_dir = _out_dir_old
+    shutil.rmtree(_dc, ignore_errors=True)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

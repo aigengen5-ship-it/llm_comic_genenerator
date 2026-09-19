@@ -4048,7 +4048,8 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
     _prompt_san_reset()      # 정제 통계는 회차 단위로 모은다
     total = max(1, int(getattr(config, "total_episodes", 1) or 1))
 
-    if script is None:
+    # 빈 스크립트는 없는 스크립트다(재사용 판정이 {} 를 돌려줄 수 있다) — 그때는 어김없이 LLM이 새로 쓴다.
+    if not script:
         script = request_panel_script(ep_num_1, total, client=client, pages=pages,
                                       episode_text=episode_text, chars_per_panel=chars_per_panel,
                                       max_panels=max_panels, beat_chars=beat_chars)

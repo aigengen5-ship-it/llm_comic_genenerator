@@ -203,11 +203,28 @@ def perr(msg: str = ""):
 
 # 실패 코드 → 사람이 읽는 사유 (산출물 옆 스킵 메모의 내용)
 _RC_WHY = {1: "페이지 0장(렌더는 했는데 합성된 페이지가 없음)",
+           # 컷 자체가 0장이면 렌더를 한 게 아닙니다 — 사유를 구분해 알려줍니다(실측: 빈 스크립트를 건너뛰면서 '렌더는 했는데' 로 보였습니다)
+           "1a": "컷 0장 — 컷 스크립트를 만들지 못해 렌더를 하지 않았습니다(컷 시트/추출/LLM 응답을 확인하세요)",
            5: "에피소드 본문이 비어 있음(원작 생성 실패 — 컷을 그릴 근거가 없음)",
            2: "추출 실패 또는 컷 스크립트가 필수 상태를 채우지 못해 렌더 전에 중단",
            3: "프리플레이트(ollama/ComfyUI/폰트 등) 실패",
            4: "dry-run 태그 초기화 실패",
            6: "렌더 불완전 — 컷이 전부 만들어지지 않아 페이지 합성을 보류했습니다 (--merge-partial로 합성 가능)"}
+
+
+def _why_code(rc: int, ep_num: int):
+    """실패 코드를 좀 더 정확히 가립니다 — 컷이 0장이면 '렌더는 했는데'가 아닙니다(실측 오포단)."""
+    if int(rc or 0) != 1:
+        return rc
+    try:
+        with open(os.path.join(CG.comic_out_dir(), f"episode_{int(ep_num):02d}_comic.json"),
+                  encoding="utf-8") as fh:
+            d = json.load(fh) or {}
+        if not (d.get("panels") or []) and not (d.get("files") or []):
+            return "1a"
+    except Exception:
+        pass
+    return rc
 
 
 def _skip_note(ep_num: int, ep_path: str, rc: int) -> str:
@@ -218,7 +235,7 @@ def _skip_note(ep_num: int, ep_path: str, rc: int) -> str:
         f = os.path.join(d, f"episode_{ep_num:02d}_SKIPPED.txt")
         with open(f, "w", encoding="utf-8") as fh:
             fh.write("\n".join([
-                f"EP{ep_num:02d} 스킵 — rc={rc} · " + _RC_WHY.get(rc, "알 수 없는 사유"),
+                f"EP{ep_num:02d} 스킵 — rc={rc} · " + _RC_WHY.get(_why_code(rc, ep_num), "알 수 없는 사유"),
                 "시각: " + time.strftime("%Y-%m-%d %H:%M:%S"),
                 "원고: " + str(ep_path),
                 "이 회차는 페이지를 만들지 못했습니다. 사유는 log/error.log(pid 포함 줄)와 "
@@ -534,7 +551,9 @@ def cached_script(ep_num: int, out_dir: str, stamp=None) -> dict:
         return {}
     panels = (d or {}).get("panels") or []
     # 스크립트로 보낸 패널은 이 필드들을 전제로 돕니다 — 하나라도 없으면 재사용을 접습니다(조용한 이상보다 Loud)
-    need = ("type", "pose", "camera", "caption_ko", "clothes", "emotion", "position", "lines")
+    #   (실측: 저장되는 패널에 `emotion`은 없습니다 — 표정은 state/_state 로 돕니다. 없는 키를 요구해
+    #    재사용이 영 불발되던 일이 있었으니, 실제로 필요한 것만 요구합니다)
+    need = ("type", "pose", "camera", "caption_ko", "position", "lines")
     bad = [int(pn.get("no") or i + 1) for i, pn in enumerate(panels)
            if not all(k in pn for k in need)]
     if bad:
@@ -803,7 +822,9 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
             p(f"  ◆ 컷 스크립트 재사용[{_script['_from']}]: 컷 {len(_script['panels'])}개 · "
               "컷 스크립트 LLM 0회 (--no-reuse-script로 새로 씀)")
     try:
-        meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True, script=_script)
+        # {} 를 그대로 넘기면(재사용 못 찾음) 스크립트가 빈 채로 건너뛰어집니다 — None 로 넘겨 LLM이 쓰게 합니다
+        meta = CG.comic_gen_episode(idx, client=client, json_value=jv, do_render=True,
+                                    script=(_script or None))
     except CG.PanelScriptError as e:
         perr(f"[오류] {e}")
         p("  컷 스크립트가 화면에 필요한 상태를 채우지 못해 여기서 멈춥니다(렌더는 시작되지 않았습니다).")
@@ -1394,7 +1415,8 @@ def main() -> int:
         _skip_f = os.path.join(CG.comic_out_dir(), f"episode_{ep_num:02d}_SKIPPED.txt")
         if rc:
             rc_all = rc_all or rc
-            perr(f"  ✗ EP{ep_num:02d} 실패(rc={rc} · {_RC_WHY.get(rc, '알 수 없음')}) — 다음 회차는 계속 시도합니다")
+            perr(f"  ✗ EP{ep_num:02d} 실패(rc={rc} · {_RC_WHY.get(_why_code(rc, ep_num), '알 수 없음')}) — "
+                 "다음 회차는 계속 시도합니다")
             _sn = _skip_note(ep_num, ep_path, rc)
             if _sn:
                 p(f"  스킵 메모: {os.path.relpath(_sn)}")
@@ -1413,7 +1435,8 @@ def main() -> int:
           + (f" / 스킵 {len(skipped)}회차 " + ", ".join("EP%02d(rc=%d)" % (e, r) for e, r in skipped)
              if skipped else ""))
         if skipped:
-            perr("  ✗ 스킵된 회차: " + ", ".join("EP%02d(%s)" % (e, _RC_WHY.get(r, r)) for e, r in skipped)
+            perr("  ✗ 스킵된 회차: " + ", ".join("EP%02d(%s)" % (e, _RC_WHY.get(_why_code(r, e), r))
+                                               for e, r in skipped)
                  + f" — 사유는 {runlog.ERROR_LOG}와 각 episode_NN_SKIPPED.txt")
     return rc_all
 

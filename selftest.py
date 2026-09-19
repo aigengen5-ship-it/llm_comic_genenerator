@@ -4800,7 +4800,10 @@ def main() -> int:
           and "디테일러" in _rep and "--no-reuse-script" in open("run_comic.py", encoding="utf-8").read())
     _ct = tempfile.mkdtemp(prefix="script_cache_")
     with open(os.path.join(_ct, "episode_05_comic.json"), "w", encoding="utf-8") as _f:
-        json.dump({"ep": 5, "panels": [{"no": 1, "caption_ko": "지문"}], "notes": [],
+        json.dump({"ep": 5, "notes": [], "panels": [{"no": 1, "type": "wide", "pose": "She is standing.",
+                                                     "camera": "front_view", "caption_ko": "지문",
+                                                     "clothes": "", "emotion": "calm", "position": "left",
+                                                     "lines": []}],
                    "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
     check("같은 원고의 지난 컷 스크립트를 재사용한다(LLM 0회)",
           run_comic.cached_script(5, _ct, {"sheet_sha": "deadbeefdeadbeef"}).get("panels"))

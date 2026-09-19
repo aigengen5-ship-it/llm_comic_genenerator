@@ -317,8 +317,7 @@ tachi-e.` + front_shot, negative에 `multiple people, clones, split view, collag
 이미 들어가 있었다면, 원고 도장만 없었을 뿐입니다. 컷 시트 도장(`cutsheet.sheet_sha`)을 같이 박고,
 `run_comic.cached_script()`가 같은 도장이면 그걸 `script=`로 넘깁니다 → **컷 스크립트 LLM 0회**, 같은 컷 구성으로
 재렌더. 도장이 다르거나(`--rebuild-cutsheet`, 원고 수정) 없으면 평소대로 LLM이 씁니다. 끄는 법 `--no-reuse-script`. 재사용 전 필수 항목(`type/pose/camera/caption_ko/clothes/emotion/position/lines`)을
-검사해 하나라도 빠지면 **조용히 이상해지는 대신** 재사용을 포기합니다(실측: 손으로 만든 스크립트에 `pose`가 없어
-`_base_seed`에서 KeyError — 이제 "재사용 포기: 컷 1에 필수 항목이 없습니다"로 알린다). 실측 재현: 같은 원고·같은 도장으로
+검사해 하나라도 빠지면 **조용히 이상해지는 대신** 재사용을 포기합니다(실측: 손으로 만든 스크립트에 `pose`가 없어 `_base_seed`에서 KeyError — 이제 "재사용 포기: 컷 1에 필수 항목이 없습니다"로 알린다). 실측 재현: 같은 원고·같은 도장으로
 다시 돌려 `◆ 컷 스크립트 재사용[episode_03_comic.json]: 컷 1개 · 컷 스크립트 LLM 0회` → 렌더(최고점 72점) → 페이지 1장 완성.
 
 **벡터 풍선 꼬리.** 자산 모드에는 꼬리가 굽혀 있지만 벡터에는 없어 화자 표지가 없었습니다(사용자 지시).

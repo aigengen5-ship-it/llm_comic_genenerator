@@ -533,7 +533,12 @@ def cached_script(ep_num: int, out_dir: str, stamp=None) -> dict:
     if str(((d or {}).get("cutsheet") or {}).get("sheet_sha") or "") != str(stamp.get("sheet_sha") or ""):
         return {}
     panels = (d or {}).get("panels") or []
-    if not panels:
+    # 스크립트로 보낸 패널은 이 필드들을 전제로 돕니다 — 하나라도 없으면 재사용을 접습니다(조용한 이상보다 Loud)
+    need = ("type", "pose", "camera", "caption_ko", "clothes", "emotion", "position", "lines")
+    bad = [int(pn.get("no") or i + 1) for i, pn in enumerate(panels)
+           if not all(k in pn for k in need)]
+    if bad:
+        p(f"  ○ 컷 스크립트 재사용 포기: 컷 {bad[:6]}에 필수 항목이 없습니다 — LLM으로 다시 씁니다")
         return {}
     return {"panels": panels, "notes": list((d or {}).get("notes") or []), "raw": "",
             "page_plans": (d or {}).get("page_plans"), "beats": (d or {}).get("beats"),

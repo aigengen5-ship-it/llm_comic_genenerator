@@ -4804,6 +4804,11 @@ def main() -> int:
                    "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
     check("같은 원고의 지난 컷 스크립트를 재사용한다(LLM 0회)",
           run_comic.cached_script(5, _ct, {"sheet_sha": "deadbeefdeadbeef"}).get("panels"))
+    with open(os.path.join(_ct, "episode_07_comic.json"), "w", encoding="utf-8") as _f:
+        json.dump({"ep": 7, "panels": [{"no": 1, "caption_ko": "필수 항목 없음"}],
+                   "cutsheet": {"sheet_sha": "deadbeefdeadbeef"}}, _f, ensure_ascii=False)
+    check("필수 항목이 빠진 컷 스크립트는 재사용을 포기하고 LLM으로 돌아간다",
+          not run_comic.cached_script(7, _ct, {"sheet_sha": "deadbeefdeadbeef"}))
     check("원고 도장이 다르면 컷 스크립트를 재사용하지 않는다",
           not run_comic.cached_script(5, _ct, {"sheet_sha": "1111111111111111"})
           and not run_comic.cached_script(5, _ct, None)

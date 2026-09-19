@@ -521,10 +521,38 @@ def main(argv=None) -> int:
     ap.add_argument("--mode", choices=MODES, default="rec", help="태그 강등 사다리 폭")
     ap.add_argument("--target-pages", type=int, default=12)
     ap.add_argument("--cuts-per-page", dest="cpp", type=float, default=5.0)
+    ap.add_argument("--build", action="store_true", dest="do_build",
+                    help="입력 폴더의 세 가지(원고 캐리어·reviewed·캐릭터 시트)로 컷 시트를 만들어 둡니다 "
+                         "(캐리어의 본문 항목 해시가 그대로면 다시 만들지 않습니다)")
     a = ap.parse_args(argv)
+    if a.do_build:
+        sha = source_sha(a.dir, a.ep)
+        own = generated_path(a.dir, a.ep)
+        if os.path.isfile(own) and not stale(own, a.dir, a.ep):
+            print(f"EP{a.ep:02d} 스킵: {os.path.basename(own)} 이(가) 지금 원고 해시({sha})와 같습니다")
+            return 0
+        if not sources(a.dir, a.ep).get("ep"):
+            print(f"EP{a.ep:02d} 만들 수 없습니다: 원고 캐리어 ep{a.ep:02d}_<해시>.txt 가 없습니다")
+            return 1
+        from openAPI_control import call_openai_for_text as ask0
+
+        def _ask(prompt):
+            raw, _ = ask0(prompt, messages=None, log_fn=lambda m: print(f"   {m}"),
+                          temperature=0.2, repeat_penalty=1.05, enable_thinking=False)
+            return raw
+
+        made = build(a.dir, a.ep, ask=_ask, log=lambda m: print(f"   {m}"))
+        if not made:
+            return 1
+        m = made["meta"]
+        print(f"EP{a.ep:02d} 컷 시트 생성: {os.path.basename(made['path'])} · 컷 {m['rows']}개 · "
+              f"원고 해시 {m['source_sha']} · 분리 {m['polished'].get('splits')} / 삽입 "
+              f"{m['polished'].get('inserts')} / 화자 {m['polished'].get('speakers')}")
+        return 0
     got = load(a.dir, a.ep, mode=a.mode, target_pages=a.target_pages, per_page=a.cpp)
     if not got:
-        print(f"컷 시트가 없습니다: {a.dir}/episode_{a.ep:02d}_cuts.json")
+        print(f"컷 시트가 없습니다: {a.dir} 안의 episode_{a.ep:02d}_cuts.json / "
+              f"{CUTS_PREFIX}{a.ep:02d}_<해시>.json (--build로 만들 수 있습니다)")
         return 1
     au = got["audit"]
     print(f"컷 시트 {au['source']} : 시트 {au['sheet_total']}컷 → 강등 후 {au['after_compat']}컷"

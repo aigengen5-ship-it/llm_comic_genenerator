@@ -3718,9 +3718,15 @@ def _pick_best_shot(shots, panel, prompt):
     if len(shots) < 2:
         return (shots[0] if shots else None), []
     ctx = str(panel.get("caption_ko") or panel.get("caption") or panel.get("pose") or "")
+    # [실측] 배경 전용 컷(사람 없음)에 사람 기준을 들이대면 30점으로 떨어집니다(표본 실측: wide Establishing 30점).
+    #   그래서 컷이 알고 있는 정보(사람 유무·촬영 의도)를 평가기에 넘깁니다 — image_eval이 이를 별도 규칙으로 돕니다.
+    _has = _panel_has_person(panel) or bool(re.search(r"\b\d(girl|boy|girls|boys|people)\b|solo", str(prompt)))
+    _people = "auto" if _has else "none"
+    _cam = str(panel.get("camera") or "").strip() or None
     try:
         import image_eval as IE
-        got = IE.score_images(shots, tags=[prompt] * len(shots), contexts=[ctx] * len(shots))
+        got = IE.score_images(shots, tags=[prompt] * len(shots), contexts=[ctx] * len(shots),
+                             people=_people, camera=_cam)
     except Exception as e:
         _clog(f"컷 {panel['no']}: 평가기를 돌리지 못했습니다({e}) — 1번 안 채택")
         return shots[0], shots[1:]
@@ -3747,6 +3753,72 @@ def _reject_shots(paths):
             shutil.move(pth, os.path.join(dst, os.path.basename(pth)))
         except OSError:
             pass
+
+
+def rejected_dir() -> str:
+    return os.path.join("image", "rejected")
+
+
+def _cut_key(fname: str) -> str:
+    """파일명에서 컷 번호를 뽑아 같은 컷의 후보끼리 묶습니다(episode_9_comic_e9_p36_… → ep9/p36)."""
+    m = re.search(r"e(\d+)_p(\d+)", str(fname))
+    return f"ep{int(m.group(1)):02d}/p{int(m.group(2)):02d}" if m else "(알수없음)"
+
+
+def cleanup_rejected(keep_per_cut: int = 1, keep_days: int = 7, max_mb: float = 200.0,
+                     apply: bool = True, log=None) -> dict:
+    """image/rejected/(탈락 후보)를 정리합니다 — 채택본 재시도 재료로 **가장 최근 것만** 남깁니다.
+
+    best-of-N을 켜면 후보가 매일 쌓입니다(컷당 N-1장). 이 폴더는 합성 glob 을 막으려 옮겨 둔
+    재료일 뿐이라 세 규칙을 적용합니다: 같은 컷은 최신 keep_per_cut장 · keep_days가 지나면 버림 ·
+    전체가 max_mb를 넘으면 오래된 것부터 버림. apply=False 이면 견적만 냅니다.
+    """
+    note = log or (lambda m: None)
+    d = rejected_dir()
+    out = {"files": 0, "bytes": 0, "deleted": 0, "freed": 0, "kept": 0}
+    if not os.path.isdir(d):
+        return out
+    import time
+    now = time.time()
+    groups, all_rows = {}, []
+    for f in sorted(os.listdir(d)):
+        pth = os.path.join(d, f)
+        if not (os.path.isfile(pth) and f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))):
+            continue
+        try:
+            st = os.stat(pth)
+        except OSError:
+            continue
+        row = (st.st_mtime, st.st_size, pth)
+        out["files"] += 1
+        out["bytes"] += st.st_size
+        all_rows.append(row)
+        groups.setdefault(_cut_key(f), []).append(row)
+    doomed = set()
+    for rows in groups.values():
+        rows.sort(key=lambda r: -r[0])                        # 최신 순서
+        for i, (mt, sz, pth) in enumerate(rows):
+            if i >= max(0, int(keep_per_cut)) or (now - mt) > keep_days * 86400:
+                doomed.add(pth)
+    left = out["bytes"] - sum(sz for m, sz, p in all_rows if p in doomed)
+    if max_mb and left > max_mb * 1048576:                    # 용량 초과분은 오래된 것부터
+        for mt, sz, pth in sorted((r for r in all_rows if r[2] not in doomed), key=lambda r: r[0]):
+            doomed.add(pth)
+            left -= sz
+            if left <= max_mb * 1048576:
+                break
+    out["kept"] = out["files"] - len(doomed)
+    for mt, sz, pth in sorted((r for r in all_rows if r[2] in doomed), key=lambda r: r[0]):
+        if apply:
+            try:
+                os.remove(pth)
+            except OSError as e:
+                note(f"탈락 후보 삭제 실패: {os.path.basename(pth)} — {e}")
+                out["kept"] += 1
+                continue
+        out["deleted"] += 1
+        out["freed"] += sz
+    return out
 
 
 # ── 스탠딩 재사용 ──────────────────────────────────────────────────────────────────

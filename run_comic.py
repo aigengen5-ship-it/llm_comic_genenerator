@@ -815,10 +815,32 @@ def _run_episode(args, ep_num: int, total_eps: int, ep_path: str, sheet_path: st
     p("\n===== 결과 =====")
     p(f"  회차      : EP{meta.get('ep')}  컷 {len(meta.get('files', []))}장 / 페이지 {len(pages)}장")
     p(f"  base_seed : {meta.get('base_seed')}  seeds: {meta.get('seeds')}")
+    try:
+        # 결과 요약에도 그 회차에 쓴 그림 설정을 남깁니다(--lora-chg episode 로 중간에 바뀌면 배너와 달라집니다)
+        import anima_gen as _AG_END
+        p("  " + _AG_END.lora_report(jv, idx))
+    except Exception:
+        pass
     for pg in pages:
         p(f"  페이지    : {pg}")
     for n in meta.get("notes", []):
         p(f"  보정      : {n}")
+    # [정리] best-of-N 후보(image/rejected/)는 재료일 뿐 — 최신 한 장만 남기고 거둡니다
+    if not bool(getattr(args, "no_rejected_cleanup", False)):
+        try:
+            _rj = CG.cleanup_rejected(keep_per_cut=int(getattr(args, "rejected_keep_per_cut", 1) or 0),
+                                      keep_days=int(getattr(args, "rejected_keep_days", 7) or 0),
+                                      max_mb=float(getattr(args, "rejected_max_mb", 200) or 0),
+                                      apply=not bool(args.dry_run), log=perr)
+            if _rj["files"]:
+                _v = "견적" if args.dry_run else "정리"
+                p(f"  탈락 후보 {_v}: {_rj['files']}장({_rj['bytes'] / 1048576:.1f}MB) → "
+                  f"{_rj['kept']}장 남김 · {_rj['deleted']}장 삭제 예정({_rj['freed'] / 1048576:.1f}MB)"
+                  if args.dry_run else
+                  f"  탈락 후보 정리: {_rj['files']}장({_rj['bytes'] / 1048576:.1f}MB) → "
+                  f"{_rj['kept']}장 남김 · {_rj['deleted']}장 삭제({_rj['freed'] / 1048576:.1f}MB)")
+        except Exception as e:
+            perr(f"  탈락 후보 정리 실패: {type(e).__name__}: {e}")
     p(f"  소요      : {time.time() - t0:.1f}s")
     # [2026-09-12] 컷이 전부 만들어지지 않았으면 페이지를 합치지 않고 여기서 접는다 (--all-eps에서 반쪽 권 방지)
     if meta.get("incomplete"):
@@ -894,6 +916,14 @@ def main() -> int:
                     help="한 회차 목표 면수(기본 12) — 컷 시트가 이보다 많으면 서술 컷부터 자릅니다")
     ap.add_argument("--cuts-per-page", type=float, default=0.0, dest="cuts_per_page",
                     help="면당 컷 수(기본 5.0) — 목표 면수를 컷 예산으로 바꾸는 환율")
+    ap.add_argument("--rejected-keep-per-cut", type=int, default=1, dest="rejected_keep_per_cut",
+                    help="image/rejected/ 에서 컷당 남기는 탈락 후보 수(기본 1 = 최신 한 장, 0 = 전부 삭제)")
+    ap.add_argument("--rejected-keep-days", type=int, default=7, dest="rejected_keep_days",
+                    help="탈락 후보를 이틀수까지 두습니다(기본 7)")
+    ap.add_argument("--rejected-max-mb", type=float, default=200, dest="rejected_max_mb",
+                    help="image/rejected/ 전체 용량 상한(기본 200MB, 초과분은 오래된 것부터)")
+    ap.add_argument("--no-rejected-cleanup", action="store_true", dest="no_rejected_cleanup",
+                    help="탈락 후보 정리를 켜지 않습니다( 후보가 계속 쌓입니다)")
     ap.add_argument("--no-reuse-script", action="store_true", dest="no_reuse_script",
                     help="지난 실행의 컷 스크립트를 재사용하지 않고 매번 LLM으로 다시 씁니다")
     ap.add_argument("--rebuild-cutsheet", action="store_true", dest="rebuild_cutsheet",

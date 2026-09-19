@@ -544,10 +544,45 @@ def _norm_emo(v) -> str:
     return k if k in EMOTIF_KINDS else ""
 
 
-def _balloon(kind, text, side=None, speaker="", emo="") -> dict:
+def _balloon(kind, text, side=None, speaker="", emo="", aim=None) -> dict:
     return {"kind": "thought" if str(kind).startswith("t") else "speech",
             "text": str(text).strip(), "side": side or None,
-            "speaker": _norm_speaker(speaker), "emo": _norm_emo(emo)}
+            "speaker": _norm_speaker(speaker), "emo": _norm_emo(emo), "aim": _norm_aim(aim)}
+
+
+def _norm_aim(v) -> list:
+    """꼬리가 가리킬 점(컷 안에서 0~1 비율). 없으면 None — 그때는 탄 열 기준으로만 향한다."""
+    try:
+        fx, fy = float(v[0]), float(v[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+    if not (0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0):
+        return None
+    return [fx, fy]
+
+
+# 컷 안의 사람 위치(스크립트의 position) → 꼬리가 겨냥할 가로 비율
+_AIM_X = {"left": 0.30, "center": 0.50, "centre": 0.50, "right": 0.70}
+_AIM_Y = 0.42            # 고개~어깨쯤. 풍선은 위에 앉으므로 꼬리는 아래로 향합니다.
+
+
+def _speaker_aim(panel: dict, speaker: str) -> list:
+    """대사를 한 사람 위치를 컷 비율로. 스크립트가 사람 사각형을 주지 않으니 `position`으로 겨냥합니다.
+
+    주인공(me)은 컷이 지정한 사람 자리, 상대방(other)은 그 **반대쪽**입니다(두 사람이 나란히 서 있다는
+    전제). 한 사람만 나오는 컷에서 상대방 대사는 화면 바깥(경칭)이므로 가운데 기미로 둔합니다.
+    """
+    if not isinstance(panel, dict):
+        return None
+    pos = str(panel.get("position") or panel.get("pos") or "center").strip().lower()
+    fx = _AIM_X.get(pos, 0.50)
+    if speaker == "me":
+        return [round(min(0.78, max(0.22, fx)), 3), _AIM_Y]
+    if speaker == "other":
+        if abs(fx - 0.5) < 0.02:
+            return [0.58, _AIM_Y]
+        return [round(min(0.78, max(0.22, 1.0 - fx)), 3), _AIM_Y]
+    return None
 
 
 def text_payload(item) -> dict:
@@ -584,10 +619,12 @@ def text_payload(item) -> dict:
         elif isinstance(b, dict):
             txt = str(b.get("text") or b.get("line") or "").strip()
             if txt:
+                who = b.get("speaker") or b.get("who") or ""
                 out["balloons"].append(_balloon(
                     b.get("kind") or "speech", txt,
                     str(b.get("side") or "").strip().lower() or None,
-                    b.get("speaker") or b.get("who") or "", b.get("emo") or b.get("emotion") or ""))
+                    who, b.get("emo") or b.get("emotion") or "",
+                    aim=_norm_aim(b.get("aim")) or _speaker_aim(item, _norm_speaker(who))))
     out["sfx"] = str(item.get("sfx") or item.get("oto") or "").strip()
     try:
         out["fade"] = max(0.0, min(0.9, float(item.get("fade") or 0.0)))
@@ -690,10 +727,21 @@ def _balloon_slot_pref(balloon, facing: str = None):
     """
     sp = str((balloon or {}).get("speaker") or (balloon or {}).get("who") or "").strip().lower()
     sp = {"me": "me", "other": "other", "protagonist": "me", "partner": "other"}.get(sp, sp)
+    # [화자 점] 화자가 컷 어디서 말하나(position)가 있으면 **그 사람 위에** 풍선을 앉힙니다.
+    #   예전은 화자=주인공이면 무조건 왼쪽 열 — 주인공이 컷 오른쪽에 서 있으면 풍선이 사람과
+    #   반대편에 뜨고 꼬리만 대각선이 되었습니다(실측: 사람 x=0.70, 풍선 x=16). 한가운데 근방이면 화자 규칙을 그대로 씁니다.
+    col = None
+    _a = (balloon or {}).get("aim")
+    if isinstance(_a, (list, tuple)) and len(_a) == 2:
+        try:
+            _fx = float(_a[0])
+            col = "r" if _fx >= 0.55 else ("l" if _fx <= 0.45 else None)
+        except (TypeError, ValueError):
+            col = None
     if sp == "me":
-        return ("tl", "ml"), "r"        # [2026-09-15] 왼쪽 열은 꼬리를 반대로(오른쪽 아래로)
+        return (("tr", "mr") if col == "r" else ("tl", "ml")), "r"   # 왼쪽 열은 꼬리를 반대로(오른쪽 아래로)
     if sp == "other":
-        return ("tr", "mr"), "r"
+        return (("tl", "ml") if col == "l" else ("tr", "mr")), "r"
     side = str((balloon or {}).get("side") or facing or "").strip().lower()
     if side in ("", "left"):
         return ("tr", "mr"), "r"
@@ -1625,7 +1673,7 @@ def paste_balloon_art(canvas, variant: str, region, box, flip: bool = False, tai
 
 
 def _vector_tail(d, kind: str, x0: int, y0: int, x1: int, y1: int, column: str, iy: int, ih: int,
-                 fs: int, *, plate, frame, line: int):
+                 fs: int, *, plate, frame, line: int, aim=None, ix: int = 0, iw: int = 0):
     """벡터로 그리는 풍선의 꼬리 — 말풍선은 삼각형, 속마음은 생각 물방울.
 
     자산 모드(`--balloon-style image`)에는 꼬리가 굽혀 있지만 벡터 모드에는 없어 화자를 가리키는
@@ -1636,12 +1684,23 @@ def _vector_tail(d, kind: str, x0: int, y0: int, x1: int, y1: int, column: str, 
     bw = max(1, x1 - x0)
     room = max(6, (iy + ih - 2) - y1)                       # 컷 안에서 꼬리에 허락된 세로
     inner = (column != "r")                                 # 주인공 열(왼쪽)은 안쪽이 오른쪽
+    # 화자 점을 알면 그쪽으로 겨냥합니다(모르면 열 규칙대로 컷 가운데로)
+    if aim:
+        gx = min(max(int(aim[0]), x0 - int(bw * 0.5), ix + 6), ix + iw - 6)
+        gy = int(aim[1])
+    else:
+        gx = (x1 - 20) if inner else (x0 + 20)
+        gy = y1 + 20
     if kind == "speech":
         w = max(10, min(int(bw * 0.24), 28))
         inset = max(3, int(bw * 0.06))
         bx0, bx1 = (x1 - inset - w, x1 - inset) if inner else (x0 + inset, x0 + inset + w)
-        tl = max(8, min(int(fs * 1.15), 24, room))
-        ax = (bx0 + bx1) // 2 + (max(3, int(bw * 0.10)) if inner else -max(3, int(bw * 0.10)))
+        # 겨냥점이 몸통 옆으로 벗어나면 밑변을 그쪽으로 밀어서 꼬리가 실제로 그쪽을 가리키게 합니다
+        if gx < x0 or gx > x1:
+            _c = min(max(gx, x0 + inset + w // 2), x1 - inset - w // 2)
+            bx0, bx1 = _c - w // 2, _c + w // 2
+        tl = max(8, min(int(fs * 1.15), 24, room, max(8, gy - y1)))
+        ax = min(max(gx, bx0 - int(bw * 0.35)), bx1 + int(bw * 0.35))
         ay = y1 + tl
         d.polygon([(bx0, y1), (bx1, y1), (ax, ay)], fill=plate, outline=frame,
                   width=max(1, int(line)))
@@ -1649,10 +1708,13 @@ def _vector_tail(d, kind: str, x0: int, y0: int, x1: int, y1: int, column: str, 
         return (x0, y0, x1, ay)
     r = max(4, int(fs * 0.34))
     cx = (x1 - max(r * 2, int(bw * 0.20)) - 4) if inner else (x0 + max(r * 2, int(bw * 0.20)) + 4)
+    # 겨냥점이 있으면 물방울을 그 가로로 데려갑니다(둘 다 안쪽으로 모이게)
+    tx = min(max(gx, x0 - int(bw * 0.30)), x1 + int(bw * 0.30))
+    cx = int(cx + (tx - cx) * 0.6)
     yy = y1 + max(3, r // 2)
     out = (x0, y0, x1, y1)
     for i, rad in enumerate((r, max(3, r - 2), max(2, r - 4))[:2]):
-        cy = yy + rad + i * (rad * 2 + 2)
+        cy = min(yy + rad + i * (rad * 2 + 2), max(yy + rad, gy))
         if cy + rad > iy + ih - 2:
             break
         d.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=plate, outline=frame,
@@ -1788,15 +1850,22 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         else:
             art = ""
     _col = "l" if str(prefer[0])[-1] == "l" else "r"        # 화자 열(주인공=왼쪽, 상대방=오른쪽)
+    _aim_pt = None                                          # 화자 점(컷 비율 → 캔버스 좌표)
+    _raw_aim = (balloon or {}).get("aim")
+    if isinstance(_raw_aim, (list, tuple)) and len(_raw_aim) == 2:
+        try:
+            _aim_pt = (ix + int(float(_raw_aim[0]) * iw), iy + int(float(_raw_aim[1]) * ih))
+        except (TypeError, ValueError):
+            _aim_pt = None
     if not art and kind == "speech":
         d.rectangle([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         box_tail = _vector_tail(d, "speech", x0, y0, x1, y1, _col, iy, ih, fs,
-                                plate=plate, frame=frame, line=line)
+                                plate=plate, frame=frame, line=line, aim=_aim_pt, ix=ix, iw=iw)
         ty0 = y0 + pad
     elif not art:
         d.ellipse([x0, y0, x1, y1], fill=plate, outline=frame, width=max(1, int(line)))
         box_tail = _vector_tail(d, "thought", x0, y0, x1, y1, _col, iy, ih, fs,
-                                plate=plate, frame=frame, line=line)
+                                plate=plate, frame=frame, line=line, aim=_aim_pt, ix=ix, iw=iw)
         ty0 = y0 + int(box_h * 0.5 - len(lines) * line_h / 2)        # 타원 안에서는 글자 블록을 세로 가운데에 둔다
     ty = ty0
     for ln in lines:

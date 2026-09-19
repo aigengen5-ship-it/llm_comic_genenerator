@@ -39,6 +39,7 @@ import comic_gen as CG
 import comic_input as CI
 import comic_page_merge as CPM
 import run_comic
+import time
 import run_comic as RC
 import openAPI_control as OAC
 
@@ -4817,6 +4818,54 @@ def main() -> int:
           and not run_comic.cached_script(5, _ct, None)
           and not run_comic.cached_script(6, _ct, {"sheet_sha": "deadbeefdeadbeef"}))
     shutil.rmtree(_ct, ignore_errors=True)
+    # [화자 점 겨냥 · 탈락 후보 정리 · 평가기에 사람 유무]
+    def _pl(pos, who, kind="speech"):
+        return CPM.text_payload({"narration": "", "position": pos, "sfx": "",
+                                 "balloons": [{"kind": kind, "text": "오늘 할 말이 있어서 왔어",
+                                               "who": who, "emo": ""}]})
+    _pl_l, _pl_r = _pl("left", "me"), _pl("right", "me")
+    check("대사한 사람이 어디 서 있는지(스크립트 position)로 화자 점을 만든다",
+          _pl_l["balloons"][0]["aim"] == [0.3, 0.42] and _pl_r["balloons"][0]["aim"] == [0.7, 0.42])
+    check("화자 점이 있으면 풍선을 그 사람 위 열에 앉힌다(주인공이어도 컷 오른쪽이면 오른쪽)",
+          CPM._balloon_slot_pref(_pl_r["balloons"][0])[0] == ("tr", "mr")
+          and CPM._balloon_slot_pref(_pl_l["balloons"][0])[0] == ("tl", "ml")
+          and CPM._balloon_slot_pref(_pl("center", "me")["balloons"][0])[0] == ("tl", "ml"))
+    check("화자 점을 모르거나 한가운데면 화자 규칙(주인공=왼쪽/상대방=오른쪽)을 그대로 쓴다",
+          CPM._balloon_slot_pref(CPM._balloon("speech", " teks", speaker="me"))[0] == ("tl", "ml")
+          and CPM._balloon_slot_pref(CPM._balloon("speech", "x", speaker="other"))[0] == ("tr", "mr")
+          and CPM._balloon("speech", "x")["aim"] is None)
+    _rj = tempfile.mkdtemp(prefix="rejected_")
+    _old_rd, CG.rejected_dir = CG.rejected_dir, (lambda: _rj)
+    _now = time.time()
+    for _nm, _age in (("episode_9_comic_e9_p36_a.png", 0.0), ("episode_9_comic_e9_p36_b.png", 1.2),
+                      ("episode_9_comic_e9_p36_c.png", 9.0), ("episode_9_comic_e9_p37_d.png", 10.0)):
+        _fpth = os.path.join(_rj, _nm)
+        with open(_fpth, "wb") as _f:
+            _f.write(b"\x89PNG" + os.urandom(4000))
+        os.utime(_fpth, (_now - _age * 86400, _now - _age * 86400))
+    _est = CG.cleanup_rejected(apply=False)
+    check("탈락 후보 정리는 견적을 낸다(지우지 않고 셈만)",
+          _est["files"] == 4 and _est["deleted"] == 3 and len(os.listdir(_rj)) == 4)
+    _ap = CG.cleanup_rejected(apply=True)
+    check("같은 컷은 최신 한 장만 남기고, 7일이 지난 것은 지운다(용량 상한은 오래된 것부터)",
+          _ap["deleted"] == 3 and _ap["kept"] == 1 and os.listdir(_rj) == ["episode_9_comic_e9_p36_a.png"])
+    check("컷당 0장이면 전부, 컷당 2장이면 최신 두 장을 남긴다",
+          CG.cleanup_rejected(keep_per_cut=2)["deleted"] == 0
+          and CG.cleanup_rejected(keep_per_cut=0)["files"] == 1
+          and os.listdir(_rj) == [])
+    CG.rejected_dir = _old_rd
+    shutil.rmtree(_rj, ignore_errors=True)
+    _cg_src = open("comic_gen.py", encoding="utf-8").read()
+    check("평가기에 컷이 아는 정보를 넘긴다(사람 없는 컷을 사람 기준으로 채점하지 않게)",
+          "people=_people" in _cg_src and "camera=_cam" in _cg_src
+          and "_panel_has_person(panel)" in _cg_src
+          and '_people = "auto" if _has else "none"' in _cg_src)
+    check("컷 시트 CLI로 만들 수 있다(cutsheet --build, 같은 원고면 스킵)",
+          '\"--build\"' in open("cutsheet.py", encoding="utf-8").read()
+          and "CS.stale(own" not in open("cutsheet.py", encoding="utf-8").read()
+          and "not stale(own, a.dir, a.ep)" in open("cutsheet.py", encoding="utf-8").read())
+    check("결과 요약에도 그 회차의 그림 설정을 남긴다",
+          "_AG_END.lora_report(jv, idx)" in open("run_comic.py", encoding="utf-8").read())
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

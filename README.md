@@ -315,6 +315,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--char-tag off` | 시트에 `#태그#`가 없을 때 닮은 캐릭터 태그를 자동으로 고르는 일을 끕니다(3-8l절) — 속성 태그만 사용합니다 |
 | `--no-age-voice` | 시트의 나이대를 프롬프트 문장에서 말하는 정책을 끕니다(3-8m절) — 항상 "a girl"로 갑니다 |
 | `--no-eye-tag` | 시트의 눈동자 색을 이미지 프롬프트에 넣지 않습니다(3-8n절) |
+| `--rejected-keep-per-cut` | 탈락 후보(`image/rejected/`)를 컷당 몇 장 두는지(기본 1 = 최신 한 장, 0 = 전부 삭제). 실행이 끝나면 자동 정리됩니다 |
+| `--rejected-keep-days` / `--rejected-max-mb` | 탈락 후보를 두는 날수(기본 7)와 전체 용량 상한(기본 200MB) — 초과분은 오래된 것부터 버립니다. `--no-rejected-cleanup`으로 끄기 |
 | `--no-reuse-script` | 지난 실행의 **컷 스크립트**를 재사용하지 않고 매번 LLM으로 다시 씁니다. 기본은 재사용(같은 원고·같은 컷 시트일 때 컷 스크립트 LLM 0회) — `comic/bookNNN/episode_NN_comic.json`에 박은 컷 시트 도장(`cutsheet.sheet_sha`)이 근거입니다 |
 | `--variants 3` | 컷당 3장 뽑아 최고점만 채택(탈락은 `image/rejected/`) — 3-8o절 |
 | `--variants-keep` | 후보를 옮기지 않고 전부 보존 |
@@ -404,6 +406,16 @@ python run_comic.py --episode inputs/ep01.txt --lora1 lora_mi1k --lora2 lora_sex
 - 로그 한 줄로도 보입니다: `[ComfyUI LoRA] lora_1=…(1.0) lora_2=…(0.8) unet=…` · `[ComfyUI DEBUG] 최종 워크플로우 저장(회차당 1장): …`.
 - 템플릿(`data_comfyui/anima_spectrum_July11.json`)의 `on:false`는 **UI 기본값**입니다. 코드가 강도>0이면 제출 직전 `on:true`로 켭니다 — 템플릿만 보고 "꺼져 있다"로 오해하지 마세요.
 - 실제로 ComfyUI에 들어간 값은 `log/anima_gen.log`의 `[ComfyUI LoRA] lora_1=…(강도) … | trigger=…` 한 줄에서 확인됩니다.
+
+### 3-4a) 컷 시트는 직접 만들어 씁니다 — `python cutsheet.py --dir <입력 폴더> --ep NN --build`
+
+입력 폴더에 업스트림 컷 시트가 없으면 실행 첫 번째에 자동으로 만들지만(원고 해시가 같으면 다음 실행부터 재사용),
+미리 만들어 두면 첫 실행부터 LLM이 0회가 됩니다. 만든 파일은 `cuts_epNN_<해시>.json`이고, 같은 원고에서는 스킵합니다.
+
+```
+EP04 컷 시트 생성: cuts_ep04_7c0d2b13e3d44b3f.json · 컷 51개 · 원고 해시 8daa5fc4a9385583 · 분리 9 / 삽입 1 / 화자 9
+EP03 스킵: cuts_ep03_7c0d2b13e3d44b3f.json 이(가) 지금 원고 해시(be1c129f52a73e51)와 같습니다
+```
 
 ### 3-5a) 실행 머리에 LoRA를 찍습니다 — 어떤 그림 LoRA로 그리는지 렌더를 기다리지 않아도 알 수 있습니다
 
@@ -576,6 +588,10 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 - **컷당 풍선은 최대 3개입니다.** 이 상한은 `comic_page_merge.BALLOON_MAX` **하나**에서 나오고, 컷 스크립트 상한(`comic_gen.DIALOG_LINES`)이 같은 값을 따릅니다 — 한쪽만 올리면 대사가 3번째 풍선 전에 잘려 화면에 나타나지 않습니다.
 - **설명은 자르지 않습니다**: 지문은 길이로 잘지 않고(옛 `…` 토막 마감 폐지), 길면 박스가 자라고 그래도 안 들어가면 **글자 크기를 20px → 최소 11px까지 줄여** 다 담습니다. 실측: 132자=20px·6줄, 600자=19px·32줄, 3,000자=11px·90줄(3단 세로컷 기준, 전부 잘림 없음)
 - 긴 대사는 **'…'로 버리지 않고 풍선 두 개에 나눠** 담습니다(끊는 곳은 문장부호·조사 앞)
+- **꼬리는 화자를 겨냥합니다.** 컷 스크립트가 아는 사람 자리(`position`)로 화자 점을 만들고, 풍선을 **그 사람 위**에
+  앉힌 뒤 꼬리를 그 점으로 내립니다. 주인공이라도 컷 오른쪽에 서 있으면 풍선은 오른쪽에 뜹니다(예전은 화자=주인공이면
+  무조건 왼쪽 열이라, 사람이 오른쪽에 있으면 풍선만 반대편에 뜨고 꼬리만 대각선이었습니다). 사람이 한가운데이거나
+  자리를 모르면 화자 규칙(주인공=왼쪽/상대방=오른쪽)을 그대로 씁니다.
 - **꼬리는 두 모드 다 있습니다.** `--balloon-style image`는 자산에 굽혀진 꼬리, 벡터 모드는 코드로 그리는
   삼각형(말풍선)·생각 물방울(속마음, 원 2개)입니다. 방향은 같게 맞췄습니다 — 꼬리는 **화자(컷 가운데) 쪽으로
   아래로** 향하고, 컷 바닥이 가까우면 짧아집니다. 꼬리까지 포함한 상자가 겹침 검사에 쓰입니다.

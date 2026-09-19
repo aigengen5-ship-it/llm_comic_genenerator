@@ -24,7 +24,7 @@
 10. [속성에는 대상 명사]: "long", "messy" 처럼 단독 형용만 쓰지 말고 대상 붙이세요 — "long hair", "messy hair",
     "half-closed eyes". 대상이 없는 속성 태그는 모델이 어디에 적용할지 모릅니다(실측: "long, messy, natural makeup").
 
-10-b. [외모는 받은 대로만(주인공도 상대방과同じ 등급)]: 머리(색·길이·앞머리)·눈·체형·피부는 요청의 [AAA HAIR]/
+10-b. [외모는 받은 대로만(주인공도 상대방과 같은 등급)]: 머리(색·길이·앞머리)·눈·체형·피부는 요청의 [AAA HAIR]/
     [AAA EYES]/[AAA BODY]/[AAA SKIN] 에 적힌 글자를 그대로 씁니다. 그 줄에 없는 외모를 **지어내지 않습니다**
     (실측: 머리 줄이 "ponytail" 한 단어였더니 Subject 본문에 "short dark hair and straight bangs, muscular
     body"가 생겼다 — 시트는 dyed pink hair·long wavy hair·curvy 였다). 줄이 없으면 그 항목은 빼십시오.

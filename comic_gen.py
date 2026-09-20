@@ -3952,6 +3952,12 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
         seed_i = int(seed) + i * 1009          # 회차 기준 고정 + 컷 오프셋 (+ 후보 오프셋) — 재현 가능
         t_queue = time.time() - 2              # 이 시각 이후에 만들어진 파일만 '이번 컷의 결과'로 인정
         ids = []
+        # [2026-09-19] 이름표·회차를 **매 후보마다** 다시 세운다 — 예전은 루프 밖 한 번만 세우고
+        #   finally에서 매 반복마다 기본값("standing")으로 리셋해, variants 2·3호가 "standing" 이름표로
+        #   저장되어(실측: establishing shot의 후보 2·3호가 episode_1_standing_anima_로 나옴) 스탠딩
+        #   스프라이트와 혼동됐다. 후보는 같은 컷이므로 이름표는 매번 같아야 한다.
+        anima_gen.anima_nametag = f"comic_e{ep_idx+1}_p{panel['no']:02d}_{_panel_slug(panel['pose'])}"
+        config.episode_num = ep_idx
         try:
             prefix = anima_gen.comfyui_run_anima(json_value, ep_idx, full_prompt, res,
                                                  seed=seed_i, queue_count=1, ids_out=ids) or ""

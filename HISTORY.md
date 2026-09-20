@@ -420,6 +420,21 @@ curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, �
 
 
 
+### variants 렌더 시 이름표가 기본값 "standing"으로 빠지던 버그
+
+**사용자 지적: "standing 이미지에 캐릭터가 나와야 하는데 배경만 나옴."** 추적 결과 스탠딩
+스프라이트가 아니라 **배경 establishing shot의 variants 2·3호가 이름표 "standing"으로** 저장된
+것이었습니다.
+- 원인: `render_panel`이 이름표(`anima_nametag`)를 **루프 밖 한 번만** 세우고, `finally`에서
+  **매 반복마다** 기본값(`anima_gen.anima_nametag = "standing"`)으로 리셋했습니다. 그래서
+  variants 1호만 정확한 이름표(`comic_e1_p01_wide_establishing_`)를 쓰고, 2·3호는 "standing"으로
+  저장됐습니다(실측: p01 시드 136439163 → "standing" 136440172(+1009)·136441181(+2018)).
+- 고침: 이름표·회차를 **루프 안 매 후보마다** 다시 세우게 했습니다(후보는 같은 컷이므로 이름표도 같아야 함).
+- 기존 잘못 이름 붙은 파일(`image/rejected/episode_{1,3}_standing_anima__00002_.png`)은 삭제했습니다.
+- 셀프테스트: variants=3 렌더(모킹)에서 3호 모두 같은 정확한 이름표(`comic_e1_p07_…`)를 쓰고 "standing"이 아님을 검증
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

@@ -4951,6 +4951,46 @@ def main() -> int:
     check("이모티콘 종류마다 무료 이모지 매핑이 있고 받아오는 함수가 있다",
           all(k in CPM.EMOTIF_EMOJI for k in CPM.EMOTIF_KINDS)
           and callable(CPM.fetch_emotif_images) and "CC BY 4.0" in CPM.EMOTIF_ATTR)
+    # [variants 렌더 시 이름표가 매 후보마다 재설정 — 기본값 "standing"으로 안 빠짐]
+    import comic_gen as _CG2
+    import anima_gen as _AG2
+    _seen_tags = []
+    _orig_run = _AG2.comfyui_run_anima
+    _orig_wait = _AG2._wait_and_copy_image
+    def _mock_run(jv, ep, prompt, res, seed=None, queue_count=1, ids_out=None):
+        _seen_tags.append(_AG2.anima_nametag)
+        return "mock_prefix"
+    def _mock_wait(*a, **k):
+        pass
+    _AG2.comfyui_run_anima = _mock_run
+    _AG2._wait_and_copy_image = _mock_wait
+    _tmp_img = os.path.join("image", "mock_prefix_00001_.png")
+    open(_tmp_img, "wb").write(b"\x89PNG")
+    _orig_glob = _CG2.glob.glob
+    def _mock_glob(pattern, **k):
+        if "mock_prefix" in str(pattern):
+            return [_tmp_img]
+        return _orig_glob(pattern, **k)
+    _CG2.glob.glob = _mock_glob
+    _old_vkeep = getattr(config, "comic_variants_keep", False)
+    config.comic_variants_keep = True
+    try:
+        _panel_nt = {"no": 7, "pose": "wide establishing shot of the place", "type": "wide", "wide": True}
+        _CG2.render_panel(0, _panel_nt, 12345, "safe", {}, prompt="test prompt", variants=3)
+    except Exception as _e_nt:
+        check("variants 이름표 렌더(예외)", f"예외: {_e_nt}")
+    finally:
+        _AG2.comfyui_run_anima = _orig_run
+        _AG2._wait_and_copy_image = _orig_wait
+        _CG2.glob.glob = _orig_glob
+        config.comic_variants_keep = _old_vkeep
+        try:
+            os.remove(_tmp_img)
+        except OSError:
+            pass
+    check("variants 렌더는 매 후보마다 같은(정확한) 이름표를 쓴다(기본값 'standing'으로 안 빠짐)",
+          len(_seen_tags) == 3 and len(set(_seen_tags)) == 1 and _seen_tags[0] != "standing"
+          and _seen_tags[0].startswith("comic_e1_p07_"))
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

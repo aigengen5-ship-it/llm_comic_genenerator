@@ -435,6 +435,21 @@ curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, �
 
 
 
+### 로컬 전용 시스템 프롬프트 (system_prompt / system_prompt_anima)
+
+사용자가 "local에서 돌릴 때에만" 특정 시스템 프롬프트를 쓰라고 지정했습니다.
+- `config.apply_local_settings`가 `local_settings.yaml`의 `system_prompt`/`system_prompt_anima`를
+  읽도록 했습니다. 키가 있으면(=로컬) 그것으로, 없으면(=커밋만 있는 환경) 기본값("") 그대로 —
+  **값은 `local_settings.yaml`(gitignore)에만** 두어 커밋 코드엔 안 남습니다.
+- 반영 지점: `config.system_prompt`는 메인 LLM 10개 호출(추출·컷 스크립트 등, `openAPI_control`이
+  `system_prompt=None`일 때 `config.system_prompt`로 대체), `config.system_prompt_anima`는
+  `anima_gen`의 ANIMA 태그 추출(system 메시지에 "danbooru image tags as strict JSON"을 덧붙여).
+- 지정값: 두 프롬프트는 본문이 같고 마지막 줄만 다름 — `system_prompt`는 "Please answer in Korean.",
+  `system_prompt_anima`는 "Please answer in English." (일본 라이트노벨 스타일·무분별 순응 지시).
+- 셀프테스트: apply_local_settings 로 값을 심으면 채워지고, 키가 없으면 ""로 리셋되지 않음을 검증
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

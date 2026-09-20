@@ -336,7 +336,16 @@ def apply_local_settings(data: dict = None) -> dict:
     """
     global local_settings, ko_map_explicit, ko_map_safe, counter_alias, climax_vocab_local, safety_local
     global explicit_cli, lora1_cli, lora2_cli, lora_chg_cli, lora_str1_cli, lora_str2_cli
+    global system_prompt, system_prompt_anima
     d = local_settings if data is None else (data or {})
+    # [2026-09-19] 로컬 전용 시스템 프롬프트 — local_settings.yaml 에 있으면 그것으로,
+    #   없으면 기본값("") 그대로. 커밋 코드엔 값을 두지 않아 로컬에서만 쓰입니다.
+    sp = d.get("system_prompt")
+    if isinstance(sp, str) and sp.strip():
+        system_prompt = sp
+    spa = d.get("system_prompt_anima")
+    if isinstance(spa, str) and spa.strip():
+        system_prompt_anima = spa
     if _truthy(d.get("allow_explicit")):
         explicit_cli = True
     s = str(d.get("safety") or "").strip().lower()

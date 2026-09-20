@@ -645,6 +645,18 @@ def main() -> int:
           config.pin_name == "환경이름", config.pin_name)
     del os.environ["COMIC_PIN_NAME"]
     config.pin_name, config.pin_name2 = _keep_pin
+    # [2026-09-19] 로컬 전용 시스템 프롬프트 — local_settings.yaml 에 있으면 그것으로
+    _keep_sp = (config.system_prompt, config.system_prompt_anima)
+    config.apply_local_settings({"system_prompt": "테스트 한국어 시스템",
+                                 "system_prompt_anima": "test english system"})
+    check("local_settings의 system_prompt/system_prompt_anima가 기본값 자리를 채운다",
+          config.system_prompt == "테스트 한국어 시스템" and config.system_prompt_anima == "test english system",
+          f"{config.system_prompt!r}/{config.system_prompt_anima!r}")
+    config.apply_local_settings({})
+    check("local_settings에 키가 없으면 시스템 프롬프트를 ""로 리셋하지 않는다",
+          config.system_prompt == "테스트 한국어 시스템" and config.system_prompt_anima == "test english system",
+          f"{config.system_prompt!r}")
+    config.system_prompt, config.system_prompt_anima = _keep_sp
     _ep_src = open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read()
     check("추출 프롬프트가 #태그 영문 이름을 이름 필드에 옮기는 것을 금지한다",
           "7-b. protagonist.name" in _ep_src and "Kirisaki Chitoge" in _ep_src)

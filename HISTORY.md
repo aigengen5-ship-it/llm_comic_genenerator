@@ -450,6 +450,25 @@ curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, �
 
 
 
+### 이미지 생성과 평가를 분리 — ComfyUI·LLM 메모리 경쟁 제거
+
+사용자 제안: "이미지 생성-평가가 번갈아 되니, ① LLM 전체 언로드 ② ComfyUI로 이미지 전체 생성
+③ 필요한 이미지만 LLM에서 추출"하면 메모리 경쟁이 없을 것. 확인 결과 **variants>1이면 컷마다
+"생성→평가"를 번갈아** 해서 ComfyUI가 돌고 있는 중에 평가 LLM이 다시 올라와 VRAM/RAM을 경쟁했습니다.
+
+- `render_panel`에 `pick_best` 파라미터 추가 — False면 **생성만** 하고 후보 전체를 리스트로 반환(채택 X).
+  True(기본)면 예전처럼 생성+채택(호환 유지).
+- 렌더 루프는 `pick_best=False`로 모든 컷의 후보 전부 생성(ComfyUI만, LLM은 이미 언로드).
+  `got[i]`는 후보 목록(리스트). `_latest_bg_image`도 목록 처리.
+- 렌더·재전송이 **모두 끝난 뒤** 배치 평가: 후보 2장 이상인 컷만 `_pick_best_shot`(LLM)으로 채택,
+  나머지는 `image/rejected/`. `got[i]`는 최고 1장으로 바꿈.
+- 효과: 렌더 구간엔 ComfyUI만, 평가 구간엔 LLM만 → 경쟁 없음(ollama·vLLM 모두).
+  vLLM은 모델이 VRAM 상주라 배치화만으론 상주 VRAM이 안 빠짐 — local은 `--gpu-memory-utilization`
+  (예: 0.5)을 함께 낮추면 실질적 해결.
+- 셀프테스트: `pick_best=False`가 후보 전체를 리스트로 반환하고 평가(LLM)를 안 함을 검증
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

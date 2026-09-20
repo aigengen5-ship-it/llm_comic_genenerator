@@ -3853,10 +3853,19 @@ def _is_standing_cut(panel) -> bool:
 
 
 def _latest_bg_image(panels, got) -> str:
-    """이 회차에서 **이미 렌더된 가장 최근 배경(확립) 컷** — 스탠딩을 얹을 배경으로 씁니다."""
+    """이 회차에서 **이미 렌더된 가장 최근 배경(확립) 컷** — 스탠딩을 얹을 배경으로 씁니다.
+
+    [2026-09-19] got 항목이 후보 목록(리스트)일 수도 있다(배치 렌더) — 배경은 1장만 쓰면
+    되므로 목록이면 그 첫 장을 쓴다.
+    """
     last = ""
     for p, f in zip(panels, got):
-        if f and (p or {}).get("bg_only"):
+        if not (p or {}).get("bg_only"):
+            continue
+        if isinstance(f, (list, tuple)):
+            if f:
+                last = f[0]
+        elif f:
             last = f
     return last
 
@@ -3922,19 +3931,24 @@ def _render_standing(ep_idx: int, panel, seed: int, json_value, prompt: str,
 def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dict,
                  wait_seconds: int = 120, gloss: dict = None, angle_preset=None,
                  prompt: str = None, variants: int = None,
-                 standing: bool = False, bg_image: str = ""):
+                 standing: bool = False, bg_image: str = "", pick_best: bool = True):
     """컷 1개 렌더 → 생성 PNG 경로 (실패 시 None)
 
     prompt: 미리 조립해 둔 프롬프트. 주면 그대로 쓴다(재조립 안 함) — pov/multi 가이드는
             LLM 호출이라 렌더 루프 안에서 돌리면 모델이 VRAM에 다시 올라온다.
     variants: 같은 컷을 시드만 바꿔 N장 뽑아 최고점을 채택한다(기본 config.comic_variants=1 = 기존 동작).
               후보는 image/rejected/ 로 옮겨져 합성이 오염되지 않는다.
+    pick_best: False면 **생성만** 하고 후보 전체를 리스트로 반환한다(채택 X).
+              [2026-09-19] 렌더 루프는 ComfyUI만 돌리고, variants>1인 컷의 LLM 채택은
+              렌더가 **모두 끝난 뒤** 배치로 돌린다 — ComfyUI와 LLM이 VRAM/RAM을 안 경쟁하게.
+              True(기본)면 예전처럼 생성+채택을 한 번에(호환 유지).
     """
     full_prompt = prompt if prompt else build_panel_prompt(ep_idx, panel, safety_tag,
                                                           gloss=gloss, angle_preset=angle_preset)
     if standing:
-        return _render_standing(ep_idx, panel, int(seed), json_value, full_prompt,
-                                bg_image, wait_seconds)
+        _sp = _render_standing(ep_idx, panel, int(seed), json_value, full_prompt,
+                               bg_image, wait_seconds)
+        return ([_sp] if _sp else []) if pick_best is False else _sp
     # [2026-09-12] 컷별 음성 태그(남자 주인공 하체 보안 등)를 서버 요청에 태운다
     anima_gen.set_extra_negative(str(panel.get("_neg_extra") or ""))
     old_nametag = getattr(anima_gen, "anima_nametag", "")
@@ -3996,6 +4010,9 @@ def render_panel(ep_idx: int, panel, seed: int, safety_tag: str, json_value: dic
             shots.append(hits[-1])
     anima_gen.anima_nametag = old_nametag
     config.episode_num = old_epnum
+    if pick_best is False:
+        # [2026-09-19] 생성만 — 후보 전체를 넘기고 채택은 렌더 루프 밖(배치 평가)에서
+        return shots
     if not shots:
         return None
     if len(shots) == 1 or getattr(config, "comic_variants_keep", False):
@@ -4127,11 +4144,14 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
         except Exception as e:
             _clog(f"EP{ep_num_1} LLM 메모리 반납 실패(무시, 렌더 계속): {e}")
         _miss_run = 0
-        got = []                              # 컷별 결과 (None = 이 컷은 아직 없음)
+        # [2026-09-19] got 항목은 **후보 목록**(리스트) — 생성만 하고 채택은 렌더 전부 끝난 뒤 배치로.
+        #   ComfyUI(렌더)와 LLM(채택)이 VRAM/RAM을 안 경쟁하게 하는 분리.
+        got = []                              # 컷별 후보 목록 ([] = 이 컷은 아직 없음)
         for p, sd, pr in zip(panels, seeds, prompts):
             f = render_panel(ep_idx, p, sd, safety_tag, json_value, gloss=gloss,
                              angle_preset=_pick_panel_angle(p), prompt=pr,
-                             standing=_is_standing_cut(p), bg_image=_latest_bg_image(panels, got))
+                             standing=_is_standing_cut(p), bg_image=_latest_bg_image(panels, got),
+                             pick_best=False)
             got.append(f)
             if f:
                 _miss_run = 0
@@ -4143,7 +4163,7 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
                 _clog(f"EP{ep_num_1} 컷 {_miss_run}개 연속 렌더 실패 — ComfyUI가 중단된 것으로 보여 "
                       f"남은 {len(panels) - len([x for x in got if x]) - _miss_run}컷의 렌더를 접습니다")
                 break
-        got += [None] * (len(panels) - len(got))
+        got += [[] for _ in range(len(panels) - len(got))]
         # [2026-09-12] ① ComfyUI 대기열이 비는 것을 먼저 확인한다 — 남아있다는 것은 아직 안 나온 컷이다.
         if [x for x in got if not x]:
             anima_gen.comfy_wait_queue_idle(90, log_fn=_clog)
@@ -4158,13 +4178,34 @@ def comic_gen_episode(ep_idx: int, client=None, json_value=None, do_render: bool
                 got[i] = render_panel(ep_idx, panels[i], seeds[i], safety_tag, json_value,
                                       gloss=gloss, angle_preset=_pick_panel_angle(panels[i]),
                                       prompt=prompts[i], standing=_is_standing_cut(panels[i]),
-                                      bg_image=_latest_bg_image(panels, got))
+                                      bg_image=_latest_bg_image(panels, got), pick_best=False)
                 _miss2 = 0 if got[i] else _miss2 + 1
                 if _miss2 >= 3:
                     _clog(f"EP{ep_num_1} 재전송에서도 3컷 연속 실패 — ComfyUI가 멈춰 있는 것으로 보여 재전송을 접습니다")
                     break
             if anima_gen.comfy_wait_queue_idle(30, log_fn=_clog) is False and [x for x in got if not x]:
                 _clog(f"EP{ep_num_1} ComfyUI 대기열이 여전히 차 있습니다 — 늦게 나오는 컷은 다음 실행에서 반영됩니다")
+        # [2026-09-19] 배치 평가 — 렌더(ComfyUI)가 **모두 끝난 뒤** LLM으로 variants>1인 컷만 채택.
+        #   렌더 구간엔 ComfyUI만, 평가 구간엔 LLM만 → VRAM/RAM 경쟁 최소화(ollama·vLLM 모두).
+        #   got[i]는 이제 후보 목록 → 최고 1장으로 바꾼다(나머지는 image/rejected/).
+        _n_eval = sum(1 for s in got if isinstance(s, (list, tuple)) and len(s) > 1
+                      and not getattr(config, "comic_variants_keep", False))
+        if _n_eval:
+            _clog(f"EP{ep_num_1} 배치 평가: 후보 2장 이상인 컷 {_n_eval}개를 LLM으로 채택합니다 "
+                  f"(ComfyUI는 이제 유휴 — 메모리 경쟁 없음)")
+        for i, (p, shots) in enumerate(zip(panels, got)):
+            if not shots:
+                continue
+            if isinstance(shots, str):      # 이미 단일 경로(예: 예외 경로)면 그대로
+                continue
+            if len(shots) == 1 or getattr(config, "comic_variants_keep", False):
+                if len(shots) > 1:
+                    _clog(f"컷 {p.get('no')}: 후보 {len(shots)}장 전부 보존(--variants-keep)")
+                got[i] = shots[-1]
+                continue
+            win, losers = _pick_best_shot(list(shots), p, prompts[i] or "")
+            _reject_shots(losers)
+            got[i] = win
         files.extend([f for f in got if f])
         missing = [int(panels[i].get("no") or i + 1) for i, f in enumerate(got) if not f]
         if files and missing:

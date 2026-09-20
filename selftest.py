@@ -5003,6 +5003,45 @@ def main() -> int:
     check("variants 렌더는 매 후보마다 같은(정확한) 이름표를 쓴다(기본값 'standing'으로 안 빠짐)",
           len(_seen_tags) == 3 and len(set(_seen_tags)) == 1 and _seen_tags[0] != "standing"
           and _seen_tags[0].startswith("comic_e1_p07_"))
+    # [2026-09-19] pick_best=False → 생성만(후보 목록 반환), 평가(_pick_best_shot)는 안 함
+    _pb_calls = []
+    _orig_pbs = _CG2._pick_best_shot
+    def _mock_pbs(shots, panel, prompt):
+        _pb_calls.append(1)
+        return shots[0], shots[1:]
+    _CG2._pick_best_shot = _mock_pbs
+    _seen_tags2 = []
+    def _mock_run2(jv, ep, prompt, res, seed=None, queue_count=1, ids_out=None):
+        _seen_tags2.append(_AG2.anima_nametag)
+        return "mock_prefix"
+    _orig_wait2 = _AG2._wait_and_copy_image
+    _AG2.comfyui_run_anima = _mock_run2
+    _AG2._wait_and_copy_image = lambda *a, **k: None
+    _tmp_img2 = os.path.join("image", "mock_prefix_00001_.png")
+    open(_tmp_img2, "wb").write(b"\x89PNG")
+    def _mock_glob2(pattern, **k):
+        if "mock_prefix" in str(pattern):
+            return [_tmp_img2]
+        return _orig_glob(pattern, **k)
+    _CG2.glob.glob = _mock_glob2
+    try:
+        _panel_pb = {"no": 9, "pose": "close up of the face", "type": "close_up", "wide": False}
+        _res_pb = _CG2.render_panel(0, _panel_pb, 22222, "safe", {}, prompt="test", variants=3, pick_best=False)
+    except Exception as _e_pb:
+        check("pick_best=False 렌더(예외)", f"예외: {_e_pb}")
+        _res_pb = None
+    finally:
+        _CG2._pick_best_shot = _orig_pbs
+        _AG2.comfyui_run_anima = _orig_run
+        _AG2._wait_and_copy_image = _orig_wait2
+        _CG2.glob.glob = _orig_glob
+        try:
+            os.remove(_tmp_img2)
+        except OSError:
+            pass
+    check("pick_best=False는 후보 전체를 리스트로 반환하고 평가(LLM)를 안 한다",
+          isinstance(_res_pb, list) and len(_res_pb) == 3 and len(_pb_calls) == 0,
+          f"타입={type(_res_pb).__name__} 길이={len(_res_pb) if isinstance(_res_pb, list) else 'N/A'} 평가호출={len(_pb_calls)}")
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

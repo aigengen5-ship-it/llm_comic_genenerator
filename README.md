@@ -300,6 +300,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--get-face-model` | 얼굴 검출 모델(YuNet 227KB)을 받습니다 — OpenCV가 있을 때만 쓰입니다 |
 | `--balloon-style image` | 말풍선·속마음을 `data/balloons/` **자산**으로 그립니다(기본 `image` · 화살표 꼬리·생각 물방울이 PNG에 굽혀져 있습니다). `--balloon-style vector`로 되돌리면 코드로 그린 사각/타원이 나옵니다. 자산이 없으면 자동으로 `vector`로 돌아갑니다 |
 | `--get-balloons` | 말풍선·속마음 자리표시 자산(몸통 9종 + 방향 꼬리 18종)과 `manifest.json`을 만들고 끝납니다(`--force-balloons`로 재생성) |
+| `--get-emotif` | 무료 이모티콘 이미지(Twemoji, **CC BY 4.0**) 7종을 `data_comfyui/emotif/`에 받아 두고 끝납니다(`--force-emotif`로 재수신). 있으면 이모티콘이 벡터(26px) 대신 이미지(46px)로 **크고 예쁘게** 그려집니다 |
+| `--emotif-style auto` | 이모티콘 그림 방식 — `auto`(기본, 이미지가 있으면 그것으로) · `image` · `vector`(벡터로 고정) |
 | `--keep-logs` | 실행 시작에 로그를 초기화하지 않고 이어서 씁니다 |
 | `--fresh-extract` | 추출 체크포인트(`state/extract_cache.yaml`)를 무시하고 처음부터 추출합니다 |
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
@@ -579,7 +581,9 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 | 2 | **대사** | 등장인물 | 만화 **말풍선 = 직사각형** (폭은 컷의 **25%** · 몸통 면적은 **컷의 25% 안** · 컷당 **최대 3개** · 주인공=왼쪽, 상대방=오른쪽) |
 | 2 | **속마음** | 주인공 | 만화 **속마음 풍선 = 타원** (폭은 컷의 25% · 세로는 그 폭에 글자를 넣는 데 필요한 만큼) |
 | 3 | **설명 + 대사** | 둘 다 | **이벤트 컷** (회당 2~4컷만 권장 · 설명을 더 좁게 잡아 대화 자리를 남김) |
-| 4 | **감정 표시** | 대사의 감정 | 풍선 곁의 작은 이모티콘 — 분노/놀람/땀/하트/음영/반짝/물음, **감정마다 색이 다름** |
+| 4 | **감정 표시** | 대사의 감정 | 풍선 곁의 이모티콘 — 분노/놀람/땀/하트/음영/반짝/물음, **감정마다 색이 다름**. `--get-emotif`로 받은 **무료 이모지(Twemoji, CC BY 4.0)**가 있으면 그것으로 46px, 없으면 코드로 그리는 벡터 26px |
+
+- **이모티콘은 무료 이미지로 크고 예쁘게** — 예전 벡터(19px)는 작고 밋밋했습니다(사용자 지적). `--get-emotif`가 Twemoji(CC BY 4.0) 7종을 `data_comfyui/emotif/`에 받아 두고, 있으면 그것으로 46px·투명도 그대로 붙이고, 없으면 벡터(26px, 예전 19보다 크게)로 돌아갑니다. `--emotif-style vector`로 벡터 고정. 귀속: Twitter(twemoji) CC BY 4.0 — `data_comfyui/emotif/`에 출처를 남깁니다.
 
 - **설명 박스 폭**: 길이가 길면 컷 폭을 따라 자랍니다 — 평범 컷 **80%**까지, 대사가 있는 컷 **62%**까지, **★지문은 컷 폭 전체**를 씁니다(넓어야 줄 수가 줄어 글자가 안 잘립니다). 짧은 지문은 측정한 글자 폭만큼만 남긴다(컷을 빈 박스로 안 채웁니다).
 - **풍선은 컷 대비 25%로 대비 25%")**: 폭 비율 `BALLOON_W_RATIO`/`THOUGHT_W_RATIO = 0.25`이고, 몸통 **면적** 상한 `BALLOON_MAX_AREA_RATIO = 0.25`(컷 면적의 25%)를 따로 두었습니다. 폭만 줄이면 세로가 늘어 면적이 다시 커지므로(실측: 몸통 보스트 2.2 × 최소 높이 42% → 컷의 절반), 면적 상한이 먼저 이깁니다(넘치면 글자 단계를 더 줄입니다).
@@ -832,6 +836,7 @@ Subject 본문에 `short dark hair and straight bangs, muscular body`가 생겼�
   - ③은 값을 지어내는 게 아닙니다. 상태가 비면 렌더가 어차피 같은 값(회차 시작 상태)을 쓰고, 게이트는 "비어 있어 회차 요약으로 대체"라며 회차를 죽였습니다 — 실측 `--special` EP09는 한글로 답한 덕분에 통째로 사라졌습니다.
   - 그래서 첫 컷 보충 프롬프트는 **값을 반드시 소문자 영문 태그**로 요구하고, `[회차 시작 후보 — 영문 태그]`를 근거로 함께 보냅니다(시트의 한글 지문을 베끼면 버려지기 때문).
   - 실측: 모델이 state를 아예 안 채운 회차에서 첫 컷 보충이 `clothes=shabby Japanese school uniform`을 회수해 통과했습니다.
+  - **상태 보충 LLM도 회차 시작 상태(원작 지정)를 받습니다.** 예전은 보충 호출이 pose·지문·직전 상태만 주어 첫 컷의 복장·장소를 지어냈습니다(실측 EP1: [CLOTHES] 카드는 '흰색 오프숄더 니트'·[LOCATION]은 '체육창고'였는데, 보충이 `clothes=formal business attire`·`place=bank counter`로 채워 처음 5컷이 은행 정장으로 그려졌습니다). 이제 `fill_missing_state`가 `base_cut_state`(장면 카드 1순위인 `config.clothes`/`location`/`time_of_day` 등)를 `[회차 시작 상태(원작 지정)]`로 함께 보내, 원작이 정한 값이 있으면 그것을 그대로 쓰게 합니다. 추출도 [LOCATION]/[TIME] 카드의 장소·시간을 `location`/`time_of_day`로 출력해 `config`에 담습니다.
 - **승계된 `clothes`는 상태 시트를 덮지 않습니다.** 컷 스크립트는 직전 컷의 옷을 다음 컷에 그대로 적어 넘깁니다(`_repair_panels` 승계). 예전은 그 **복사본**을 컷이 직접 입은 옷으로 보고 상태 시트(`state.clothes`)를 덮어써서, 실제로 옷을 갈아입은 컷의 변화가 사라졌습니다(실측 EP10: 컷2의 젖은 원피스가 태그에 안 남았다). 승계분에는 표시(`_clothes_prev`)가 남고, 우선순위는 `state 시트 > 컷이 직접 쓴 clothes > 승계(무시)`입니다.
 - 확인: 로그 `EP1 컷 상태 시트: 시작 = 표정 … / 복장 … → 변화가 적힌 컷 N개`, 산출물 `comic/bookNNN/episode_NN_comic.json`의 `panels[i]["_state"]`.
 - **상대방도 같은 식으로 유지됩니다.** 두 사람이 한 화면인 컷(`multi`/`pov`)에서는 주인공만 '지금'을 가지고

@@ -205,6 +205,68 @@ def balloon_style() -> str:
     return _balloon_style
 
 
+def set_emotif_style(style: str = None, art_dir: str = None):
+    """이모티콘 렌더 방식 — auto(이미지 있으면 이미지, 없으면 벡터) | image | vector."""
+    global _emotif_style, EMOTIF_DIR
+    if style:
+        _emotif_style = str(style).strip().lower()
+    if art_dir:
+        EMOTIF_DIR = os.path.abspath(art_dir)
+    return _emotif_style, EMOTIF_DIR
+
+
+def emotif_image(kind: str):
+    """이모티콘 이미지( RGBA) — data_comfyui/emotif/{kind}.png. 없으면 None(벡터 폴백)."""
+    kind = _norm_emo(kind)
+    if not kind or _emotif_style == "vector":
+        return None
+    if kind in _emotif_cache:
+        return _emotif_cache[kind]
+    path = os.path.join(EMOTIF_DIR, f"{kind}.png")
+    img = None
+    if os.path.isfile(path):
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            img = None
+    _emotif_cache[kind] = img
+    return img
+
+
+def fetch_emotif_images(dir_path: str = None, force: bool = False, log=None) -> dict:
+    """무료 이모지(Twemoji, CC BY 4.0)를 data_comfyui/emotif/{kind}.png 로 받아 온다.
+
+    이미 있으면 건너뛴다(force=True면 다시 받음). 받아오면 이모티콘이 벡터(26px) 대신
+    이미지(46px)로 그려진다 — 크고 예쁨(사용자 지시). 귀속: " + EMOTIF_ATTR + "
+    """
+    note = log or (lambda m: None)
+    d = os.path.abspath(dir_path or EMOTIF_DIR)
+    os.makedirs(d, exist_ok=True)
+    import urllib.request
+    base = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/"
+    out = {"ok": 0, "skip": 0, "fail": []}
+    for kind, cp in EMOTIF_EMOJI.items():
+        path = os.path.join(d, f"{kind}.png")
+        if os.path.isfile(path) and not force:
+            out["skip"] += 1
+            continue
+        url = base + cp + ".png"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "comic-gen/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read()
+            if len(data) < 150:  # 에러 페이지로 둔갑한 것(❗ 같은 단순 이모지는 187B)
+                raise ValueError(f"너무 작은 응답({len(data)}B)")
+            with open(path, "wb") as f:
+                f.write(data)
+            out["ok"] += 1
+            note(f"  이모티콘 이미지: {kind}.png ({len(data) // 1024}KB) ← {url}")
+        except Exception as e:
+            out["fail"].append(kind)
+            note(f"  이모티콘 이미지 실패: {kind} — {e}")
+    return out
+
+
 def _balloon_shapes_dir():
     return os.path.abspath(_balloon_art_dir)
 
@@ -225,12 +287,23 @@ NARR_W_RATIO_WITH_BALLOON = 0.62         # 대사가 있으면 설명 폭 상한
 # [2026-09-09] 사용자 지시 2건: ★큰 지문은 글자가 다른 컷 대비 너무 크고, 박스가 컷의 절반만 써서 글자가 잘린다.
 NARR_W_RATIO_LARGE = 1.00                # ★회차 도입·에필로그 지문은 **컷 폭을 다 쓴다**(짧은 글자도 박스를 당기지 않는다)
 NARR_LARGE_FONT_RATIO = 1.25             # ★큰 지문의 글자 배율 (예전 1.5 → 지나치게 컸다)
-EMOTIF_SIZE = 19                         # 감정 이모티콘 한 변 기본 크기
+EMOTIF_SIZE = 26                         # 감정 이모티콘 한 변 기본 크기(벡터 폴백) — 예전 19는 작아 잘 안 보였다
 EMOTIF_KINDS = ("anger", "surprise", "sweat", "heart", "gloom", "sparkle", "question")
 EMOTIF_COLORS = {                        # 감정마다 색을 다르게(사용자 지시)
     "anger": (198, 32, 40), "surprise": (240, 162, 2), "sweat": (46, 123, 214),
     "heart": (232, 64, 122), "gloom": (106, 106, 114), "sparkle": (245, 197, 24),
     "question": (46, 123, 214)}
+# [2026-09-18] 무료 이모지 이미지로 이모티콘을 그린다(벡터보다 크고 예쁨). 없으면 벡터 폴백.
+#   출처: Twemoji(CC BY 4.0) — fetch_emotif_images() 가 data_comfyui/emotif/{kind}.png 로 받아 둔다.
+#   귀속: https://github.com/twitter/twemoji (CC BY 4.0) — README에 출처를 남긴다.
+EMOTIF_DIR = os.path.join(os.path.dirname(__file__), "data_comfyui", "emotif")
+EMOTIF_IMG_SIZE = 46                     # 이미지 이모티콘 한 변 크기(벡터 26보다 크게)
+EMOTIF_EMOJI = {                         # kind → Twemoji 코드포인트(72x72 PNG)
+    "anger": "1f4a2", "surprise": "2757", "sweat": "1f4a7", "heart": "2764",
+    "gloom": "1f327", "sparkle": "2728", "question": "2753"}
+EMOTIF_ATTR = "Twitter (https://github.com/twitter/twemoji) — CC BY 4.0"
+_emotif_style = "auto"                   # auto(이미지 있으면 이미지) | image | vector
+_emotif_cache = {}                       # kind → RGBA Image(로딩 캐시)
 FADE_ALPHA = 0.45                        # 에필로그 이벤트신을 반투명하게 하는 정도(흰 쪽 blend)
 
 
@@ -749,11 +822,12 @@ def _balloon_slot_pref(balloon, facing: str = None):
 
 
 def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: int, ih: int,
-                 kind: str, *, size: int = EMOTIF_SIZE, font_path=None):
+                 kind: str, *, size: int = EMOTIF_SIZE, font_path=None, canvas=None):
     """[2026-09-09] 감정 이모티콘 — 풍선 바깥 위 모서리에 **감정마다 다른 색**으로 그린다.
 
       anger(분노 X표) surprise(!) sweat(땀) heart(하트) gloom(음영선) sparkle(반짝) question(?)
-    폰트 이모지와 달리 PIL 벡터로 그려서 폰트 설치와 무관하게 나오고 색도 자유롭게 바꾼다.
+    [2026-09-18] 무료 이모지 이미지(Twemoji, CC BY 4.0)가 있으면 그것으로 크게(46px) 붙이고,
+      없으면 예전처럼 PIL 벡터로(26px, 예전 19보다 크게) — 폰트 설치와 무관하게 나온다.
     → 그린 상자 (x0,y0,x1,y1) 또는 None
     """
     kind = _norm_emo(kind)
@@ -766,6 +840,20 @@ def _draw_emotif(d, x0: int, y0: int, x1: int, y1: int, ix: int, iy: int, iw: in
     out_right = (x0 + x1) / 2.0 < ix + iw / 2.0
     cx = min(x1 + r + 4, ix + iw - r - 2) if out_right else max(x0 - r - 4, ix + r + 2)
     cy = max(y0 + r, iy + r + 2)
+    # [2026-09-18] 무료 이모지 이미지 우선 — 캔버스가 있으면 투명도 그대로 붙인다(벡터보다 크고 예쁨)
+    _em = emotif_image(kind)
+    if _em is not None and canvas is not None:
+        es = int(EMOTIF_IMG_SIZE)
+        _er = _em.resize((es, es), Image.LANCZOS)
+        ex = int(cx) - es // 2
+        ey = int(cy) - es // 2
+        ex = max(ix, min(ex, ix + iw - es))
+        ey = max(iy, min(ey, iy + ih - es))
+        try:
+            canvas.paste(_er, (ex, ey), _er)
+            return (ex, ey, ex + es, ey + es)
+        except Exception:
+            pass  # 붙이기에 실패하면 아래 벡터로
     if kind == "anger":                      # 혈관 X표(💢) — 빨강
         for ang in (45, 135, 225, 315):
             rr = math.radians(ang)
@@ -1877,7 +1965,7 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         ty += line_h
     box = locals().get("box_tail") or (x0, y0, x1, y1)
     if emo:
-        e = _draw_emotif(d, x0, y0, x1, y1, ix, iy, iw, ih, emo, font_path=font_path)
+        e = _draw_emotif(d, x0, y0, x1, y1, ix, iy, iw, ih, emo, font_path=font_path, canvas=canvas)
         if e:
             box = (min(x0, e[0]), min(y0, e[1]), max(x1, e[2]), max(y1, e[3]))
     return box

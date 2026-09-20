@@ -748,7 +748,8 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
     _card_sec = ("\n\n[장면 카드(원작 지정 — 이 값이 정답)]\n" + _cards) if _cards else ""
     card_rule = ("0. [장면 카드]가 주어지면 그 값을 외모·복장·배경 필드의 **1순위 근거**로 쓴다"
                  " (카드가 본문 서술과 어긋나면 카드가 정답이다). 한글 지문을 그대로 쓰지 말고"
-                 " 영문 태그로 옮긴다 — 예: '다크 네이비 슬림핏 학생 바지' → navy shirt, navy pants.\n"
+                 " 영문 태그로 옮긴다 — 예: '다크 네이비 슬림핏 학생 바지' → navy shirt, navy pants."
+                 " **location/time_of_day도** 회차 시작 장면 카드의 [LOCATION]/[TIME] 값을 영문 태그로 쓴다.\n"
                  if _cards else "")
     return f"""{role_line}
 아래 [캐릭터 시트(평문)]와 [에피소드 {ep_num} 본문]만 읽고 JSON 하나만 출력하세요. 설명문/코드펜스 금지.
@@ -770,6 +771,8 @@ def build_extract_prompt(episode_text: str, sheet_text: str, ep_num: int,
    "hip_size": 영문 태그
  }},
  "partner": {{"name": "한국어 이름", "sex": "female 또는 male", "clothes": "영문 태그"}},
+ "location": "영문 태그 — **회차가 시작하는** 장소(장면 카드 [LOCATION] 1순위, 예: school gymnasium, bank counter)",
+ "time_of_day": "영문 태그 — **회차가 시작하는** 시간대(장면 카드 [TIME] 1순위, 예: dusk, night)",
  "guides": {{"protagonist": ["기", "승", "전", "결 각 1문장 한국어"], "partner": ["상대방 시선 1~2문장"], "sub": []}},
  {seg_schema}
  {unit_schema}
@@ -1563,6 +1566,10 @@ def apply_to_config(data: dict, episode_text: str, sheet_text: str, ep_num: int 
     config.job = proto.get("job") or ""
     config.breasts_size = proto.get("breasts_size", -1)
     config.hip_size = proto.get("hip_size", -1)
+    # [2026-09-18] 회차 시작 장소·시간(장면 카드 [LOCATION]/[TIME] 1순위) — base_cut_state의
+    #   place/time이 비어 있어 상태 보충 LLM이 첫 컷 장소를 지어내는 것을 막는다(실측 EP1: '은행').
+    config.location = str((data or {}).get("location") or "").strip()
+    config.time_of_day = str((data or {}).get("time_of_day") or "").strip()
 
     # [2026-09-08] 시트 #…# = 캐릭터 공식 태그 → LLM 경유 없이 config로 바로 (렌더가 무조건 넣는다)
     ct = extract_char_tags(sheet_text or "")

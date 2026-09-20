@@ -1094,6 +1094,8 @@ def main() -> int:
         check("multi 컷 = prompt_multi.md 가이드 본문 사용",
               "2girls" in p_m and "girl1" in p_m, p_m[-150:])
         CG.call_openai_for_text = _boom
+        # apply_to_config(위 테스트)가 config.location 을 다시 쓰므로 폴백 검증 직전에 픽스처를 되세팅
+        config.location, config.body_shape = "living room", "loli, child"
         p_fb = CG.build_panel_prompt(0, dict(panel_t, no=22, camera="pov"), "nsfw", gloss={})
         check("가이드 LLM 실패 → 결정적 태그 본문 폴백",
               "living room" in p_fb and "pov" in p_fb, p_fb[:120])
@@ -4907,6 +4909,48 @@ def main() -> int:
           "APPEARANCE IS GIVEN, NOT INVENTED" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
           and "지어내지" in open(os.path.join(ROOT, "data_comfyui", "prompt_multi.md"), encoding="utf-8").read()
           and "다시 쓰지 않습니다" in _ag_src2 and "[AAA SKIN]" in _ag_src2)
+    # [회차 시작 상태(원작 지정)를 상태 보충 LLM에 넘긴다 — 첫 컷 복장·장소를 지어내던 실측]
+    _cap = {}
+    _orig_ask = CG.call_openai_for_text
+    CG.call_openai_for_text = (lambda prompt, **kw: (_cap.update(p=prompt), ("[]", 0))[1])
+    try:
+        _saved = {k: getattr(config, k, None) for k in ("clothes", "location", "time_of_day",
+                                                        "hair_color", "hair_style", "body_shape")}
+        config.clothes = "white off-shoulder knit top, light blue denim shorts"
+        config.location = "school gymnasium"; config.time_of_day = "dusk"
+        config.hair_color = "dyed pink hair"; config.hair_style = "long hair, wavy hair"
+        config.body_shape = "curvy"
+        CG.fill_missing_state([{"no": 1, "pose": "wide establishing shot", "caption_ko": "", "state": {}}],
+                              1, log_fn=lambda m: None)
+        _fp = _cap.get("p", "")
+        check("상태 보충 LLM이 회차 시작 상태(원작 지정)를 받는다(첫 컷 복장·장소를 지어내지 않게)",
+              "[회차 시작 상태(원작 지정" in _fp and "white off-shoulder knit top" in _fp
+              and "school gymnasium" in _fp and "dusk" in _fp)
+    finally:
+        for _k, _v in _saved.items():
+            setattr(config, _k, _v)
+        CG.call_openai_for_text = _orig_ask
+    check("추출이 회차 시작 장소·시간을 출력하고 config에 담는다(장면 카드 [LOCATION]/[TIME] 1순위)",
+          '"location"' in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read()
+          and 'config.location = ' in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read()
+          and 'config.time_of_day = ' in open(os.path.join(ROOT, "comic_input.py"), encoding="utf-8").read())
+    # [이모티콘 무료 이미지(Twemoji) — 벡터보다 크고 예쁨]
+    _em_heart = CPM.emotif_image("heart")
+    check("이모티콘은 무료 이미지(Twemoji)가 있으면 그것으로, 없으면 벡터로",
+          (_em_heart is not None and _em_heart.size == (72, 72)) or _em_heart is None
+          and os.path.isfile(os.path.join(CPM.EMOTIF_DIR, "heart.png")) is False)
+    _cv_e = Image.new("RGBA", (200, 200), (245, 245, 245, 255)); _d_e = ImageDraw.Draw(_cv_e)
+    CPM.set_emotif_style("auto")
+    _b_img = CPM._draw_emotif(_d_e, 10, 10, 120, 60, 0, 0, 200, 200, "heart", canvas=_cv_e)
+    CPM.set_emotif_style("vector")
+    _b_vec = CPM._draw_emotif(_d_e, 10, 10, 120, 60, 0, 0, 200, 200, "heart", canvas=_cv_e)
+    CPM.set_emotif_style("auto")
+    if _em_heart is not None:
+        check("이미지 이모티콘은 벡터보다 크게 붙는다(46px vs 30px)",
+              _b_img and _b_vec and (_b_img[2] - _b_img[0]) >= 44 and (_b_vec[2] - _b_vec[0]) < 44)
+    check("이모티콘 종류마다 무료 이모지 매핑이 있고 받아오는 함수가 있다",
+          all(k in CPM.EMOTIF_EMOJI for k in CPM.EMOTIF_KINDS)
+          and callable(CPM.fetch_emotif_images) and "CC BY 4.0" in CPM.EMOTIF_ATTR)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

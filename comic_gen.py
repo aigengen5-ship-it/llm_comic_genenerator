@@ -2426,10 +2426,21 @@ def fill_missing_state(panels, ep_num_1based, log_fn=None):
                     f"{prev.get('face', '')} / 복장 {prev.get('clothes', '')} / 장소 {prev.get('place', '')}"
                     f" | 빈 항목: {', '.join(need) if need else 'state 전체'}{tag}")
         prev = dict(st) or prev
+    # [2026-09-18] 회차 시작 상태(원작 지정)를 넘긴다 — 예전은 pose·지문·직전 상태만 주어
+    #   첫 컷의 face/clothes/place/background를 LLM이 지어냈다(실측 EP1: [CLOTHES] 카드는
+    #   '흰색 오프숄더 니트'였는데 상태가 'formal business attire'·장소가 '은행'으로 그려졌다).
+    #   원작이 정한 값이 있으면 그것을 정답으로 쓰고, 없어야만 추론하게 한다.
+    _base = base_cut_state(max(0, int(ep_num_1based) - 1))
+    _base_bits = [f"{k}={_base[k]}" for k in ("place", "time", "clothes", "background", "hair", "body")
+                  if str(_base.get(k) or "").strip()]
+    _base_block = ("\n[회차 시작 상태(원작 지정 — 이 값이 정답)]\n" + "; ".join(_base_bits) +
+                   "\n첫 컷(회차 시작)의 face/clothes/place/background/hair/body는 위 값을 **그대로** 쓰고, "
+                   "이후 컷은 pose·지문에 변화가 없으면 그대로 이어가세요. 위 값이 있는 항목을 지어내지 마세요.\n" if _base_bits else "")
     prompt = ("만화 컷의 **연속 상태**를 채우는 일입니다. 아래 컷들은 상태 항목이 비었습니다. "
               "각 컷의 근거(pose·지문)와 직전 상태로 **알 수 있는 것만** 채우세요. 결말의 복장·표정을 "
               "앞 컷에 미리 입히면 안 됩니다(컷 1은 회차가 시작하는 상태입니다).\n\n"
               "[상태 어휘] " + ", ".join(f"{k}={STATE_LABEL[k]}" for k in STATE_KEYS) + "\n\n"
+              + _base_block +
               "[비어 있는 컷]\n" + "\n".join(rows[:8]) + "\n\n"
               '출력: JSON 배열만 — [{"no": 3, "state": "face=sad; clothes=school uniform"}] '
               "(채운 항목만, 값은 영문 태그. 모르겠으면 그 항목은 빼세요)")

@@ -1,0 +1,14 @@
+이모티콘 이미지 출처 (attribution)
+=================================
+이 폴더의 이모티콘 PNG는 Twemoji에서 받았습니다.
+
+  출처 : Twitter — https://github.com/twitter/twemoji
+  라이선스 : CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  버전 : twemoji 14.0.2 (assets/72x72)
+  수신 : venv/bin/python run_comic.py --get-emotif
+
+종류 → 이모지:
+  anger=💢(1f4a2)  surprise=❗(2757)  sweat=💧(1f4a7)  heart=❤(2764)
+  gloom=🌧(1f327)  sparkle=✨(2728)  question=❓(2753)
+
+CC BY 4.0은 출처 표기를 요구합니다 — 이 파일과 README의 출처 문구가 그 역할을 합니다.

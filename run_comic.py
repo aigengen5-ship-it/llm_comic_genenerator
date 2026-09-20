@@ -997,6 +997,8 @@ def main() -> int:
                     help="사용 가능한 페이지 템플릿(id / 이름 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다")
     ap.add_argument("--fresh-extract", action="store_true", dest="fresh_extract",
                     help="이전 실행의 추출 체크포인트(state/extract_cache.yaml)를 무시하고 처음부터 추출한다")
+    ap.add_argument("--emotif-style", choices=("auto", "image", "vector"), dest="emotif_style",
+                    default=None, help="이모티콘 그림 방식 (기본 auto: --get-emotif 로 받은 이미지가 있으면 그것으로, 없으면 벡터)")
     ap.add_argument("--balloon-style", choices=("vector", "image"), dest="balloon_style",
                     default=None, help="말풍선·속마음 그림 방식 (기본: config.comic_balloon_style='vector'; "
                                         "image = data/balloons/ 자산 9슬라이스 합성, 없으면 벡터 폴백)")
@@ -1004,6 +1006,11 @@ def main() -> int:
                     help="말풍선·속마음 자리표시 자산 9종과 manifest.json을 만들고 끝난다")
     ap.add_argument("--force-balloons", action="store_true", dest="force_balloons",
                     help="--get-balloons가 기존 자산도 다시 그린다")
+    ap.add_argument("--get-emotif", action="store_true", dest="get_emotif",
+                    help="무료 이모티콘 이미지(Twemoji, CC BY 4.0)를 data_comfyui/emotif/에 받아 두고 끝난다 — "
+                         "이모티콘이 벡터(26px) 대신 이미지(46px)로 크고 예쁘게 그려진다")
+    ap.add_argument("--force-emotif", action="store_true", dest="force_emotif",
+                    help="--get-emotif가 기존 이미지도 다시 받는다")
     ap.add_argument("--keep-logs", action="store_true", dest="keep_logs",
                     help="log/*.log를 실행 시작에 초기화하지 않고 이어서 쓴다 (기본: 초기화)")
     ap.add_argument("--no-strict-state", action="store_true",
@@ -1199,6 +1206,16 @@ def main() -> int:
         p(f"  말풍선 자산 {_bi['made']}장면 → {_bi['dir']} (manifest: {_bi['manifest']})")
         p("  쓰실 때: --balloon-style image (자산이 없으면 자동으로 벡터로 돌아갑니다)")
         return 0
+    if getattr(args, "get_emotif", False):
+        # [2026-09-18] 무료 이모티콘 이미지(Twemoji) — 벡터보다 크고 예쁨(사용자 지시)
+        import comic_page_merge as _CPM
+        p("== 이모티콘 이미지 다운로드 (Twemoji, CC BY 4.0)")
+        _ei = _CPM.fetch_emotif_images(force=bool(args.force_emotif), log=lambda m: p(m))
+        p(f"  이모티콘 이미지: 새로 {_ei['ok']}장 · 기존 유지 {_ei['skip']}장"
+          + (f" · 실패 {_ei['fail']}" if _ei["fail"] else ""))
+        p(f"  귀속: {_CPM.EMOTIF_ATTR}")
+        p("  쓰실 때: --emotif-style auto (기본) — 이미지가 있으면 그것으로, 없으면 벡터로")
+        return 0
     if getattr(args, "list_templates", False):
         import comic_gen as _CG
         _tm = _CG.load_cut_templates()
@@ -1220,6 +1237,8 @@ def main() -> int:
     import comic_page_merge as _CPMB
     _CPMB.set_balloon_style(getattr(config, "comic_balloon_style", "vector"),
                             getattr(config, "comic_balloon_dir", "data/balloons"))
+    if getattr(args, "emotif_style", None):
+        _CPMB.set_emotif_style(args.emotif_style)
     if args.font:
         config.comic_font = args.font
     # [2026-09-09] 화면 문법 용도별 폰트 / ★요약·에필로그 컷 스위치

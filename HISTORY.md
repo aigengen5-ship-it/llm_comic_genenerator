@@ -395,6 +395,31 @@ curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, �
 
 
 
+### 이모티콘을 무료 이미지로 크고 예쁘게, 그리고 [CLOTHES]가 처음 몇 장에 안 반영되던 버그
+
+**이모티콘(사용자 지적: "하트·화남·느낌표 아이콘이 너무 작고 예쁘지 않음").** 예전은 19px 벡터로
+그려서 작고 밋밋했습니다. 무료 이모지 **Twemoji(CC BY 4.0)** 7종을 `--get-emotif`로
+`data_comfyui/emotif/{kind}.png`에 받아 두고, 있으면 그것으로 **46px·투명도 그대로** 붙이고, 없으면
+벡터(26px, 예전 19보다 크게)로 돌아갑니다. `--emotif-style auto|image|vector`로 제어.
+실측: heart 박스 46px(이미지) vs 30px(벡터). 자산 7장은 커밋에 넣었습니다(data/balloons처럼).
+`surprise`(❗ 187B)는 단순 이모지라 수신 임계값(200B)에 걸려 실패했는데 150B로 낮췄습니다.
+
+**[CLOTHES]가 처음 몇 장에 반영 안 됨(사용자 지적: p05까지).** 추적 결과 **섞인 게 아니라
+상태 보충 LLM이 지어낸 것**이었습니다.
+- 추출은 [CLOTHES] 카드를 정확히 반영했습니다 → `config.clothes = "white off-shoulder knit top, …"`(정답)
+- 태그 블록 조립은 `if _ovr: base_clothes = _ovr` — **컷 상태의 복장이 비어있지 않으면 회차 기준 복장을 통째로 덮어씀**
+- 그런데 `fill_missing_state`(상태 보충 LLM)는 pose·지문·직전 상태만 받고 **회차 시작 상태(`config.clothes` 등)를
+  받지 못해** 컷 1~5의 `clothes`를 `formal business attire`(은행원 직업을 보고 지어낸 것)로 채웠고, 그것이 정답 복장을 덮었습니다
+  (place도 `Shionzawa bank counter`, time도 `night`로 지어졌습니다 — 추출 출력에 `location`/`time_of_day` 키가 아예 없었음)
+- 고침 ① `fill_missing_state`가 `base_cut_state`(장면 카드 1순위)를 `[회차 시작 상태(원작 지정)]`로 함께 보내
+  원작이 정한 값이 있으면 그대로 쓰게 함 ② 추출이 [LOCATION]/[TIME] 카드의 장소·시간을 `location`/`time_of_day`로
+  출력 ③ `apply_to_config`가 그것들을 `config`에 담음
+- 실측(모킹): 보충 프롬프트에 `place=school gymnasium; time=dusk; clothes=white off-shoulder knit top, …`가 들어감 확인
+- 셀프테스트 함정 하나: `apply_to_config`가 이제 `config.location`을 쓰게 되자, 위 테스트가 511줄에 세운
+  "living room" 픽스처가 630/635줄 `apply_to_config`에 덮여 폴백 검증이 죽었습니다 → 검증 직전에 픽스처를 되세팅
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

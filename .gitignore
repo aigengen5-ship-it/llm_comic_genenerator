@@ -68,3 +68,4 @@ FLOW_LOCAL.md
 inputs/**/cuts_ep*_*.json
 # PI 이어서 실행
 pi_continue.sh
+plot.local2.json

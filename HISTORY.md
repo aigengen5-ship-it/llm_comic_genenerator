@@ -490,6 +490,17 @@ SELFTEST: PASS 916 / FAIL 0 (+4 — 감정→태그 매핑·자유형식·모르
 
 
 
+### SFX(의성어)도 PIL → ComfyUI 단부루 태그로 (태그만)
+
+감정 효과에 이어 SFX도 "1번(태그만)"으로 — PIL 대형 흰 글씨 대신 ComfyUI가 만화식 효과음 형태를
+직접 그립니다.
+- `build_panel_prompt`: 컷에 `sfx`가 있으면 배경/장면 프롬프트에 `sound effect` 태그 삽입.
+  텍스트(BAM! 등)는 이미지 모델 약점이라 안 씀(깨짐 방지) — 형태만 ComfyUI가 그림.
+- `comic_page_merge._draw_screen`: PIL 의성어(`_draw_sfx` 호출) 완전 제거.
+- 셀프테스트: `sound effect` 태그가 프롬프트에 들어가고 PIL 의성어 호출이 제거됐음을 검증
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**

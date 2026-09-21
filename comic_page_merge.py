@@ -2030,11 +2030,8 @@ def _draw_panel_text(canvas, d, ix: int, iy: int, iw: int, ih: int, item, *,
     """
     tp = text_payload(item)
     placed = []
-    if tp["sfx"]:
-        r = _draw_sfx(canvas, d, ix, iy, iw, ih, tp["sfx"], font_path=font_path,
-                      avoid=placed, frame=frame, plate=plate)
-        if r:
-            placed.append(r[:4])
+    # [2026-09-20] PIL 의성어(SFX) 완전 제거 — 효과음은 ComfyUI가 단부루 태그(sound effect)로
+    #   배경/장면에 직접 그린다(comic_gen.build_panel_prompt). 대형 흰 글씨는 안 그림.
     if tp["narration"]:
         r = _draw_caption_box(d, ix, iy, iw, ih, tp["narration"], large=tp["narr_large"],
                               font_size=font_size, plate=plate, frame=frame,

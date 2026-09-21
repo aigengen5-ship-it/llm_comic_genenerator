@@ -3693,6 +3693,11 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
         if _emo_tag:
             body = f"{body}, {_emo_tag}"
             panel["_emo_tag"] = _emo_tag
+        # [2026-09-20] SFX → 단부루 태그 — PIL 의성어(대형 흰 글씨) 대신 ComfyUI가 만화식
+        #   효과음 형태를 직접 그림. 텍스트(BAM! 등)는 이미지 모델 약점이라 안 씀(깨짐 방지).
+        if str(panel.get("sfx") or "").strip():
+            body = f"{body}, sound effect"
+            panel["_sfx_tag"] = "sound effect"
 
     joined = f"{header.rstrip()} {' ' if header.rstrip().endswith('.') else ', '}{body}"
     joined = fix_pronoun_gender(joined)          # A1) 주인공이 남자면 she/her → he/his

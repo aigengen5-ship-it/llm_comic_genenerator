@@ -5061,6 +5061,11 @@ def main() -> int:
     _cpm_src = open(os.path.join(ROOT, "comic_page_merge.py"), encoding="utf-8").read()
     check("PIL 이모티콘은 풍선 합성에서 제거됐다(호출 대신 ComfyUI 태그 주석)",
           "e = _draw_emotif(d," not in _cpm_src and "ComfyUI가" in _cpm_src)
+    # [2026-09-20] SFX → 단부루 태그 — PIL 의성어 대신 ComfyUI가 만화식 효과음 형태를 그림
+    _cpm_src2 = open(os.path.join(ROOT, "comic_page_merge.py"), encoding="utf-8").read()
+    check("SFX는 단부루 태그(sound effect)로 프롬프트에 들어가고 PIL 의성어는 제거된다",
+          "sound effect" in open(os.path.join(ROOT, "comic_gen.py"), encoding="utf-8").read()
+          and "r = _draw_sfx(canvas" not in _cpm_src2)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

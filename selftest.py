@@ -5042,6 +5042,25 @@ def main() -> int:
     check("pick_best=False는 후보 전체를 리스트로 반환하고 평가(LLM)를 안 한다",
           isinstance(_res_pb, list) and len(_res_pb) == 3 and len(_pb_calls) == 0,
           f"타입={type(_res_pb).__name__} 길이={len(_res_pb) if isinstance(_res_pb, list) else 'N/A'} 평가호출={len(_pb_calls)}")
+    # [2026-09-20] 감정 → 단부루 태그 — PIL 이모티콘 대신 ComfyUI가 만화식 효과로 그림
+    import comic_gen as _CG3
+    _emo_map = {
+        "heart": "floating heart", "anger": "anger mark", "surprise": "shock lines",
+        "sweat": "sweat drop", "gloom": "rain cloud", "sparkle": "sparkles",
+        "question": "question mark",
+    }
+    check("감정 7종이 단부루 태그로 매핑된다",
+          all(_CG3._emotion_danbooru_tag(k) == v for k, v in _emo_map.items()),
+          str({k: _CG3._emotion_danbooru_tag(k) for k in _emo_map}))
+    check("자유 형식 감정도 근접 매핑된다(embarrassed→sweat drop, sad→rain cloud)",
+          _CG3._emotion_danbooru_tag("embarrassed") == "sweat drop"
+          and _CG3._emotion_danbooru_tag("sad") == "rain cloud"
+          and _CG3._emotion_danbooru_tag("angry") == "anger mark")
+    check("모르는 감정은 빈 태그(안 넣음)", _CG3._emotion_danbooru_tag("") == ""
+          and _CG3._emotion_danbooru_tag("neutral") == "")
+    _cpm_src = open(os.path.join(ROOT, "comic_page_merge.py"), encoding="utf-8").read()
+    check("PIL 이모티콘은 풍선 합성에서 제거됐다(호출 대신 ComfyUI 태그 주석)",
+          "e = _draw_emotif(d," not in _cpm_src and "ComfyUI가" in _cpm_src)
     check("로컬 엔트리에 LoRA 키/파일 대조 목록이 있다", "  loras)" in _rl and "models" in _rl)
 
     print(f"\n===== SELFTEST: PASS {PASS} / FAIL {FAIL} =====")

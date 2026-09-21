@@ -1964,10 +1964,8 @@ def _draw_balloon(d, ix: int, iy: int, iw: int, ih: int, balloon, *, avoid=(),
         d.text(((x0 + x1 - wln) // 2, ty), ln, font=font, fill=text_color)
         ty += line_h
     box = locals().get("box_tail") or (x0, y0, x1, y1)
-    if emo:
-        e = _draw_emotif(d, x0, y0, x1, y1, ix, iy, iw, ih, emo, font_path=font_path, canvas=canvas)
-        if e:
-            box = (min(x0, e[0]), min(y0, e[1]), max(x1, e[2]), max(y1, e[3]))
+    # [2026-09-20] PIL 이모티콘 완전 제거 — 감정 효과는 ComfyUI가 단부루 태그(_emotion_danbooru_tag)
+    #   로 배경/장면에 직접 그린다(comic_gen.build_panel_prompt). 풍선 곁의 작은 아이콘은 안 그림.
     return box
 
 

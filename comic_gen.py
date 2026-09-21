@@ -1420,6 +1420,42 @@ _EMO_FACE_TAGS = {
     "question": "confused, tilted head, open mouth",
 }
 
+# [2026-09-20] 감정 → **단부루 태그** — PIL 이모티콘 대신 ComfyUI(만화 모델)가 직접 그리게.
+#   배경/장면 프롬프트에 삽입해 만화식 감정 효과(떠 있는 하트·화남 표시·땀방울 등)를 그린다.
+#   사용자 지시: 확신 있는 태그만. (anger mark는 비교적 확신 — 필요하면 조정)
+_EMO_DANBOORU_TAGS = {
+    "anger":    "anger mark",
+    "surprise": "shock lines",
+    "sweat":    "sweat drop",
+    "heart":    "floating heart",
+    "gloom":    "rain cloud",
+    "sparkle":  "sparkles",
+    "question": "question mark",
+}
+
+
+def _emotion_danbooru_tag(emotion: str) -> str:
+    """컷 감정 → 단부루 태그(모르면 "") — 배경 프롬프트에 넣어 ComfyUI가 만화식 효과로 그림."""
+    k = str(emotion or "").strip().lower()
+    if not k:
+        return ""
+    if k in _EMO_DANBOORU_TAGS:
+        return _EMO_DANBOORU_TAGS[k]
+    # 자유 형식 감정(embarrassed/sad/happy 등) → 7종으로 근접 매핑
+    _near = {
+        "heart": ("love", "lovey", "happy", "affection", "in love", "blush", "sweet"),
+        "anger": ("angry", "anger", "irritat", "mad", "furious", "annoy"),
+        "surprise": ("surpris", "shock", "startl", "astonish"),
+        "sweat": ("embarrass", "awkward", "shy", "nervous", "uneasy", "sweat"),
+        "gloom": ("sad", "gloom", "depress", "melanchol", "down", "miser"),
+        "sparkle": ("excit", "thrill", "joy", "delight", "cheer"),
+        "question": ("confus", "puzzl", "wonder", "doubt", "perplex"),
+    }
+    for kind, words in _near.items():
+        if any(w in k for w in words):
+            return _EMO_DANBOORU_TAGS[kind]
+    return ""
+
 
 # [2026-09-09] 컷별 **연속 상태 시트** — 회차 태그는 회차 전체를 요약하므로(추출·태그셋 LLM이
 #   본문 전체를 본다) 컷마다 시간이 달라지는 항목(표정/화장/몸/옷/액세서리 …)을 못 맞춘다.
@@ -3649,6 +3685,14 @@ def build_panel_prompt(ep_idx: int, panel, safety_tag: str, gloss: dict = None, 
     if _gt:
         body = f"{body}, {_gt}"
         panel["_gen_applied"] = _gt
+    # [2026-09-20] 감정 → 단부루 태그 — PIL 이모티콘 대신 ComfyUI가 배경/장면에 만화식
+    #   감정 효과(떠 있는 하트·화남 표시·땀방울·빗구름 등)를 직접 그리게. bg_only 컷은
+    #   인물이 없으니(표정이 없음) 넣지 않는다.
+    if not panel.get("bg_only"):
+        _emo_tag = _emotion_danbooru_tag(_panel_face_emotion(panel))
+        if _emo_tag:
+            body = f"{body}, {_emo_tag}"
+            panel["_emo_tag"] = _emo_tag
 
     joined = f"{header.rstrip()} {' ' if header.rstrip().endswith('.') else ', '}{body}"
     joined = fix_pronoun_gender(joined)          # A1) 주인공이 남자면 she/her → he/his

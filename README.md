@@ -292,7 +292,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--no-header-map` | 헤더 → 컷 1:1 배분을 끄고 예전처럼 컷 예산·장면 분할을 탑니다(3-9절) |
 | `--no-source-frame` | `progress/`의 `prologue_·epilogue_` 원문을 ★지문 근거로 쓰지 않습니다(회차 본문만 사용) |
 | `--no-summary-cuts` | ★회차 도입 요약 컷(각 회차의 첫 컷 = 배경만 + 큰 지문)을 끕니다 |
-| `--no-emo-marks` | 감정 이모티콘(분노/놀람/땀/하트/음영/반짝/물음) 표시를 끕니다 |
+| `--no-emo-marks` | 감정 표시를 끕니다 — 단부루 감정 태그(`floating heart` 등) 주입과 풍선 감정 변형 모두 OFF |
 | `--template ID[,ID…]` | 페이지 템플릿을 **고정**합니다 (1종 = 회차 전체 같은 구성, 여러 종 = 페이지마다 회전) |
 | `--list-templates` | 사용 가능한 템플릿(id / 단수 / 페이지당 컷 수 / 상황)을 보이고 끝냅니다 |
 | `--no-strict-state` | 컷 스크립트 JSON이 필수 항목(상태 시트·pose·첫 컷의 시작 상태)을 못 채워도 **경고만** 하고 진행합니다 (기본은 에러로 종료) |
@@ -300,8 +300,8 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --star
 | `--get-face-model` | 얼굴 검출 모델(YuNet 227KB)을 받습니다 — OpenCV가 있을 때만 쓰입니다 |
 | `--balloon-style image` | 말풍선·속마음을 `data/balloons/` **자산**으로 그립니다(기본 `image` · 화살표 꼬리·생각 물방울이 PNG에 굽혀져 있습니다). `--balloon-style vector`로 되돌리면 코드로 그린 사각/타원이 나옵니다. 자산이 없으면 자동으로 `vector`로 돌아갑니다 |
 | `--get-balloons` | 말풍선·속마음 자리표시 자산(몸통 9종 + 방향 꼬리 18종)과 `manifest.json`을 만들고 끝납니다(`--force-balloons`로 재생성) |
-| `--get-emotif` | 무료 이모티콘 이미지(Twemoji, **CC BY 4.0**) 7종을 `data_comfyui/emotif/`에 받아 두고 끝납니다(`--force-emotif`로 재수신). 있으면 이모티콘이 벡터(26px) 대신 이미지(46px)로 **크고 예쁘게** 그려집니다 |
-| `--emotif-style auto` | 이모티콘 그림 방식 — `auto`(기본, 이미지가 있으면 그것으로) · `image` · `vector`(벡터로 고정) |
+| `--get-emotif` | (비활성) 예전 PIL 이모티콘용 무료 이미지(Twemoji) 수신 — 이제 감정은 ComfyUI가 단부루 태그로 그리므로 이 이미지는 쓰이지 않습니다(호환용 유지) |
+| `--emotif-style auto` | (비활성) 예전 PIL 이모티콘 그림 방식 — 이제 쓰이지 않습니다(호환용 유지) |
 | `--keep-logs` | 실행 시작에 로그를 초기화하지 않고 이어서 씁니다 |
 | `--fresh-extract` | 추출 체크포인트(`state/extract_cache.yaml`)를 무시하고 처음부터 추출합니다 |
 | `--no-cut-yaml` | 레이아웃 자동 문법으로 회귀합니다 |
@@ -581,9 +581,9 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 | 2 | **대사** | 등장인물 | 만화 **말풍선 = 직사각형** (폭은 컷의 **25%** · 몸통 면적은 **컷의 25% 안** · 컷당 **최대 3개** · 주인공=왼쪽, 상대방=오른쪽) |
 | 2 | **속마음** | 주인공 | 만화 **속마음 풍선 = 타원** (폭은 컷의 25% · 세로는 그 폭에 글자를 넣는 데 필요한 만큼) |
 | 3 | **설명 + 대사** | 둘 다 | **이벤트 컷** (회당 2~4컷만 권장 · 설명을 더 좁게 잡아 대화 자리를 남김) |
-| 4 | **감정 표시** | 대사의 감정 | 풍선 곁의 이모티콘 — 분노/놀람/땀/하트/음영/반짝/물음, **감정마다 색이 다름**. `--get-emotif`로 받은 **무료 이모지(Twemoji, CC BY 4.0)**가 있으면 그것으로 46px, 없으면 코드로 그리는 벡터 26px |
+| 4 | **감정 표시** | 대사의 감정 | **ComfyUI가 단부루 태그로 직접 그림** — 컷 감정을 단부루 태그(`floating heart`·`anger mark`·`sweat drop`·`shock lines`·`rain cloud`·`sparkles`·`question mark`)로 바꿔 배경/장면 프롬프트에 넣어 만화 모델이 만화식 감정 효과(떠 있는 하트·화남 표시·땀방울 등)를 그립니다 |
 
-- **이모티콘은 무료 이미지로 크고 예쁘게** — 예전 벡터(19px)는 작고 밋밋했습니다(사용자 지적). `--get-emotif`가 Twemoji(CC BY 4.0) 7종을 `data_comfyui/emotif/`에 받아 두고, 있으면 그것으로 46px·투명도 그대로 붙이고, 없으면 벡터(26px, 예전 19보다 크게)로 돌아갑니다. `--emotif-style vector`로 벡터 고정. 귀속: Twitter(twemoji) CC BY 4.0 — `data_comfyui/emotif/`에 출처를 남깁니다.
+- **감정 효과는 ComfyUI가 그립니다(단부루 태그).** 예전은 PIL로 풍선 곁에 작은 이모티콘을 그렸는데(벡터→Twemoji 이미지) 만화틱하지 않다는 지적이 있어, 이제 컷 감정을 단부루 태그로 바꿔 **배경/장면 프롬프트에 삽입**해 만화 모델이 직접 그리게 합니다. 매핑: heart→`floating heart`, anger→`anger mark`, surprise→`shock lines`, sweat→`sweat drop`, gloom→`rain cloud`, sparkle→`sparkles`, question→`question mark`(자유 형식 감정도 근접 매핑). bg_only(인물 없는) 컷은 넣지 않습니다. `--no-emo-marks`는 이 태그 주입도 함께 끕니다.
 
 - **설명 박스 폭**: 길이가 길면 컷 폭을 따라 자랍니다 — 평범 컷 **80%**까지, 대사가 있는 컷 **62%**까지, **★지문은 컷 폭 전체**를 씁니다(넓어야 줄 수가 줄어 글자가 안 잘립니다). 짧은 지문은 측정한 글자 폭만큼만 남긴다(컷을 빈 박스로 안 채웁니다).
 - **풍선은 컷 대비 25%로 대비 25%")**: 폭 비율 `BALLOON_W_RATIO`/`THOUGHT_W_RATIO = 0.25`이고, 몸통 **면적** 상한 `BALLOON_MAX_AREA_RATIO = 0.25`(컷 면적의 25%)를 따로 두었습니다. 폭만 줄이면 세로가 늘어 면적이 다시 커지므로(실측: 몸통 보스트 2.2 × 최소 높이 42% → 컷의 절반), 면적 상한이 먼저 이깁니다(넘치면 글자 단계를 더 줄입니다).
@@ -621,7 +621,7 @@ python3 run_comic.py --episode inputs/ep01.txt --sheet inputs/sheet01.txt --dry-
 - 컷 경계는 **굵은 검정선만** 그려집니다. 선과 그림 사이 흰 여백, 선 바깥의 옅은 회색 이중선은 없습니다(이웃한 컷과는 검은 선이 맞붙어 하나의 굵은 경계가 됩니다).
 - 컷 스크립트(`episode_NN_script.json`)의 컷 필드: `caption_ko`(설명), `lines`(`{kind, who, text, emo}` ≤3 · `kind`는 `speech`/`thought` · `emo`는 `anger|surprise|sweat|heart|gloom|sparkle|question`), `sfx`(의성어).
   옛 `dialog: ["이름: 대사", …]` 출력도 그대로 받습니다(화자 자동 분리, `(...)`는 속마음으로 봅니다). `emo`를 비우면 대사 분위기에서 자동으로 추정합니다.
-- 감정 표시가 필요 없으시면 `--no-emo-marks`를 붙여 주세요(풍선 자리·크기는 그대로입니다).
+- 감정 표시가 필요 없으시면 `--no-emo-marks`를 붙여 주세요(단부루 감정 태그 주입과 풍선 감정 변형 모두 OFF).
 
 **★ 화면 문법이 강제되는 슬롯** — `data/cut.yaml`의 `tier.role`로 정하고, 코드는 role이 없어도 **각 페이지(=기승전결 막)의 첫 슬롯**을 자동으로 `summary`로 봅니다.
 
@@ -769,15 +769,17 @@ python3 run_comic.py ... --font-dialog my.ttf --font-narration another.ttf   # �
 | 극단 표정(ahegao·heart-shaped pupils·rolling eyes·tongue out 등)은 **클라이맥스 컷에서만** 통과 | `anima_gen._calm_face` — 일상 컷까지 물드는 것을 막는다 |
 | 태그셋 LLM 안내: 회차 표정은 평범하게, `expressions` 5개는 서로 다른 감정으로 | `anima_gen` 태그셋 프롬프트 |
 
-| 감정 | 화면 이모티콘 | 렌더 표정 태그 |
+| 감정 | ComfyUI 단부루 태그(배경/장면) | 렌더 표정 태그 |
 |---|---|---|
-| anger | ✕ 분노 | `angry, furrowed brow, angry shout` |
-| surprise | ! 놀람 | `surprised, wide eyes, open mouth` |
-| sweat | 땀 | `uneasy sweat, sweat drop, wavy mouth` |
-| heart | 하트 | `lovey, blushing, soft smile` |
-| gloom | 음영 | `sad, downcast eyes, wavy mouth` |
-| sparkle | 반짝 | `happy, excited, sparkling eyes, open mouth` |
-| question | ? | `confused, tilted head, open mouth` |
+| anger | `anger mark` | `angry, furrowed brow, angry shout` |
+| surprise | `shock lines` | `surprised, wide eyes, open mouth` |
+| sweat | `sweat drop` | `uneasy sweat, sweat drop, wavy mouth` |
+| heart | `floating heart` | `lovey, blushing, soft smile` |
+| gloom | `rain cloud` | `sad, downcast eyes, wavy mouth` |
+| sparkle | `sparkles` | `happy, excited, sparkling eyes, open mouth` |
+| question | `question mark` | `confused, tilted head, open mouth` |
+
+감정 효과는 이제 **ComfyUI가 단부루 태그로 직접 그립니다**(PIL 이모티콘 제거). 위 "ComfyUI 단부루 태그"가 배경/장면 프롬프트에 삽입돼 만화 모델이 만화식 감정 효과를 그리고, "렌더 표정 태그"는 인물의 표정에 쓰입니다.
 
 ### 3-8c) 복장은 회차 기준도를 유지 — 컷 1컷의 의류 소실 방지
 

@@ -469,6 +469,27 @@ curvy / large breasts / tanned skin`인데 시트 속성이 하나도 없고, �
 
 
 
+### 감정 효과: PIL 이모티콘 → ComfyUI 단부루 태그
+
+사용자 지적: "감정표현 아이콘이 그냥 빨간색인데, 만화틱하게 하면 좋겠다" → PIL로 만화 스타일
+그려봤지만 "전부 별로" → "차라리 단부루 태그를 배경에 삽입해 ComfyUI가 직접 그리게 하자".
+
+- `comic_gen._EMO_DANBOORU_TAGS` + `_emotion_danbooru_tag()`: 감정 7종(heart/anger/surprise/sweat/
+  gloom/sparkle/question)을 단부루 태그로 매핑(floating heart/anger mark/shock lines/sweat drop/
+  rain cloud/sparkles/question mark). 자유 형식 감정(embarrassed/sad/angry 등)도 근접 매핑.
+  사용자 지시: **확신 있는 태그만**.
+- `build_panel_prompt`: 컷 감정의 단부루 태그를 **배경/장면 프롬프트에 삽입**해 ComfyUI(만화 모델)가
+  만화식 감정 효과(떠 있는 하트·화남 표시·땀방울·빗구름 등)를 직접 그림. bg_only(인물 없는) 컷은
+  넣지 않음. `--no-emo-marks`가 이 태그 주입도 함께 끔.
+- `comic_page_merge._draw_balloon`: **PIL 이모티콘 완전 제거**(`_draw_emotif` 호출 삭제).
+  `--get-emotif`/`--emotif-style`은 비활성(호환용 유지).
+- 효과음(SFX)은 단부루 태그로 "형태"는 가능하지만 "텍스트"(BAM! 등)는 이미지 모델 약점이라
+  별도 결정 대기(태그만 vs 하이브리드).
+
+SELFTEST: PASS 916 / FAIL 0 (+4 — 감정→태그 매핑·자유형식·모르면 빈값·PIL 제거 검증)
+
+
+
 ## 세부 변경 기록 (README에서 옮긴 줄들)
 
 - > **중요 — 에피소드 중단 문제 해결 [2026-09-08]**
